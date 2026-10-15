@@ -5,7 +5,7 @@ import Observation
 final class BarStore: NSObject {
     var configuration: Configuration?
     var configurationError: String?
-    var actionError: String?
+    var actionErrors: [String: String] = [:]
     var activeApp = NSWorkspace.shared.frontmostApplication
     var activeDisplayID = 1
     var scripts: [String: ScriptWidget] = [:]
@@ -15,7 +15,7 @@ final class BarStore: NSObject {
     var onConfigurationChange: (() -> Void)?
     var onCustomize: (() -> Void)?
     var effectiveDocument: [String: ConfigurationValue] = [:]
-    var origins: [String: String] = [:]
+    var origins: [String: ConfigurationOrigin] = [:]
     var activeProfiles: [String] = []
     var sessionEdits: [ConfigurationEdit] = []
     var context = ConfigurationContext()
@@ -51,6 +51,9 @@ final class BarStore: NSObject {
             let focused = aerospace.workspaces.first(where: \.isFocused)
             refreshScripts(for: "workspace", environment: ["INFO": focused?.name ?? "", "SID": String(focused?.monitor ?? activeDisplayID)])
         }
+        aerospace.onModeChange = { [weak self] mode in
+            self?.refreshScripts(for: "aerospaceMode", environment: ["INFO": mode])
+        }
         do {
             let directory = configurationURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -61,9 +64,10 @@ final class BarStore: NSObject {
                     menuBarHeight: max(NSStatusBar.system.thickness, NSScreen.main?.safeAreaInsets.top ?? 0))
                 try data.write(to: configurationURL, options: .atomic)
             }
+            try migrateConfigurationFile(configurationURL)
             reloadConfiguration()
         } catch {
-            configurationError = error.localizedDescription
+            configurationError = errorMessage(error)
         }
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(updateActiveApp), name: NSWorkspace.didActivateApplicationNotification, object: nil)
@@ -79,10 +83,11 @@ final class BarStore: NSObject {
 
     func refreshContext() {
         let next = SystemContext.current()
-        if context != next {
-            context = next
-            reloadConfiguration()
-        }
+        var nextWithSameApp = next
+        nextWithSameApp.app = context.app
+        let reload = nextWithSameApp != context || (next.app != context.app && configurationLoader.matchesApps)
+        context = next
+        if reload { reloadConfiguration() }
     }
 
     private func scheduleReload() {
@@ -107,7 +112,7 @@ final class BarStore: NSObject {
             }
             apply(next)
         } catch {
-            configurationError = error.localizedDescription
+            configurationError = errorMessage(error)
         }
     }
 
@@ -134,11 +139,18 @@ final class BarStore: NSObject {
         let data = try configurationData(root)
         var loader = ConfigurationLoader()
         let next = try loader.load(configurationURL, data: data, context: context)
-        if persist { try data.write(to: configurationURL, options: .atomic) }
+        if persist { try configurationData(root, editing: Data(contentsOf: configurationURL)).write(to: configurationURL, options: .atomic) }
         sessionEdits = persist ? [] : allEdits
         configurationLoader = loader
         apply(next)
         configurationWatcher.watch(loader.dependencies)
+    }
+
+    func setSessionEdits(_ edits: [ConfigurationEdit]) throws {
+        let previous = sessionEdits
+        sessionEdits = edits
+        do { try applyEdits([], persist: false) }
+        catch { sessionEdits = previous; throw error }
     }
 
     private func apply(_ next: Configuration) {
@@ -207,7 +219,7 @@ final class BarStore: NSObject {
         let events = Set(next.widgets.filter(\.enabled).flatMap(\.events) + usedProviders.flatMap { next.providers[$0]!.events })
         eventObservers = events.map { event in
             center.addObserver(forName: Notification.Name(event), object: nil, queue: .main) { [weak self] notification in
-                var environment = notification.userInfo as? [String: String] ?? [:]
+                var environment = withoutShellVariables(notification.userInfo as? [String: String] ?? [:])
                 if environment["INFO"] == nil, let info = notification.userInfo,
                    let data = try? JSONSerialization.data(withJSONObject: info, options: [.sortedKeys]) {
                     environment["INFO"] = String(decoding: data, as: UTF8.self)
@@ -270,11 +282,7 @@ final class BarStore: NSObject {
         case .customize: onCustomize?()
         case .reload: try applyEdits([], persist: false)
         case .batch: try applyEdits(request.edits ?? [], persist: request.persist)
-        case .reset:
-            let edits = sessionEdits
-            sessionEdits = []
-            do { try applyEdits([], persist: false) }
-            catch { sessionEdits = edits; throw error }
+        case .reset: try setSessionEdits([])
         case .refresh:
             guard let id = request.id, let script = scripts[id] else { throw CommandFailure(message: "Refresh requires a running widget id.") }
             guard !script.diagnostics.suspended else {
@@ -283,7 +291,7 @@ final class BarStore: NSObject {
             script.refresh(ScriptEvent(sender: "manual"))
         case .trigger:
             guard let event = request.id else { throw CommandFailure(message: "Trigger requires an event name.") }
-            refreshScripts(for: event, environment: request.environment ?? [:])
+            refreshScripts(for: event, environment: withoutShellVariables(request.environment ?? [:]))
         case .query: break
         }
         return try snapshot(id: request.action == .query ? request.id : nil)
@@ -297,7 +305,7 @@ final class BarStore: NSObject {
             }
             var result: [String: ConfigurationValue] = ["configuration": .object(definition),
                 "defaults": effectiveDocument["defaults"] ?? .object([:]),
-                "origins": .object(origins.filter { $0.key.hasPrefix("widgets.\(id).") }.mapValues(ConfigurationValue.string))]
+                "origins": .object(origins.filter { $0.key.hasPrefix("widgets.\(id).") }.mapValues { .string($0.description) })]
             if let script = scripts[id] {
                 let encoder = JSONEncoder()
                 encoder.dateEncodingStrategy = .iso8601
@@ -353,15 +361,15 @@ final class BarStore: NSObject {
             }
             do {
                 try Task.checkCancellation()
-                _ = try await runCommand("/bin/zsh", arguments: ["-lc", command],
+                _ = try await runCommand("/bin/zsh", arguments: ["-c", command],
                                          timeout: widget.timeout, environment: environment)
                 if let script, scripts[widget.id] === script {
                     script.refresh(ScriptEvent(sender: "action", environment: event.environment))
                 }
-                actionError = nil
+                actionErrors[widget.id] = nil
             } catch {
                 if Task.isCancelled { return }
-                actionError = error.localizedDescription
+                actionErrors[widget.id] = error.localizedDescription
             }
         }
         actions[id] = task
@@ -390,4 +398,9 @@ final class BarStore: NSObject {
         eventObservers.removeAll()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
+}
+
+private func withoutShellVariables(_ environment: [String: String]) -> [String: String] {
+    let shell = shellEnvironment.withLock { $0 }
+    return environment.filter { shell[$0.key] == nil }
 }

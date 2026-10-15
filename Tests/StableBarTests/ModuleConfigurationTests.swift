@@ -302,3 +302,42 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     #expect(store.scripts["status"] !== script)
     #expect(store.configurationError == nil)
 }
+
+@Test func unknownPropertiesFailWithTheirPath() throws {
+    let url = FileManager.default.temporaryDirectory.appending(path: "strict.json")
+    var loader = ConfigurationLoader()
+    for (json, message) in [
+        (#"{"widgets":[{"id":"clock","type":"clock","position":"right","style":{"fontsize":14}}]}"#, "widgets.clock: style.fontsize: Unknown property."),
+        (#"{"widgets":[],"bar":{"heigth":30}}"#, "bar.heigth: Unknown property."),
+        (#"{"widgets":[],"profiles":[{"name":"dark","when":{"apperance":"dark"},"configuration":{}}]}"#, "profiles.0.when.apperance: Unknown property."),
+        (#"{"widgets":[}"#, "The given data was not valid JSON. Unexpected character '}' around line 1, column 13.")
+    ] {
+        let error = #expect(throws: (any Error).self) { try loader.load(url, data: Data(json.utf8)) }
+        #expect(error.map(errorMessage) == message)
+    }
+    #expect(try loader.load(url, data: Data(#"{"$schema":"stablebar.schema.json","widgets":[]}"#.utf8)).widgets.isEmpty)
+}
+
+@Test func schemaListsTheSamePropertiesAsTheDecoders() throws {
+    let url = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appending(path: "stablebar.schema.json")
+    let schema = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: url))
+    func properties(_ definition: ConfigurationValue?) throws -> Set<String> {
+        Set(try (definition?.decoded([String: ConfigurationValue].self)["properties"] ?? .object([:])).decoded([String: ConfigurationValue].self).keys)
+    }
+    let definitions = try schema["definitions"]!.decoded([String: ConfigurationValue].self)
+    let decoders: [String: [CodingKey]] = [
+        "style": WidgetStyle.CodingKeys.allCases, "widget": WidgetConfiguration.CodingKeys.allCases, "bar": BarSettings.CodingKeys.allCases,
+        "block": PopupBlock.CodingKeys.allCases, "popup": PopupConfiguration.CodingKeys.allCases, "option": PopupControlOption.CodingKeys.allCases,
+        "animation": WidgetAnimation.CodingKeys.allCases, "workspace": WorkspaceConfiguration.CodingKeys.allCases,
+        "actions": WidgetActions.CodingKeys.allCases, "menuItem": WidgetMenuItem.CodingKeys.allCases,
+        "provider": ProviderConfiguration.CodingKeys.allCases, "group": WidgetGroupConfiguration.CodingKeys.allCases,
+        "profile": ConfigurationProfile.CodingKeys.allCases, "conditions": ProfileConditions.CodingKeys.allCases,
+        "packageSelection": WidgetPackageSelection.CodingKeys.allCases
+    ]
+    for (name, keys) in decoders {
+        #expect(try properties(definitions[name]) == Set(keys.map(\.stringValue) + (name == "widget" ? ["template"] : [])), "\(name)")
+    }
+    #expect(try properties(.object(schema)) == Set(Configuration.CodingKeys.allCases.map(\.stringValue)
+        + ["$schema", "tokens", "packages", "includes", "profiles", "profile", "widgetOrder"]))
+}

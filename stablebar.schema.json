@@ -1,0 +1,1088 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StableBar configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "includes": {
+      "$ref": "#/definitions/strings",
+      "description": "Files to compose before this one, relative to this file."
+    },
+    "bar": {
+      "$ref": "#/definitions/bar"
+    },
+    "defaults": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/style"
+        },
+        {
+          "$ref": "#/definitions/reference"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "widgets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/widget"
+      }
+    },
+    "templates": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/widget"
+      }
+    },
+    "widgetOverrides": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/widget"
+      },
+      "description": "Properties merged into widgets by ID."
+    },
+    "widgetOrder": {
+      "$ref": "#/definitions/strings",
+      "description": "Widget IDs to place first."
+    },
+    "popups": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/popup"
+      }
+    },
+    "environment": {
+      "$ref": "#/definitions/environment"
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/provider"
+      }
+    },
+    "groups": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/group"
+      }
+    },
+    "tokens": {
+      "type": "object",
+      "description": "Values referenced as \"@token.name\"."
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/profile"
+      }
+    },
+    "profile": {
+      "$ref": "#/definitions/string",
+      "description": "Name of the only profile to apply, or null for automatic matching."
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/packageSelection"
+      }
+    }
+  },
+  "definitions": {
+    "reference": {
+      "type": "string",
+      "pattern": "^@(token|setting)\\."
+    },
+    "number": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "$ref": "#/definitions/reference"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "string": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "boolean": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/definitions/reference"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "color": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+        },
+        {
+          "$ref": "#/definitions/reference"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "#RRGGBB or #RRGGBBAA."
+    },
+    "strings": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "environment": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "position": {
+      "anyOf": [
+        {
+          "enum": [
+            "left",
+            "notchLeft",
+            "center",
+            "notchRight",
+            "right"
+          ]
+        },
+        {
+          "$ref": "#/definitions/reference"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "alignment": {
+      "anyOf": [
+        {
+          "enum": [
+            "leading",
+            "center",
+            "trailing"
+          ]
+        },
+        {
+          "$ref": "#/definitions/reference"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "display": {
+      "anyOf": [
+        {
+          "enum": [
+            "all",
+            "active",
+            "main",
+            "builtIn",
+            "external",
+            "notched",
+            "unnotched"
+          ]
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "foreground": {
+          "$ref": "#/definitions/color"
+        },
+        "background": {
+          "$ref": "#/definitions/color"
+        },
+        "hoverBackground": {
+          "$ref": "#/definitions/color"
+        },
+        "borderColor": {
+          "$ref": "#/definitions/color"
+        },
+        "accent": {
+          "$ref": "#/definitions/color"
+        },
+        "accentText": {
+          "$ref": "#/definitions/color"
+        },
+        "shadowColor": {
+          "$ref": "#/definitions/color"
+        },
+        "hoverForeground": {
+          "$ref": "#/definitions/color"
+        },
+        "borderWidth": {
+          "$ref": "#/definitions/number"
+        },
+        "cornerRadius": {
+          "$ref": "#/definitions/number"
+        },
+        "fontSize": {
+          "$ref": "#/definitions/number"
+        },
+        "iconSize": {
+          "$ref": "#/definitions/number"
+        },
+        "paddingHorizontal": {
+          "$ref": "#/definitions/number"
+        },
+        "paddingVertical": {
+          "$ref": "#/definitions/number"
+        },
+        "spacing": {
+          "$ref": "#/definitions/number"
+        },
+        "width": {
+          "$ref": "#/definitions/number"
+        },
+        "minWidth": {
+          "$ref": "#/definitions/number"
+        },
+        "maxWidth": {
+          "$ref": "#/definitions/number"
+        },
+        "shadowRadius": {
+          "$ref": "#/definitions/number"
+        },
+        "height": {
+          "$ref": "#/definitions/number"
+        },
+        "paddingLeading": {
+          "$ref": "#/definitions/number"
+        },
+        "paddingTrailing": {
+          "$ref": "#/definitions/number"
+        },
+        "paddingTop": {
+          "$ref": "#/definitions/number"
+        },
+        "paddingBottom": {
+          "$ref": "#/definitions/number"
+        },
+        "offsetX": {
+          "$ref": "#/definitions/number"
+        },
+        "offsetY": {
+          "$ref": "#/definitions/number"
+        },
+        "opacity": {
+          "$ref": "#/definitions/number"
+        },
+        "fontName": {
+          "$ref": "#/definitions/string",
+          "description": "\"system\" or an installed font name."
+        },
+        "fontWeight": {
+          "anyOf": [
+            {
+              "enum": [
+                "ultralight",
+                "thin",
+                "light",
+                "regular",
+                "medium",
+                "semibold",
+                "bold"
+              ]
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "Widget style. Unset values inherit from defaults."
+    },
+    "animation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "curve": {
+          "anyOf": [
+            {
+              "enum": [
+                "linear",
+                "easeIn",
+                "easeOut",
+                "easeInOut",
+                "smooth",
+                "spring"
+              ]
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "duration": {
+          "$ref": "#/definitions/number"
+        }
+      }
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rightClick": {
+          "$ref": "#/definitions/string"
+        },
+        "middleClick": {
+          "$ref": "#/definitions/string"
+        },
+        "scrollUp": {
+          "$ref": "#/definitions/string"
+        },
+        "scrollDown": {
+          "$ref": "#/definitions/string"
+        },
+        "mouseEntered": {
+          "$ref": "#/definitions/string"
+        },
+        "mouseExited": {
+          "$ref": "#/definitions/string"
+        }
+      }
+    },
+    "menuItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "$ref": "#/definitions/string"
+        },
+        "detail": {
+          "$ref": "#/definitions/string"
+        },
+        "onClick": {
+          "$ref": "#/definitions/string"
+        }
+      }
+    },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "$ref": "#/definitions/string"
+        },
+        "value": {
+          "$ref": "#/definitions/string"
+        }
+      }
+    },
+    "block": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "anyOf": [
+            {
+              "enum": [
+                "row",
+                "column",
+                "text",
+                "field",
+                "graph",
+                "list",
+                "button",
+                "slider",
+                "toggle",
+                "segmented",
+                "search",
+                "menu",
+                "divider",
+                "image",
+                "symbol",
+                "progress"
+              ]
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "alignment": {
+          "$ref": "#/definitions/alignment"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/block"
+          }
+        },
+        "text": {
+          "$ref": "#/definitions/string"
+        },
+        "field": {
+          "$ref": "#/definitions/string"
+        },
+        "height": {
+          "$ref": "#/definitions/number"
+        },
+        "source": {
+          "$ref": "#/definitions/string"
+        },
+        "row": {
+          "$ref": "#/definitions/block"
+        },
+        "title": {
+          "$ref": "#/definitions/string"
+        },
+        "onClick": {
+          "$ref": "#/definitions/string"
+        },
+        "path": {
+          "$ref": "#/definitions/string"
+        },
+        "fit": {
+          "anyOf": [
+            {
+              "enum": [
+                "fit",
+                "fill"
+              ]
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "$ref": "#/definitions/string"
+        },
+        "animation": {
+          "$ref": "#/definitions/animation"
+        },
+        "styleSource": {
+          "$ref": "#/definitions/string"
+        },
+        "styleField": {
+          "$ref": "#/definitions/string"
+        },
+        "onClickField": {
+          "$ref": "#/definitions/string"
+        },
+        "lineWidth": {
+          "$ref": "#/definitions/number"
+        },
+        "hideWhenEmpty": {
+          "$ref": "#/definitions/string"
+        },
+        "scrollSpeed": {
+          "$ref": "#/definitions/number"
+        },
+        "min": {
+          "$ref": "#/definitions/number"
+        },
+        "max": {
+          "$ref": "#/definitions/number"
+        },
+        "step": {
+          "$ref": "#/definitions/number"
+        },
+        "onChange": {
+          "$ref": "#/definitions/string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/option"
+          }
+        },
+        "searchFields": {
+          "$ref": "#/definitions/strings"
+        }
+      },
+      "description": "A layout block for widget layouts, overlays and popups."
+    },
+    "popup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "$ref": "#/definitions/number"
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layout": {
+          "$ref": "#/definitions/block"
+        },
+        "alignment": {
+          "$ref": "#/definitions/alignment"
+        },
+        "offset": {
+          "$ref": "#/definitions/number"
+        },
+        "dismissOnAction": {
+          "$ref": "#/definitions/boolean"
+        },
+        "dismissOnControl": {
+          "$ref": "#/definitions/boolean"
+        },
+        "animation": {
+          "$ref": "#/definitions/animation"
+        }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "indicator": {
+          "anyOf": [
+            {
+              "enum": [
+                "background",
+                "underline",
+                "none"
+              ]
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "indicatorStyle": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "focusedStyle": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "visibleStyle": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "emptyStyle": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "appStyle": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "focusedAppStyle": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "visibleAppStyle": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "appGlyphs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "showEmpty": {
+          "$ref": "#/definitions/boolean"
+        },
+        "showApps": {
+          "$ref": "#/definitions/boolean"
+        }
+      }
+    },
+    "widget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/string",
+          "description": "Stable, unique widget identifier."
+        },
+        "template": {
+          "$ref": "#/definitions/string",
+          "description": "Name of a template in templates."
+        },
+        "position": {
+          "$ref": "#/definitions/position"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "enum": [
+                "aerospace",
+                "activeApp",
+                "clock",
+                "text",
+                "script",
+                "provider",
+                "spacer",
+                "system",
+                "network",
+                "battery",
+                "audio"
+              ]
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "icon": {
+          "$ref": "#/definitions/string",
+          "description": "SF Symbol name."
+        },
+        "onClick": {
+          "$ref": "#/definitions/string"
+        },
+        "menu": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/menuItem"
+          }
+        },
+        "popup": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/popup"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "popupName": {
+          "$ref": "#/definitions/string"
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "format": {
+          "$ref": "#/definitions/string",
+          "description": "DateFormatter format for clock widgets."
+        },
+        "text": {
+          "$ref": "#/definitions/string"
+        },
+        "command": {
+          "$ref": "#/definitions/string"
+        },
+        "interval": {
+          "$ref": "#/definitions/number",
+          "description": "Seconds between script runs, or null to run only on events."
+        },
+        "display": {
+          "$ref": "#/definitions/display"
+        },
+        "layout": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/block"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "overlay": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/block"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "animation": {
+          "$ref": "#/definitions/animation"
+        },
+        "workspace": {
+          "$ref": "#/definitions/workspace"
+        },
+        "events": {
+          "$ref": "#/definitions/strings"
+        },
+        "environment": {
+          "$ref": "#/definitions/environment"
+        },
+        "timeout": {
+          "$ref": "#/definitions/number"
+        },
+        "actions": {
+          "$ref": "#/definitions/actions"
+        },
+        "enabled": {
+          "$ref": "#/definitions/boolean"
+        },
+        "provider": {
+          "$ref": "#/definitions/string",
+          "description": "Key in providers."
+        },
+        "group": {
+          "$ref": "#/definitions/string",
+          "description": "Key in groups."
+        },
+        "priority": {
+          "$ref": "#/definitions/number"
+        },
+        "overflow": {
+          "anyOf": [
+            {
+              "enum": [
+                "automatic",
+                "never"
+              ]
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "anyOf": [
+            {
+              "enum": [
+                "command",
+                "stream",
+                "system",
+                "network",
+                "battery",
+                "audio"
+              ]
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "command": {
+          "$ref": "#/definitions/string"
+        },
+        "interval": {
+          "$ref": "#/definitions/number"
+        },
+        "timeout": {
+          "$ref": "#/definitions/number"
+        },
+        "environment": {
+          "$ref": "#/definitions/environment"
+        },
+        "whenVisible": {
+          "$ref": "#/definitions/boolean"
+        },
+        "events": {
+          "$ref": "#/definitions/strings"
+        }
+      }
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "bar": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "$ref": "#/definitions/number"
+        },
+        "offset": {
+          "$ref": "#/definitions/number"
+        },
+        "inset": {
+          "$ref": "#/definitions/number"
+        },
+        "spacing": {
+          "$ref": "#/definitions/number"
+        },
+        "background": {
+          "$ref": "#/definitions/color"
+        },
+        "animationDuration": {
+          "$ref": "#/definitions/number"
+        },
+        "notchWidth": {
+          "$ref": "#/definitions/number"
+        },
+        "notchSpacing": {
+          "$ref": "#/definitions/number"
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "conditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "appearance": {
+          "anyOf": [
+            {
+              "enum": [
+                "light",
+                "dark"
+              ]
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "onBattery": {
+          "$ref": "#/definitions/boolean"
+        },
+        "displayCount": {
+          "$ref": "#/definitions/number"
+        },
+        "externalDisplay": {
+          "$ref": "#/definitions/boolean"
+        },
+        "app": {
+          "$ref": "#/definitions/string",
+          "description": "Bundle identifier of the focused app."
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/string"
+        },
+        "when": {
+          "$ref": "#/definitions/conditions"
+        },
+        "configuration": {
+          "$ref": "#/definitions/configuration"
+        }
+      }
+    },
+    "packageSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/string"
+        },
+        "version": {
+          "$ref": "#/definitions/string"
+        },
+        "enabled": {
+          "$ref": "#/definitions/boolean"
+        },
+        "settings": {
+          "type": "object"
+        }
+      }
+    },
+    "configuration": {
+      "$ref": "#"
+    }
+  }
+}

@@ -76,9 +76,12 @@ struct BarView: View {
                     (style.borderColor?.color ?? .clear).frame(height: style.borderWidth ?? 0)
                 }
                 .overlay(alignment: .topTrailing) {
-                    if let error = store.configurationError ?? store.actionError {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 9)).foregroundStyle(.orange).help(error)
+                    if let error = store.configurationError {
+                        Button { store.onCustomize?() } label: {
+                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(.orange)
+                        }
+                        .buttonStyle(.plain)
+                        .help("\(error)\nClick to open Customize StableBar.")
                     }
                 }
                 .animation(reduceMotion ? nil : .easeOut(duration: config.bar.animationDuration), value: style)
@@ -91,7 +94,7 @@ struct BarView: View {
             Button("Open configuration…") { store.openConfiguration() }
             Button("Reload configuration") { store.reloadConfiguration() }
             Button("Reconnect AeroSpace") { store.aerospace.start() }
-            if let error = store.configurationError ?? store.actionError ?? store.aerospace.error {
+            if let error = store.configurationError ?? store.aerospace.error {
                 Divider()
                 Text(error)
             }
@@ -206,7 +209,6 @@ private func widgetPopup(_ widget: WidgetConfiguration, store: BarStore) -> Popu
     if let name = widget.popupName { return store.configuration!.popups[name]! }
     if let menu = store.scripts[widget.id]?.output.menu ?? widget.menu, !menu.isEmpty {
         return PopupConfiguration(
-            height: min(Double(menu.count) * 50 + 24, 480),
             style: WidgetStyle(fontSize: 12, paddingHorizontal: 12, paddingVertical: 12, spacing: 4),
             layout: PopupBlock(content: .menu)
         )
@@ -268,6 +270,11 @@ struct WidgetView: View {
             RoundedRectangle(cornerRadius: appearance.cornerRadius)
                 .strokeBorder(appearance.borderColor, lineWidth: appearance.borderWidth)
         }
+        .overlay(alignment: .topTrailing) {
+            if let error = store.scripts[widget.id]?.error ?? store.actionErrors[widget.id] {
+                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red).font(.system(size: 8)).help(error)
+            }
+        }
         .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
         .overlay(alignment: .bottom) {
             if let overlay = widget.overlay {
@@ -306,11 +313,6 @@ struct WidgetView: View {
         if let layout = widget.layout {
             block(layout, style: style, fillsWidth: false)
                 .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
-                .overlay(alignment: .topTrailing) {
-                    if store.scripts[widget.id]?.error != nil {
-                        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red).font(.system(size: 8))
-                    }
-                }
         } else {
             switch widget.content {
             case .workspaces:
@@ -325,7 +327,7 @@ struct WidgetView: View {
                     Text(store.activeApp?.localizedName ?? "Desktop").lineLimit(1)
                 }
             case let .clock(format):
-                TimelineView(.periodic(from: .now, by: 1)) { context in
+                TimelineView(.periodic(from: Calendar.current.startOfDay(for: .now), by: format.contains("s") ? 1 : 60)) { context in
                     let formatter = DateFormatter()
                     let _ = formatter.dateFormat = format
                     label(formatter.string(from: context.date), icon: widget.icon, appearance: appearance)
@@ -347,11 +349,6 @@ struct WidgetView: View {
                     }
                         .foregroundStyle(hovered ? appearance.hoverForeground : appearance.foreground)
                         .help(script.error ?? script.output.tooltip ?? "")
-                        .overlay(alignment: .topTrailing) {
-                            if script.error != nil {
-                                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red).font(.system(size: 8))
-                            }
-                        }
                 }
             }
         }

@@ -67,7 +67,9 @@ private extension WidgetContent {
     var symbol: String {
         switch self {
         case .spacer: "arrow.left.and.right"
-        case .provider: "gauge.with.dots.needle.33percent"
+        case let .provider(name):
+            ["battery": "battery.100percent", "system": "cpu", "network": "network", "audio": "speaker.wave.2"][name]
+                ?? "gauge.with.dots.needle.33percent"
         case .workspaces: "rectangle.3.group"
         case .activeApp: "macwindow"
         case .clock: "clock"
@@ -75,24 +77,42 @@ private extension WidgetContent {
         case .script: "terminal"
         }
     }
+
+    var newWidgetProperties: [String: ConfigurationValue] {
+        switch self {
+        case .spacer: ["type": .string("spacer")]
+        case let .provider(name): ["type": .string("provider"), "provider": .string(name)]
+        case .workspaces: ["type": .string("aerospace")]
+        case .activeApp: ["type": .string("activeApp")]
+        case let .clock(format): ["type": .string("clock"), "format": .string(format)]
+        case let .text(text): ["type": .string("text"), "text": .string(text)]
+        case let .script(command, interval): ["type": .string("script"), "command": .string(command), "interval": interval.map(ConfigurationValue.number) ?? .null]
+        }
+    }
 }
+
+private let newWidgets: [WidgetContent] = [
+    .text("New widget"), .clock(format: "EEE d MMM  HH:mm"), .activeApp, .workspaces,
+    .provider("battery"), .provider("system"), .provider("network"), .provider("audio"),
+    .script(command: "date +%H:%M", interval: 30), .spacer
+]
 
 private struct ConfigurationEditorView: View {
     let store: BarStore
     @State private var editor: ConfigurationEditor
     @State private var advanced = "{}"
+    @State private var showsBar = false
+    @Environment(\.colorScheme) private var colorScheme
 
     init(store: BarStore) {
         self.store = store
         _editor = State(initialValue: ConfigurationEditor(store: store))
     }
 
-    private var widgets: [WidgetConfiguration] { editor.preview.configuration?.widgets ?? [] }
+    private var widgets: [WidgetConfiguration] { store.configuration?.widgets ?? [] }
 
     var body: some View {
         VStack(spacing: 0) {
-            preview.padding(16)
-            Divider()
             HSplitView {
                 sidebar.frame(minWidth: 210, maxWidth: 280)
                 Group {
@@ -105,7 +125,7 @@ private struct ConfigurationEditorView: View {
                 }
                 .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
             }
-            if let error = editor.error {
+            if let error = editor.error ?? store.configurationError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
                     .foregroundStyle(.red)
@@ -118,30 +138,10 @@ private struct ConfigurationEditorView: View {
             Divider()
             footer
         }
-        .onChange(of: store.effectiveDocument) { editor.refresh() }
-    }
-
-    private var preview: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("PREVIEW").font(.system(size: 10, weight: .semibold)).tracking(1.4)
-                Spacer()
-                Text("Changes show here before you save").font(.caption)
-            }
-            .foregroundStyle(.secondary)
-            if let screen = NSScreen.main {
-                let actual = BarDisplay(screen: screen)
-                let display = BarDisplay(id: actual.id, isBuiltIn: actual.isBuiltIn, isMain: actual.isMain, notch: nil)
-                BarView(store: editor.preview, display: display)
-                    .frame(height: editor.preview.configuration?.bar.height ?? 40)
-                    .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity)
-                    .background(Color(nsColor: .underPageBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
-                    .allowsHitTesting(false)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Preview of your bar")
-            }
+        .onChange(of: editor.selected, initial: true) {
+            var properties = editor.selected
+            properties["id"] = nil
+            advanced = (try? String(decoding: configurationData(properties), as: UTF8.self)) ?? "{}"
         }
     }
 
@@ -179,26 +179,35 @@ private struct ConfigurationEditorView: View {
             .listStyle(.sidebar)
             Divider()
             HStack(spacing: 0) {
-                Button {
-                    let id = "widget-" + UUID().uuidString.prefix(8).lowercased()
-                    editor.change(ConfigurationEdit(action: .add, properties: ["id": .string(id),
-                        "type": .string("text"), "position": .string("left"), "text": .string("New widget")]))
-                    editor.selectedID = id
+                Menu {
+                    ForEach(Array(newWidgets.enumerated()), id: \.offset) { _, content in
+                        Button(content.title, systemImage: content.symbol) {
+                            let id = "widget-" + UUID().uuidString.prefix(8).lowercased()
+                            editor.change(ConfigurationEdit(action: .add, properties: content.newWidgetProperties
+                                .merging(["id": .string(id), "position": .string("left")]) { $1 }))
+                            editor.selectedID = id
+                        }
+                    }
                 } label: {
                     Image(systemName: "plus").frame(width: 28, height: 24)
                 }
-                .help("Add a text widget")
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Add a widget")
                 Divider().frame(height: 16)
                 Button {
                     editor.change(ConfigurationEdit(action: .remove, id: editor.selectedID!))
-                    editor.selectedID = editor.preview.configuration?.widgets.first?.id
                 } label: {
                     Image(systemName: "minus").frame(width: 28, height: 24)
                 }
                 .help("Remove the selected widget")
                 .disabled(editor.selectedID == nil)
                 Spacer()
-                Text("Drag to reorder").font(.caption).foregroundStyle(.tertiary).padding(.trailing, 10)
+                Button("Bar", systemImage: "rectangle.topthird.inset.filled") { showsBar = true }
+                    .help("Bar size and default widget style")
+                    .popover(isPresented: $showsBar) { barSettings }
+                    .padding(.trailing, 6)
             }
             .buttonStyle(.borderless)
             .padding(4)
@@ -246,31 +255,37 @@ private struct ConfigurationEditorView: View {
                 }
             }
             Section("Appearance") {
-                ColorPicker("Text color", selection: color("foreground", fallback: "#1d1d1fff"))
-                ColorPicker("Background", selection: color("background", fallback: "#f8f8faed"))
-                styleNumber("Font size", key: "fontSize", fallback: 12, unit: "pt")
-                styleNumber("Horizontal padding", key: "paddingHorizontal", fallback: 10, unit: "pt")
-                styleNumber("Corner radius", key: "cornerRadius", fallback: 14, unit: "pt")
+                colorPicker("Text color", value: editor.selectedStyle["foreground"], fallback: builtInStyle.foreground!) {
+                    editor.set(["style": .object(["foreground": .string($0)])])
+                }
+                colorPicker("Background", value: editor.selectedStyle["background"], fallback: builtInStyle.background!) {
+                    editor.set(["style": .object(["background": .string($0)])])
+                }
+                ForEach([("Font size", "fontSize", 12.0), ("Horizontal padding", "paddingHorizontal", 10), ("Corner radius", "cornerRadius", 14)],
+                        id: \.1) { title, key, fallback in
+                    numberField(title, value: editor.selectedStyle[key], fallback: fallback) {
+                        editor.set(["style": .object([key: .number($0)])])
+                    }
+                }
             }
             Section {
                 DisclosureGroup("Advanced properties") {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Merge any widget properties as JSON. Templates and included files stay intact.")
+                        Text("Edit this widget's properties as JSON. Removing a property clears it. Templates and included files stay intact.")
                             .font(.caption).foregroundStyle(.secondary)
                         TextEditor(text: $advanced)
                             .font(.system(.body, design: .monospaced))
                             .scrollContentBackground(.hidden)
                             .padding(6)
-                            .frame(height: 120)
+                            .frame(height: 160)
                             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
                             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
                         HStack {
                             Spacer()
-                            Button("Preview properties") {
+                            Button("Apply properties") {
                                 do {
-                                    let properties = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(advanced.utf8))
-                                    editor.change(ConfigurationEdit(action: .set, id: editor.selectedID!, properties: properties))
-                                } catch { editor.error = error.localizedDescription }
+                                    editor.replaceProperties(try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(advanced.utf8)))
+                                } catch { editor.error = errorMessage(error) }
                             }
                         }
                     }
@@ -279,6 +294,36 @@ private struct ConfigurationEditorView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private var barSettings: some View {
+        var bar: [String: ConfigurationValue] = [:]
+        var defaults: [String: ConfigurationValue] = [:]
+        if case let .object(object) = store.effectiveDocument["bar"] { bar = object }
+        if case let .object(object) = store.effectiveDocument["defaults"] { defaults = object }
+        return Form {
+            Section("Bar") {
+                ForEach([("Height", "height", 40.0), ("Offset from top", "offset", 0), ("Side inset", "inset", 12), ("Spacing", "spacing", 8)],
+                        id: \.1) { title, key, fallback in
+                    numberField(title, value: bar[key], fallback: fallback) {
+                        editor.change(ConfigurationEdit(action: .bar, properties: [key: .number($0)]))
+                    }
+                }
+            }
+            Section("All widgets") {
+                colorPicker("Text color", value: defaults["foreground"], fallback: builtInStyle.foreground!) {
+                    editor.change(ConfigurationEdit(action: .defaults, properties: ["foreground": .string($0)]))
+                }
+                colorPicker("Background", value: defaults["background"], fallback: builtInStyle.background!) {
+                    editor.change(ConfigurationEdit(action: .defaults, properties: ["background": .string($0)]))
+                }
+                numberField("Font size", value: defaults["fontSize"], fallback: 12) {
+                    editor.change(ConfigurationEdit(action: .defaults, properties: ["fontSize": .number($0)]))
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 340)
     }
 
     private var footer: some View {
@@ -292,22 +337,20 @@ private struct ConfigurationEditorView: View {
             .labelStyle(.iconOnly)
             .fixedSize()
             Group {
-                if !editor.edits.isEmpty {
-                    Text("^[\(editor.edits.count) unsaved change](inflect: true)")
-                } else if !store.sessionEdits.isEmpty {
-                    Text("Live edits not saved yet")
-                } else {
+                if store.sessionEdits.isEmpty {
                     Text("All changes saved")
+                } else {
+                    Text("^[\(store.sessionEdits.count) unsaved change](inflect: true)")
                 }
             }
             .font(.callout)
             .foregroundStyle(.secondary)
             Spacer()
-            Button("Discard", action: editor.discard).disabled(editor.edits.isEmpty)
-            Button("Apply and Save", action: editor.apply)
+            Button("Discard", action: editor.discard).disabled(store.sessionEdits.isEmpty)
+            Button("Save", action: editor.save)
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut("s")
-                .disabled(editor.error != nil || (editor.edits.isEmpty && store.sessionEdits.isEmpty))
+                .disabled(store.sessionEdits.isEmpty)
         }
         .controlSize(.large)
         .padding(.horizontal, 16)
@@ -319,37 +362,33 @@ private struct ConfigurationEditorView: View {
                 set: { editor.set([key: .string($0)]) })
     }
 
-    private func styleNumber(_ title: String, key: String, fallback: Double, unit: String) -> some View {
+    private func numberField(_ title: String, value: ConfigurationValue?, fallback: Double, set: @escaping (Double) -> Void) -> some View {
         let displayed: Double
-        if case let .number(value) = editor.selectedStyle[key] { displayed = value }
+        if case let .number(number) = value { displayed = number }
         else { displayed = fallback }
-        let value = Binding(get: { displayed }, set: {
-            if editor.error != nil || $0 != displayed { editor.set(["style": .object([key: .number($0)])]) }
-        })
+        let binding = Binding(get: { displayed }, set: { if $0 != displayed { set($0) } })
         return LabeledContent(title) {
             HStack(spacing: 6) {
-                TextField(title, value: value, format: .number)
+                TextField(title, value: binding, format: .number)
                     .labelsHidden()
                     .multilineTextAlignment(.trailing)
                     .frame(width: 52)
-                Text(unit).foregroundStyle(.secondary)
-                Stepper(title, value: value, in: 0...200).labelsHidden()
+                Text("pt").foregroundStyle(.secondary)
+                Stepper(title, value: binding, in: 0...200).labelsHidden()
             }
         }
     }
 
-    private func color(_ key: String, fallback: String) -> Binding<Color> {
-        Binding(get: {
-            let value: ConfigurationValue
-            if let configured = editor.selectedStyle[key] { value = configured }
-            else { value = .string(fallback) }
-            return (try? value.decoded(HexColor.self))?.color ?? .clear
+    private var builtInStyle: WidgetStyle { colorScheme == .dark ? .dark : .light }
+
+    private func colorPicker(_ title: String, value: ConfigurationValue?, fallback: HexColor, set: @escaping (String) -> Void) -> some View {
+        ColorPicker(title, selection: Binding(get: {
+            ((try? value?.decoded(HexColor.self)) ?? fallback).color
         }, set: {
             let color = NSColor($0).usingColorSpace(.sRGB)!
-            let hex = String(format: "#%02x%02x%02x%02x", Int((color.redComponent * 255).rounded()),
-                             Int((color.greenComponent * 255).rounded()), Int((color.blueComponent * 255).rounded()),
-                             Int((color.alphaComponent * 255).rounded()))
-            editor.set(["style": .object([key: .string(hex)])])
-        })
+            set(String(format: "#%02x%02x%02x%02x", Int((color.redComponent * 255).rounded()),
+                       Int((color.greenComponent * 255).rounded()), Int((color.blueComponent * 255).rounded()),
+                       Int((color.alphaComponent * 255).rounded())))
+        }))
     }
 }

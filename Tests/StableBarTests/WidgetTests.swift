@@ -92,7 +92,7 @@ import Testing
 }
 
 @Test func zeroIntervalCannotStartABusyLoop() {
-    #expect(throws: DecodingError.self) {
+    #expect(throws: CommandFailure.self) {
         try JSONDecoder().decode(Configuration.self, from: Data(#"{"widgets":[{"id":"test","type":"script","position":"left","command":"date","interval":0}]}"#.utf8))
     }
 }
@@ -197,7 +197,7 @@ import Testing
 }
 
 @Test func setupKeepsUntouchedConfigurationByteForByte() throws {
-    let data = Data(#"{ "widgets": [{"id":"time","type":"clock","position":"right","format":"HH.mm"}], "custom": true }"#.utf8)
+    let data = Data(#"{ "widgets": [{"id":"time","type":"clock","position":"right","format":"HH.mm"}], "bar": {"height": 30} }"#.utf8)
     #expect(try SetupPreferences().applying(to: data, menuBarHeight: 38) == data)
 }
 
@@ -209,9 +209,8 @@ import Testing
       "widgets": [
         {"id": "time", "type": "clock", "position": "right", "format": "HH.mm", "style": {"foreground": "#abcdef"}},
         {"id": "custom", "type": "script", "position": "left", "command": "~/my-widget.sh", "interval": 12,
-         "layout": {"type": "field", "field": "text"}, "events": ["wake"], "futureSetting": true}
-      ],
-      "futureRoot": {"enabled": true}
+         "layout": {"type": "field", "field": "text"}, "events": ["wake"]}
+      ]
     }
     """##.utf8)
     let preferences = SetupPreferences(appearance: .dark, placement: .belowMenuBar, clock: .twelveHour)
@@ -228,7 +227,6 @@ import Testing
     let original = try JSONSerialization.jsonObject(with: data) as! [String: Any]
     let result = try JSONSerialization.jsonObject(with: updated) as! [String: Any]
     #expect((original["widgets"] as! [NSDictionary])[1] == (result["widgets"] as! [NSDictionary])[1])
-    #expect(original["futureRoot"] as! NSDictionary == result["futureRoot"] as! NSDictionary)
     let clockOnly = try SetupPreferences(clock: .twentyFourHour).applying(to: updated, menuBarHeight: 24)
     let clockResult = try JSONSerialization.jsonObject(with: clockOnly) as! [String: Any]
     #expect(clockResult["defaults"] as! NSDictionary == result["defaults"] as! NSDictionary)
@@ -236,7 +234,7 @@ import Testing
 }
 
 @Test func setupRejectsInvalidConfigurationBeforeEditing() {
-    #expect(throws: DecodingError.self) {
+    #expect(throws: CommandFailure.self) {
         try SetupPreferences(appearance: .dark).applying(
             to: Data(#"{"widgets":[{"id":"custom","type":"script","position":"left","command":"date","interval":0}]}"#.utf8),
             menuBarHeight: 24)
@@ -248,7 +246,7 @@ import Testing
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let module = directory.appending(path: "clocks.json")
-    let moduleData = Data(#"{"widgets":[{"id":"imported","type":"clock","position":"right","format":"HH.mm"}],"widgetOverrides":{"local":{"format":"ss"}}}"#.utf8)
+    let moduleData = Data(#"{"widgets":[{"id":"imported","type":"clock","position":"right","format":"HH.mm"}]}"#.utf8)
     try moduleData.write(to: module)
     let root = directory.appending(path: "config.json")
     let data = Data(#"""
@@ -265,12 +263,13 @@ import Testing
     #expect(configuration.widgets.map(\.content) == [.clock(format: "EEE d MMM  h:mm a"), .clock(format: "EEE d MMM  h:mm a")])
     #expect(configuration.widgets[0].style.fontSize == 15)
     #expect(try Data(contentsOf: module) == moduleData)
-    let document = try JSONSerialization.jsonObject(with: updated) as! [String: Any]
-    #expect(document["includes"] as? [String] == ["clocks.json"])
-    #expect((document["widgets"] as! [[String: Any]]).count == 1)
+    let document = try JSONDecoder().decode([String: ConfigurationValue].self, from: updated)
+    #expect(document["includes"] == .array([.string("clocks.json")]))
+    #expect(document["widgets"] == .array([.object(["id": .string("local"), "template": .string("clock"), "format": .string("EEE d MMM  h:mm a")])]))
+    #expect(document["widgetOverrides"] == .object(["imported": .object(["style": .object(["fontSize": .number(15)]), "format": .string("EEE d MMM  h:mm a")])]))
 }
 
-@Test func setupPreferencesOverrideActiveProfileAndPreserveOtherCustomizations() throws {
+@Test func setupWritesRootSettingsThatActiveProfilesCanStillOverride() throws {
     let root = FileManager.default.temporaryDirectory.appending(path: "setup-profile.json")
     let data = Data(##"""
     {
@@ -281,31 +280,23 @@ import Testing
         "defaults": {"foreground": "#112233"},
         "bar": {"offset": 90},
         "widgetOverrides": {"clock": {"format": "ss"}}
-      }}],
-      "customization": {
-        "defaults": {"accent": "#ff8800"},
-        "bar": {"height": 48, "offset": 100},
-        "widgetOverrides": {"clock": {"format": "mm", "style": {"fontSize": 20}}}
-      }
+      }}]
     }
     """##.utf8)
     let updated = try SetupPreferences(appearance: .dark, placement: .belowMenuBar, clock: .twelveHour)
         .applying(to: data, menuBarHeight: 24, configurationURL: root)
+    let document = try JSONDecoder().decode([String: ConfigurationValue].self, from: updated)
+    let original = try JSONDecoder().decode([String: ConfigurationValue].self, from: data)
+    #expect(document["bar"] == .object(["height": .number(40), "offset": .number(24)]))
+    #expect(try document["defaults"]?.decoded(WidgetStyle.self).foreground == HexColor(0xf5f5f7ff))
+    #expect(document["widgets"] == .array([.object(["id": .string("clock"), "type": .string("clock"), "position": .string("right"),
+                                                    "format": .string("EEE d MMM  h:mm a")])]))
+    #expect(document["profiles"] == original["profiles"])
     var loader = ConfigurationLoader()
     let configuration = try loader.load(root, data: updated)
-    #expect(configuration.defaults.foreground == HexColor(0xf5f5f7ff))
-    #expect(configuration.defaults.accent == HexColor(0xff8800ff))
-    #expect(configuration.defaults.fontSize == 16)
-    #expect(configuration.bar.height == 48)
-    #expect(configuration.bar.offset == 24)
-    #expect(configuration.widgets[0].content == .clock(format: "EEE d MMM  h:mm a"))
-    #expect(configuration.widgets[0].style.fontSize == 20)
-    let original = try JSONSerialization.jsonObject(with: data) as! [String: Any]
-    let result = try JSONSerialization.jsonObject(with: updated) as! [String: Any]
-    for key in ["defaults", "bar"] {
-        #expect(original[key] as! NSDictionary == result[key] as! NSDictionary)
-    }
-    #expect(original["profiles"] as! NSArray == result["profiles"] as! NSArray)
+    #expect(configuration.defaults.foreground == HexColor(0x112233ff))
+    #expect(configuration.bar.offset == 90)
+    #expect(configuration.widgets[0].content == .clock(format: "ss"))
 }
 
 @Test func setupFindsClocksIntroducedByTheCurrentProfile() throws {

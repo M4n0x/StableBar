@@ -2,6 +2,8 @@ import Foundation
 
 enum ProviderType: String, Decodable, Sendable {
     case command, stream, battery, network, system, audio
+
+    var isNative: Bool { self != .command && self != .stream }
 }
 
 struct ProviderConfiguration: Decodable, Equatable, Sendable {
@@ -13,9 +15,20 @@ struct ProviderConfiguration: Decodable, Equatable, Sendable {
     let whenVisible: Bool
     let events: [String]
 
-    enum CodingKeys: String, CodingKey { case type, command, interval, timeout, environment, whenVisible, events }
+    enum CodingKeys: String, CodingKey, CaseIterable { case type, command, interval, timeout, environment, whenVisible, events }
+
+    init(type: ProviderType) {
+        self.type = type
+        command = nil
+        interval = 5
+        timeout = 10
+        environment = [:]
+        whenVisible = false
+        events = []
+    }
 
     init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         type = try values.decode(ProviderType.self, forKey: .type)
         switch type {

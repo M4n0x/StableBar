@@ -43,8 +43,7 @@ struct StableBarApp {
                 withExtendedLifetime(delegate) { app.run() }
             }
         } catch {
-            let message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
-            FileHandle.standardError.write(Data("\(message)\n".utf8))
+            FileHandle.standardError.write(Data("\(errorMessage(error))\n".utf8))
             exit(1)
         }
     }
@@ -92,10 +91,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.terminate(nil)
             return
         }
-        store.start()
-        systemContext = SystemContext { [store] in store.refreshContext() }
-        systemContext!.start()
-        if !UserDefaults.standard.bool(forKey: "setupCompleted") { showSetup() }
+        Task {
+            try? await loadLoginShellEnvironment()
+            store.start()
+            systemContext = SystemContext { [store] in store.refreshContext() }
+            systemContext!.start()
+            if !UserDefaults.standard.bool(forKey: "setupCompleted") { showSetup() }
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(sleeping),
@@ -168,7 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         addItem("Open configuration…", action: #selector(openConfiguration), to: menu)
         addItem("Reload configuration", action: #selector(reloadConfiguration), to: menu)
         addItem("Reconnect AeroSpace", action: #selector(reconnect), to: menu)
-        if let error = store.configurationError ?? store.actionError ?? store.aerospace.error {
+        if let error = store.configurationError ?? store.aerospace.error {
             menu.addItem(.separator())
             menu.addItem(withTitle: error, action: nil, keyEquivalent: "")
         }

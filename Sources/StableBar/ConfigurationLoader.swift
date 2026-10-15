@@ -34,6 +34,10 @@ indirect enum ConfigurationValue: Codable, Sendable, Equatable {
         try JSONDecoder().decode(type, from: JSONEncoder().encode(self))
     }
 
+    func decoded<T: Decodable>(_ type: T.Type, at key: String) throws -> T {
+        try ConfigurationValue.object([key: self]).decoded([String: T].self)[key]!
+    }
+
     func overriding(_ earlier: ConfigurationValue) -> ConfigurationValue {
         if case let .object(base) = earlier, case let .object(next) = self {
             return .object(base.merging(next) { $1.overriding($0) })
@@ -42,13 +46,49 @@ indirect enum ConfigurationValue: Codable, Sendable, Equatable {
     }
 }
 
+struct ConfigurationKey: CodingKey {
+    let stringValue: String
+    var intValue: Int? { nil }
+    init(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { nil }
+}
+
+extension Decoder {
+    func rejectUnknownKeys<Key: CodingKey & CaseIterable>(_: Key.Type, allowing extra: [String] = []) throws {
+        let container = try container(keyedBy: ConfigurationKey.self)
+        let known = Set(Key.allCases.map(\.stringValue) + extra)
+        if let key = container.allKeys.first(where: { !known.contains($0.stringValue) }) {
+            throw DecodingError.dataCorruptedError(forKey: key, in: container, debugDescription: "Unknown property.")
+        }
+    }
+}
+
+func errorMessage(_ error: Error) -> String {
+    let context: DecodingError.Context
+    var message: String
+    switch error as? DecodingError {
+    case let .keyNotFound(key, keyContext)?:
+        context = keyContext
+        message = "Missing property \(key.stringValue)."
+    case let .dataCorrupted(errorContext)?, let .typeMismatch(_, errorContext)?, let .valueNotFound(_, errorContext)?:
+        context = errorContext
+        message = errorContext.debugDescription
+        if let detail = (errorContext.underlyingError as? NSError)?.userInfo[NSDebugDescriptionErrorKey] as? String {
+            message += " \(detail)"
+        }
+    default:
+        return error.localizedDescription
+    }
+    let path = context.codingPath.map { $0.intValue.map(String.init) ?? $0.stringValue }.joined(separator: ".")
+    return path.isEmpty ? message : "\(path): \(message)"
+}
+
 enum ConfigurationCompositionError: LocalizedError {
     case includeCycle([URL])
     case unknownTemplate(String)
     case templateCycle([String])
     case unknownWidgetOverride(String)
     case widgetOverrideID(String)
-    case unknownWidgetOrder(String)
     case duplicateWidgetOrder(String)
 
     var errorDescription: String? {
@@ -58,7 +98,6 @@ enum ConfigurationCompositionError: LocalizedError {
         case let .templateCycle(names): "Widget template cycle: \(names.joined(separator: " → "))."
         case let .unknownWidgetOverride(id): "Unknown widget override target: \(id)."
         case let .widgetOverrideID(id): "Widget override \(id) cannot contain an id field."
-        case let .unknownWidgetOrder(id): "Unknown widget order target: \(id)."
         case let .duplicateWidgetOrder(id): "Duplicate widget order target: \(id)."
         }
     }
@@ -75,13 +114,25 @@ func expandWidgetTemplate(_ definition: [String: ConfigurationValue],
     guard let template = templates[name] else {
         throw ConfigurationCompositionError.unknownTemplate(name)
     }
-    let inherited = try expandWidgetTemplate(template, templates: templates, path: path + [name])
-    return inherited.merging(definition) { $1.overriding($0) }
+    var expanded = try expandWidgetTemplate(template, templates: templates, path: path + [name]).merging(definition) { $1.overriding($0) }
+    expanded["template"] = nil
+    return expanded
+}
+
+struct ConfigurationOrigin: Equatable, Sendable, CustomStringConvertible {
+    let file: String
+    var detail = ""
+
+    var description: String { detail.isEmpty ? file : "\(file) \(detail)" }
+
+    func appending(_ text: String) -> ConfigurationOrigin {
+        ConfigurationOrigin(file: file, detail: detail.isEmpty ? text : "\(detail) \(text)")
+    }
 }
 
 struct ConfigurationLayer {
     var values: [String: ConfigurationValue]
-    var origins: [String: String]
+    var origins: [String: ConfigurationOrigin]
 
     mutating func merge(_ next: ConfigurationLayer) throws {
         let widgets = try (values["widgets"]?.decoded([ConfigurationValue].self) ?? [])
@@ -105,7 +156,7 @@ struct ConfigurationLayer {
     }
 }
 
-func configurationOrigins(_ value: ConfigurationValue, source: String, path: String = "") -> [String: String] {
+func configurationOrigins(_ value: ConfigurationValue, source: ConfigurationOrigin, path: String = "") -> [String: ConfigurationOrigin] {
     var origins = path.isEmpty ? [:] : [path: source]
     switch value {
     case let .object(object):
@@ -129,8 +180,9 @@ func configurationOrigins(_ value: ConfigurationValue, source: String, path: Str
 struct ConfigurationLoader {
     private(set) var dependencies: Set<URL> = []
     private(set) var document: [String: ConfigurationValue] = [:]
-    private(set) var origins: [String: String] = [:]
+    private(set) var origins: [String: ConfigurationOrigin] = [:]
     private(set) var activeProfiles: [String] = []
+    private(set) var matchesApps = false
     private(set) var templates: [String: [String: ConfigurationValue]] = [:]
     private var packageSources: [String: URL] = [:]
 
@@ -147,7 +199,7 @@ struct ConfigurationLoader {
         let base = try read(url.standardizedFileURL, data: data, path: [])
         let packageStore = WidgetPackageStore(directory: url.deletingLastPathComponent().appending(path: "packages"))
         var layer = ConfigurationLayer(values: ["widgets": .array([])], origins: [:])
-        for selection in try base.values["packages"]?.decoded([WidgetPackageSelection].self) ?? [] where selection.enabled {
+        for selection in try base.values["packages"]?.decoded([WidgetPackageSelection].self, at: "packages") ?? [] where selection.enabled {
             let directory = try packageStore.directory(id: selection.id, version: selection.version)
             dependencies.insert(directory.appending(path: "package.json"))
             let manifest = try packageStore.manifest(at: directory)
@@ -164,7 +216,8 @@ struct ConfigurationLoader {
     mutating func finish(_ input: ConfigurationLayer, context: ConfigurationContext) throws -> [String: ConfigurationValue] {
         var layer = input
         activeProfiles = []
-        let profiles = try layer.values["profiles"]?.decoded([ConfigurationProfile].self) ?? []
+        let profiles = try layer.values["profiles"]?.decoded([ConfigurationProfile].self, at: "profiles") ?? []
+        matchesApps = profiles.contains { $0.when?.app != nil }
         let selected = try layer.values["profile"].flatMap { try $0.decoded(String?.self) }
         var names = Set<String>()
         for profile in profiles {
@@ -174,21 +227,13 @@ struct ConfigurationLoader {
         for (index, profile) in profiles.enumerated() {
             let matches = selected.map { $0 == profile.name } ?? (profile.when?.matches(context) ?? true)
             if matches {
-                let source = "\(layer.origins["profiles.\(index).name"]!) (profile \(profile.name))"
+                let source = layer.origins["profiles.\(index).name"]!.appending("(profile \(profile.name))")
                 try layer.merge(ConfigurationLayer(values: profile.configuration,
                     origins: configurationOrigins(.object(profile.configuration), source: source)))
                 activeProfiles.append(profile.name)
             }
         }
-        let strictOverrides = layer.values["widgetOverrides"] ?? .object([:])
-        let customization = try input.values["customization"]?.decoded([String: ConfigurationValue].self) ?? [:]
-        if !customization.isEmpty {
-            let origins = Dictionary(uniqueKeysWithValues: input.origins.compactMap { path, source in
-                path.hasPrefix("customization.") ? (String(path.dropFirst(14)), "\(source) (customization)") : nil
-            })
-            try layer.merge(ConfigurationLayer(values: customization, origins: origins))
-        }
-        for key in ["profiles", "profile", "customization"] { layer.values.removeValue(forKey: key) }
+        for key in ["profiles", "profile"] { layer.values.removeValue(forKey: key) }
         let tokens = try layer.values["tokens"]?.decoded([String: ConfigurationValue].self) ?? [:]
         let beforeTokens = layer.values
         layer.values = try substituteConfigurationReferences(.object(layer.values), prefix: "@token.", values: tokens)
@@ -196,13 +241,11 @@ struct ConfigurationLoader {
         layer.origins.merge(try tokenOrigins(.object(beforeTokens), origins: layer.origins, tokens: tokens)) { $1 }
         templates = try layer.values["templates"]?.decoded([String: [String: ConfigurationValue]].self) ?? [:]
         let overrides = try layer.values["widgetOverrides"]?.decoded([String: [String: ConfigurationValue]].self) ?? [:]
-        let removed = Set(try layer.values["removedWidgets"]?.decoded([String].self) ?? [])
         let definitions = try layer.values["widgets"]!.decoded([[String: ConfigurationValue]].self)
         var widgets: [[String: ConfigurationValue]] = []
         for definition in definitions {
             var expanded = try expandWidgetTemplate(definition, templates: templates)
             let id = try (expanded["id"] ?? .null).decoded(String.self)
-            if removed.contains(id) { continue }
             if let properties = overrides[id] {
                 guard properties["id"] == nil else { throw ConfigurationCompositionError.widgetOverrideID(id) }
                 expanded.merge(properties) { $1.overriding($0) }
@@ -214,9 +257,8 @@ struct ConfigurationLoader {
             }
             let overridePrefix = "widgetOverrides.\(id)."
             for (path, source) in layer.origins where path.hasPrefix(overridePrefix) {
-                propertyOrigins[String(path.dropFirst(overridePrefix.count))] = "\(source) (widget override)"
+                propertyOrigins[String(path.dropFirst(overridePrefix.count))] = source.appending("(widget override)")
             }
-            expanded.removeValue(forKey: "template")
             for (path, source) in propertyOrigins { layer.origins["\(widgetPrefix).\(path)"] = source }
             widgets.append(expanded)
         }
@@ -225,48 +267,44 @@ struct ConfigurationLoader {
         for id in ids where !uniqueIDs.insert(id).inserted {
             throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Duplicate widget id: \(id). Each widget needs a stable, unique id."))
         }
-        let requiredOverrides = try substituteConfigurationReferences(strictOverrides, prefix: "@token.", values: tokens)
-            .decoded([String: ConfigurationValue].self)
-        for id in requiredOverrides.keys where !ids.contains(id) && !removed.contains(id) {
+        for id in overrides.keys where !ids.contains(id) {
             throw ConfigurationCompositionError.unknownWidgetOverride(id)
         }
-        var order = try layer.values["widgetOrder"]?.decoded([String].self) ?? []
-        if customization["widgetOrder"] != nil { order = order.filter(ids.contains) }
+        let order = try (layer.values["widgetOrder"]?.decoded([String].self) ?? []).filter(ids.contains)
         var orderedIDs = Set<String>()
-        for id in order {
-            guard orderedIDs.insert(id).inserted else { throw ConfigurationCompositionError.duplicateWidgetOrder(id) }
-            guard ids.contains(id) else { throw ConfigurationCompositionError.unknownWidgetOrder(id) }
+        for id in order where !orderedIDs.insert(id).inserted {
+            throw ConfigurationCompositionError.duplicateWidgetOrder(id)
         }
         let ordered = order.compactMap { id in widgets.first { $0["id"] == .string(id) } }
             + zip(ids, widgets).filter { !orderedIDs.contains($0.0) }.map(\.1)
         layer.values["widgets"] = .array(ordered.map { .object($0) })
-        for key in ["templates", "widgetOverrides", "includes", "removedWidgets", "widgetOrder"] {
+        for key in ["templates", "widgetOverrides", "includes", "widgetOrder"] {
             layer.values.removeValue(forKey: key)
         }
         document = try preparePackageAssets(.object(layer.values), origins: layer.origins, sources: packageSources)
             .decoded([String: ConfigurationValue].self)
-        let finalPaths = configurationOrigins(.object(document), source: "")
+        let finalPaths = configurationOrigins(.object(document), source: ConfigurationOrigin(file: ""))
         origins = layer.origins.filter { finalPaths[$0.key] != nil }
         return document
     }
 
-    private func tokenOrigins(_ value: ConfigurationValue, path: String = "", inheritedSource: String = "",
-                              origins: [String: String], tokens: [String: ConfigurationValue]) throws -> [String: String] {
+    private func tokenOrigins(_ value: ConfigurationValue, path: String = "", inheritedSource: ConfigurationOrigin = ConfigurationOrigin(file: ""),
+                              origins: [String: ConfigurationOrigin], tokens: [String: ConfigurationValue]) throws -> [String: ConfigurationOrigin] {
         let source = origins[path] ?? inheritedSource
         switch value {
         case let .string(reference) where reference.hasPrefix("@token."):
             let name = String(reference.dropFirst(7))
             let resolved = try substituteConfigurationReferences(value, prefix: "@token.", values: tokens)
-            return configurationOrigins(resolved, source: "\(source) → token \(name) (\(origins["tokens.\(name)"]!))", path: path)
+            return configurationOrigins(resolved, source: source.appending("→ token \(name) (\(origins["tokens.\(name)"]!))"), path: path)
         case let .object(object):
-            var result: [String: String] = [:]
+            var result: [String: ConfigurationOrigin] = [:]
             for (key, child) in object {
                 result.merge(try tokenOrigins(child, path: path.isEmpty ? key : "\(path).\(key)",
                                               inheritedSource: source, origins: origins, tokens: tokens)) { $1 }
             }
             return result
         case let .array(array):
-            var result: [String: String] = [:]
+            var result: [String: ConfigurationOrigin] = [:]
             for (index, child) in array.enumerated() {
                 var key = String(index)
                 if path == "widgets", case let .object(widget) = child, case let .string(id) = widget["id"] { key = id }
@@ -279,13 +317,13 @@ struct ConfigurationLoader {
 
     private func templateOrigins(_ definition: [String: ConfigurationValue],
                                  templates: [String: [String: ConfigurationValue]],
-                                 origins: [String: String]) throws -> [String: String] {
+                                 origins: [String: ConfigurationOrigin]) throws -> [String: ConfigurationOrigin] {
         guard let reference = definition["template"] else { return [:] }
         let name = try reference.decoded(String.self)
         var inherited = try templateOrigins(templates[name]!, templates: templates, origins: origins)
         let prefix = "templates.\(name)."
         for (path, source) in origins where path.hasPrefix(prefix) {
-            inherited[String(path.dropFirst(prefix.count))] = "\(source) (template \(name))"
+            inherited[String(path.dropFirst(prefix.count))] = source.appending("(template \(name))")
         }
         return inherited
     }
@@ -309,7 +347,7 @@ struct ConfigurationLoader {
                            relativeTo: url.deletingLastPathComponent()).standardizedFileURL
             try merged.merge(read(file, path: path + [canonical], boundary: boundary))
         }
-        try merged.merge(ConfigurationLayer(values: values, origins: configurationOrigins(.object(values), source: url.path)))
+        try merged.merge(ConfigurationLayer(values: values, origins: configurationOrigins(.object(values), source: ConfigurationOrigin(file: url.path))))
         return merged
     }
 

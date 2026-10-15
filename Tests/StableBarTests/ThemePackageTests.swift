@@ -35,9 +35,9 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     #expect(dark.defaults.foreground == HexColor(0xeeeeeeff))
     #expect(dark.widgets[0].style.background == HexColor(0xeeeeeeff))
     #expect(dark.bar.height == 32)
-    #expect(loader.origins["widgets.status.main.style.fontSize"]?.contains("template base") == true)
-    #expect(loader.origins["widgets.status.main.style.background"]?.contains("widget override") == true)
-    #expect(loader.origins["widgets.status.main.style.background"]?.contains("token foreground") == true)
+    #expect(loader.origins["widgets.status.main.style.fontSize"]?.description.contains("template base") == true)
+    #expect(loader.origins["widgets.status.main.style.background"]?.description.contains("widget override") == true)
+    #expect(loader.origins["widgets.status.main.style.background"]?.description.contains("token foreground") == true)
     #expect(loader.document["templates"] == nil)
     #expect(loader.document["widgetOverrides"] == nil)
 }
@@ -72,43 +72,35 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     #expect(loader.activeProfiles == ["laptop"])
 }
 
-@Test func customizationOverridesActiveProfilesAndReportsItsSource() throws {
-    let url = FileManager.default.temporaryDirectory.appending(path: "customization.json")
-    let data = Data(#"""
-    {"widgets":[{"id":"clock","type":"clock","position":"left"}],
-     "profiles":[{"name":"small","when":{"displayCount":1},"configuration":{
-       "bar":{"height":30},"defaults":{"fontSize":10},"widgetOverrides":{"clock":{"position":"right"}}}}],
-     "customization":{"bar":{"height":48},"defaults":{"fontSize":16},"widgetOverrides":{"clock":{"position":"center"}}}}
-    """#.utf8)
+@Test func customizationAndRemovedWidgetsMigrateIntoNormalKeys() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try writePackageFile(#"""
+    {"widgets":[{"id":"imported","type":"text","position":"right","text":"Imported"},
+                {"id":"gone","type":"text","position":"right","text":"Gone"}]}
+    """#, to: directory.appending(path: "module.json"))
+    let root = directory.appending(path: "config.json")
+    try writePackageFile(#"""
+    {"includes":["module.json"],"bar":{"height":40},
+     "widgets":[{"id":"clock","type":"clock","position":"left"},{"id":"old","type":"text","position":"left","text":"Old"}],
+     "removedWidgets":["old","gone"],
+     "customization":{"bar":{"height":48},"defaults":{"fontSize":16},
+       "widgetOverrides":{"clock":{"position":"center"},"imported":{"text":"Changed"}},"widgetOrder":["clock","imported"]}}
+    """#, to: root)
+    try migrateConfigurationFile(root)
+    let saved = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: root))
+    #expect(saved["customization"] == nil)
+    #expect(saved["removedWidgets"] == nil)
+    #expect(saved["bar"] == .object(["height": .number(48)]))
+    #expect(saved["defaults"] == .object(["fontSize": .number(16)]))
+    #expect(saved["widgets"] == .array([.object(["id": .string("clock"), "type": .string("clock"), "position": .string("center")])]))
+    #expect(saved["widgetOverrides"] == .object(["imported": .object(["text": .string("Changed")]),
+                                                 "gone": .object(["enabled": .bool(false)])]))
     var loader = ConfigurationLoader()
-    let configuration = try loader.load(url, data: data)
-    #expect(loader.activeProfiles == ["small"])
-    #expect(configuration.bar.height == 48)
-    #expect(configuration.defaults.fontSize == 16)
-    #expect(configuration.widgets[0].position == .center)
-    #expect(loader.document["customization"] == nil)
-    #expect(loader.origins["widgets.clock.position"]?.contains("customization") == true)
-    #expect(loader.origins["bar.height"]?.contains("customization") == true)
-}
-
-@Test func customizationForInactiveProfileWidgetsStaysDormant() throws {
-    let url = FileManager.default.temporaryDirectory.appending(path: "dormant.json")
-    let json = #"""
-    {"widgets":[{"id":"clock","type":"clock","position":"left"}],
-     "profiles":[{"name":"desktop","when":{"externalDisplay":true},"configuration":{
-       "widgets":[{"id":"extra","type":"text","position":"right","text":"Desktop"}]}}],
-     "customization":{"widgetOverrides":{"extra":{"text":"Customized"}},"widgetOrder":["extra","clock"]}}
-    """#
-    var loader = ConfigurationLoader()
-    let laptop = try loader.load(url, data: Data(json.utf8))
-    #expect(laptop.widgets.map(\.id) == ["clock"])
-    let desktop = try loader.load(url, data: Data(json.utf8), context: ConfigurationContext(externalDisplay: true))
-    #expect(desktop.widgets.map(\.id) == ["extra", "clock"])
-    #expect(desktop.widgets[0].content == .text("Customized"))
-    #expect(throws: ConfigurationCompositionError.self) {
-        try loader.load(url, data: Data(json.replacingOccurrences(of: #""customization":{"widgetOverrides"#,
-                                                                 with: #""widgetOverrides":{"missing":{}},"customization":{"widgetOverrides"#).utf8))
-    }
+    let configuration = try loader.load(root)
+    #expect(configuration.widgets.map(\.id) == ["clock", "imported", "gone"])
+    #expect(configuration.widgets[1].content == .text("Changed"))
+    #expect(!configuration.widgets[2].enabled)
 }
 
 @Test func tokenCyclesUnknownNamesAndWrongTypesFailWithoutShellInterpolation() throws {
@@ -128,24 +120,23 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     """#.utf8))
     #expect(configuration.widgets[0].content == .script(command: "printf '@token.word'", interval: 30))
     #expect(configuration.widgets[0].style.fontSize == 17)
-    #expect(loader.origins["widgets.script.style.fontSize"]?.contains("token style") == true)
+    #expect(loader.origins["widgets.script.style.fontSize"]?.description.contains("token style") == true)
 }
 
-@Test func removalsAndOrderingPreserveImportedDefinitions() throws {
+@Test func widgetOrderSkipsAbsentWidgetsAndRejectsDuplicates() throws {
     let url = FileManager.default.temporaryDirectory.appending(path: "order.json")
     var loader = ConfigurationLoader()
     let json = #"""
-    {"widgets":[{"id":"a","type":"clock","position":"left"},{"id":"b","type":"clock","position":"left"},
-                {"id":"c","type":"clock","position":"right"}],
-     "removedWidgets":["b"],"widgetOverrides":{"b":{"id":"ignored"}},"widgetOrder":["c"]}
+    {"widgets":[{"id":"a","type":"clock","position":"left"},{"id":"b","type":"clock","position":"left"}],
+     "profiles":[{"name":"desktop","when":{"externalDisplay":true},"configuration":{
+       "widgets":[{"id":"extra","type":"text","position":"right","text":"Desktop"}]}}],
+     "widgetOrder":["extra","b"]}
     """#
-    #expect(try loader.load(url, data: Data(json.utf8)).widgets.map(\.id) == ["c", "a"])
-    #expect(loader.document["removedWidgets"] == nil)
+    #expect(try loader.load(url, data: Data(json.utf8)).widgets.map(\.id) == ["b", "a"])
     #expect(loader.document["widgetOrder"] == nil)
-    for order in [#"["c","c"]"#, #"["b"]"#] {
-        #expect(throws: ConfigurationCompositionError.self) {
-            try loader.load(url, data: Data(json.replacingOccurrences(of: #""widgetOrder":["c"]"#, with: "\"widgetOrder\":\(order)").utf8))
-        }
+    #expect(try loader.load(url, data: Data(json.utf8), context: ConfigurationContext(externalDisplay: true)).widgets.map(\.id) == ["extra", "b", "a"])
+    #expect(throws: ConfigurationCompositionError.self) {
+        try loader.load(url, data: Data(json.replacingOccurrences(of: #""widgetOrder":["extra","b"]"#, with: #""widgetOrder":["b","b"]"#).utf8))
     }
     #expect(throws: DecodingError.self) {
         try loader.load(url, data: Data(#"""

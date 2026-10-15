@@ -2,19 +2,19 @@
 
 A native, configurable macOS bar built with Swift, AppKit and SwiftUI. One persistent panel per display holds the widgets; workspace changes update their contents without recreating windows.
 
-The default configuration includes a System Settings shortcut, the active app and a clock. It needs no accounts, network services or third-party tools. Optional shell widgets use a plain-text or JSON output protocol.
+The default configuration includes a System Settings shortcut, the active app and a clock. It needs no accounts, network services or third-party tools, though windows can extend under the bar without a tiling window manager (see [Keeping windows clear of the bar](#keeping-windows-clear-of-the-bar)). Optional shell widgets use a plain-text or JSON output protocol.
 
 ## Install and set up
 
-Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, light or dark widgets, placement, clock format, and opening at login. Setup is also available from the menu-bar icon or by right-clicking the bar.
+Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, widget appearance, placement, clock format, and opening at login. Setup is also available from the menu-bar icon or by right-clicking the bar.
 
 The starter bar needs no special permissions. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. AeroSpace manages its own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
 
-Appearance choices update global widget colors; individual widget styles still take precedence. Setup preserves custom widgets, scripts, and other settings. Closing setup leaves it available on the next launch. New configurations place the bar below the macOS menu bar; existing configurations retain their position.
+Widgets follow the system's light or dark mode unless you pick a fixed appearance, which sets the global widget colors; individual widget styles still take precedence. Setup preserves custom widgets, scripts, and other settings. Closing setup leaves it available on the next launch. New configurations place the bar below the macOS menu bar; existing configurations retain their position.
 
 ## Build and run
 
-Requires macOS 14+ and Xcode's Swift 6 toolchain. Optional workspace widgets require AeroSpace 0.21+ at `/opt/homebrew/bin/aerospace`.
+Requires macOS 14+ and Xcode's Swift 6 toolchain. Optional workspace widgets require AeroSpace 0.21+ on your login shell's `PATH`.
 
 Quit the running app before rebuilding its bundle.
 
@@ -48,13 +48,23 @@ NOTARY_PROFILE='stablebar-notary' ./scripts/package.sh
 
 The script signs with the hardened runtime, submits the DMG to Apple, then staples and validates its notarization ticket. See [Apple's notarization guide](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) for certificate and keychain-profile setup. A local DMG is suitable for development; building it alone does not make it a notarized release.
 
-Keep personal settings in `~/.config/stablebar/config.json` and personal scripts in `~/.config/stablebar/widgets/`, outside the repository. Point commands directly at those scripts. `Resources/config.json` is the shared starter configuration; rebuilding the app does not overwrite your personal file. Local scripts should load any supporting files from their own directory. `$STABLEBAR_SCRIPTS` always refers to the bundled scripts.
+Keep personal settings in `~/.config/stablebar/config.json` and personal scripts in `~/.config/stablebar/widgets/`, outside the repository. Point commands directly at those scripts. `Resources/config.json` is the shared starter configuration; rebuilding the app does not overwrite your personal file. Local scripts should load any supporting files from their own directory.
 
 StableBar sits at the top edge of each display. `bar.offset` moves it down from that edge. It hides on native fullscreen Spaces. AeroSpace gaps and macOS menu-bar settings are managed separately; this app does not change them. Keep the center clear on a notched display. The default configuration uses only the left and right groups.
 
+### Keeping windows clear of the bar
+
+macOS gives apps no way to reserve screen space, so windows can extend under the bar, as they do with SketchyBar. With AeroSpace, set `gaps.outer.top` in `~/.aerospace.toml` to the bar's height (40 by default), plus any `bar.offset` beyond the menu bar; AeroSpace accepts per-monitor values. yabai users can set `external_bar`. Without a tiling window manager, windows placed at the top of the screen sit partly under the bar.
+
 ## Layout and style
 
-Save the configuration to apply changes. Direct saves and atomic file replacements are watched, including files imported with `includes`. Invalid edits retain the last working configuration and show an error indicator. Script instances, their last output, and graph history survive style-only changes, including when a script has an error.
+Save the configuration to apply changes. Direct saves and atomic file replacements are watched, including files imported with `includes`. Invalid edits retain the last working configuration and show an error indicator; click it to open Customize StableBar, which shows the error. Script instances, their last output, and graph history survive style-only changes, including when a script has an error.
+
+Unknown properties are errors, so a misspelled key cannot be silently ignored. The last working configuration stays in place and the error names the property, for example `widgets.clock: style.fontsize: Unknown property.` For completion and validation in editors that support JSON Schema, start a configuration file with:
+
+```json
+"$schema": "https://raw.githubusercontent.com/Seb-GRAF/StableBar/main/stablebar.schema.json"
+```
 
 - `bar`: `height`, `offset`, `inset`, `spacing`, `background`, `animationDuration` (seconds).
 - `defaults`: styles inherited by every widget.
@@ -103,7 +113,7 @@ Define reusable widget properties in `templates`, then select one with `template
 
 Widget properties override their template recursively. `widgetOverrides` applies last, by widget ID, so you can customize imported widgets without editing shared files. Set `enabled` to `false` to hide a widget and stop its script and event subscriptions. Set it back to `true` to restore it. Use `null` to clear an inherited optional property, such as `popup` or `interval`. Overrides must not contain an `id` field. Duplicate widget IDs, unknown override targets, include cycles, and missing or cyclic templates referenced by widgets reject the whole edit.
 
-Included files are watched even outside the main directory. A missing module or directory is watched for repair; the last working bar remains visible meanwhile. Setup writes clock choices into the main file's overrides, preserving imported files.
+Included files are watched even outside the main directory. A missing module or directory is watched for repair; the last working bar remains visible meanwhile.
 
 [examples/modular](examples/modular/config.json) is a complete, dependency-free starter with a theme, template, event-only status, and an optional volume widget. Try it without replacing your personal configuration:
 
@@ -150,7 +160,11 @@ Profiles match `appearance` (`light` or `dark`), `onBattery`, `displayCount`, `e
 
 Set `"profile": "laptop"` to apply only that profile, regardless of its conditions. Remove `profile` to resume automatic matching, or set it to `null` to override a manual profile inherited from a module. The inspector reports active profiles and the file, template, override and token sources behind effective widget properties.
 
-The editor saves widget, bar and default-style overrides inside the root file’s `customization` object. This final layer applies after profiles, so explicit changes stay in effect when automatic profiles switch. The editor also writes `removedWidgets` into the root file and `widgetOrder` into `customization`, keeping imported modules editable independently. `removedWidgets` hides named definitions and their overrides. `widgetOrder` lists surviving widget IDs first; unlisted widgets keep their original relative order. Saved customization overrides and ordering for widgets in an inactive profile stay dormant until those widgets return. Ordinary `widgetOverrides` still reject unknown IDs.
+Setup, the editor and the command line save changes into the main file's ordinary keys and never edit imported files. A widget defined in the main file, including inside one of its profiles, is changed, removed or reordered where it is defined. A widget from an include or package gets an entry in the main file's `widgetOverrides`; removing it sets `enabled` to `false`. Bar and default-style changes merge into `bar` and `defaults`. Untouched parts of the file keep their formatting and key order. An active profile still applies on top of these changes.
+
+When every widget comes from the main file's `widgets` array, reordering changes that array. Otherwise the order is saved in `widgetOrder`: listed IDs come first, unlisted widgets keep their relative order, and IDs that are not currently present, such as widgets of an inactive profile, are skipped.
+
+Earlier versions saved changes in `customization` and `removedWidgets`. StableBar converts those keys into the ordinary ones the next time it starts.
 
 ### Local widget packages
 
@@ -240,7 +254,7 @@ The widget can use:
 
 `text` and `icon` are supplied to bar layouts from the widget's normal content. Other fields come from the script. Active-app layouts receive `text` as the app name. Use the normal clock rendering for native clock widgets.
 
-Script output may include `style` to override the widget style, `display` to change its display filter, and `styles` to supply named element styles. A block with `"styleSource": "countdown"` reads `styles.countdown`, overlaid on its configured style. A list row can use `styleField` to read the style name from a field in that row. Scripts can return `widgetStyles`, keyed by widget ID, to style another widget (for example, change a workspace underline when the window-manager mode changes). Later scripts take precedence; a widget's own `style` output takes precedence over those overrides. Omitted overrides return to the configured style on the next update.
+Script output ignores unknown top-level fields, but styles, animations and menu items in it use the configuration's property names and reject unknown ones. Script output may include `style` to override the widget style, `display` to change its display filter, and `styles` to supply named element styles. A block with `"styleSource": "countdown"` reads `styles.countdown`, overlaid on its configured style. A list row can use `styleField` to read the style name from a field in that row. Scripts can return `widgetStyles`, keyed by widget ID, to style another widget (for example, change a workspace underline when the window-manager mode changes). Later scripts take precedence; a widget's own `style` output takes precedence over those overrides. Omitted overrides return to the configured style on the next update.
 
 Widgets and blocks accept `animation` with `duration` in seconds and `curve`: `linear`, `easeIn`, `easeOut`, `easeInOut`, `smooth` or `spring`. Widget animation defaults to `bar.animationDuration`. Block style animations are opt-in. Progress values use a 0–1 scale, clipped to that range when drawn. A progress block can also read a numeric string from its current list row when there is no matching entry in `values`. With a matching entry in `targets`, a progress rule starts at `values[source]` and animates toward `targets[source]`; without a target it animates between readings. Reduce Motion disables these animations.
 
@@ -259,26 +273,25 @@ For a sliding underline, set `workspace.indicator` to `underline`, `workspace.st
 
 ### Script events
 
-Add `events` to a script widget to refresh it on named events, alongside its interval. Set `"interval": null` to run once at startup and then only on events or after a click action. Omitting the interval keeps the default 30-second polling. Numeric intervals must be greater than zero. `frontApp`, `workspace` and `wake` are emitted by StableBar. Other names subscribe to macOS distributed notifications, for example `com.spotify.client.PlaybackStateChanged`.
+Add `events` to a script widget to refresh it on named events, alongside its interval. Set `"interval": null` to run once at startup and then only on events or after a click action. Omitting the interval keeps the default 30-second polling. Numeric intervals must be greater than zero. `frontApp`, `workspace`, `aerospaceMode` and `wake` are emitted by StableBar. Other names subscribe to macOS distributed notifications, for example `com.spotify.client.PlaybackStateChanged`.
 
 External hooks can trigger an event without launching another bar:
 
 ```sh
-/path/to/StableBar.app/Contents/MacOS/StableBar --trigger aerospace_mode_change
+/path/to/StableBar.app/Contents/MacOS/StableBar --trigger deploy_started
 /path/to/StableBar.app/Contents/MacOS/StableBar --trigger build_finished 'INFO=Build passed' STATUS=success
 ```
 
-Use that event name in the widget's `events`. Extra `KEY=VALUE` arguments become environment variables, preserving spaces, quotes and equals signs as data. Events finish the currently running update and coalesce pending refreshes to the latest event and payload. A widget never runs overlapping update commands. This queue is intended for refreshing current state, not recording every event.
+Use that event name in the widget's `events`. Extra `KEY=VALUE` arguments become environment variables, preserving spaces, quotes and equals signs as data. Trigger arguments and distributed-notification data cannot replace variables exported by your login shell, such as `PATH` or `HOME`. Events finish the currently running update and coalesce pending refreshes to the latest event and payload. A widget never runs overlapping update commands. This queue is intended for refreshing current state, not recording every event.
 
-Commands inherit the app's environment, then top-level `environment`, then the widget's `environment`, then event data. Values must be strings. StableBar supplies these variables:
+Commands inherit your login shell's environment, then top-level `environment`, then the widget's `environment`, then event data. Values must be strings. StableBar supplies these variables:
 
 | Variable | Value |
 | --- | --- |
 | `NAME` | Widget ID; event data cannot replace it |
 | `CONFIG_DIR` | Directory containing the main configuration; event data cannot replace it |
-| `STABLEBAR_SCRIPTS` | Bundled widget script directory |
 | `SENDER` | `startup`, `routine`, the subscribed event name, `action` after an action completes, or a mouse event below |
-| `INFO` | Explicit trigger value; front-app name for `frontApp`; focused workspace name for `workspace`; otherwise the distributed notification's JSON payload when available |
+| `INFO` | Explicit trigger value; front-app name for `frontApp`; focused workspace name for `workspace`; mode name for `aerospaceMode`; otherwise the distributed notification's JSON payload when available |
 | `SID` | Display number for pointer actions and workspace events |
 | `BUTTON` | `left`, `right` or `middle` for widget mouse clicks |
 | `MODIFIER` | Space-separated `shift`, `ctrl`, `alt`, `cmd`, `fn` for pointer actions |
@@ -301,7 +314,7 @@ Keep `onClick` for the primary action. Add `actions` to any widget for additiona
 }
 ```
 
-These commands receive `SENDER=mouse.clicked`, `mouse.scrolled`, `mouse.entered` or `mouse.exited`. Scroll direction follows the signed native vertical delta. Only configured mouse actions intercept input; an unconfigured right click opens the bar's management menu. Actions run in order per widget, while other widgets remain independent. Successful actions refresh the same script instance with `SENDER=action`. Quitting cancels running and queued actions.
+These commands receive `SENDER=mouse.clicked`, `mouse.scrolled`, `mouse.entered` or `mouse.exited`. Scroll direction follows the signed native vertical delta. Only configured mouse actions intercept input; an unconfigured right click opens the bar's management menu. Actions run in order per widget, while other widgets remain independent. Successful actions refresh the same script instance with `SENDER=action`. A failed action marks its widget with a red badge, with the error in its tooltip, until that widget's next action succeeds. Quitting cancels running and queued actions.
 
 ### Command-line controls
 
@@ -320,7 +333,7 @@ StableBar --reset
 StableBar --customize
 ```
 
-Changes are live for the current session. Add `--persist` to save the session changes into the root file. `--reset` discards unsaved session changes and reloads the files. Session edits reapply over external file changes. Imports and package source files are preserved.
+Changes are live for the current session and appear as unsaved changes in the editor. Add `--persist` to save the session changes into the root file. `--reset` discards unsaved session changes and reloads the files. Session edits reapply over external file changes. Imports and package source files are preserved.
 
 Use one batch for changes that must appear together:
 
@@ -344,7 +357,7 @@ A batch validates the whole resulting configuration before replacing the running
 
 Open **Customize and inspect…** from the menu-bar icon, reopen the running app, or run `StableBar --customize`.
 
-The **Editor** shows a bar preview and a draggable widget list. Change positions, icons, text, clock formats, colors, font size, padding and corners; use advanced JSON properties for the rest of a widget’s configuration. Add/remove widgets, undo/redo changes, then **Apply and save**. Invalid drafts cannot be applied. Preview does not launch extra scripts or run click actions.
+The **Editor** lists your widgets by position; drag to reorder them. Change positions, icons, text, clock formats, colors, font size, padding and corners, or edit a widget's properties as JSON. **Bar** sets the bar's size and the default text color, background and font size. Changes apply to the bar immediately, like command-line edits without `--persist`. Undo and redo step through them, **Save** writes them to your configuration and **Discard** returns to the saved file. A change that would make the configuration invalid is rejected and its error is shown.
 
 The **Inspector** shows the composed widget configuration, defaults, source paths, provider output, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while that inspector is visible. Closing the window restores its visibility policy.
 
@@ -356,24 +369,13 @@ The **Packages** tab reviews local folders and their declared commands, edits ty
 | --- | --- | --- |
 | `aerospace` | Occupied or visible workspaces on this display, with app icons; click to switch | — |
 | `activeApp` | Frontmost app name and icon | — |
-| `clock` | Local date/time, updated each minute | `format`: DateFormatter format |
+| `clock` | Local date/time, updated each minute, or each second when the format shows seconds | `format`: DateFormatter format |
 | `text` | Static text and optional icon | `text` |
 | `script` | Output of a shell command | `command`, `interval` in seconds or `null` for event-only updates |
 | `provider` | Shared command, stream or native data | `provider`: key from the top-level `providers` object |
+| `system`, `network`, `battery`, `audio` | Native CPU and memory, network, battery or audio output data | — |
 
-The AeroSpace connection subscribes to workspace, monitor, window and focus events. It loads an initial snapshot, coalesces pending events and reconnects after a disconnect. The accent color marks the focused workspace; an outline marks a workspace visible on another monitor. Empty, inactive workspaces are hidden. App icons are deduplicated per workspace. Active-app updates come from NSWorkspace notifications. The clock updates once a minute.
-
-## Optional scripts
-
-The scripts in [Resources/widgets](Resources/widgets) are bundled but disabled by default. They require `jq` and use local system data. `$STABLEBAR_SCRIPTS` points to their bundled directory when a widget or click command runs.
-
-| Widget | Source and behavior | Refresh |
-| --- | --- | --- |
-| CPU | `ps` and `sysctl`; 60-sample graph, load averages, five busiest processes with CPU and memory | 2 s |
-| Volume | Output volume/mute | 5 s |
-| Battery | `pmset`; charge, power source and remaining time | 120 s |
-
-Enable a script by adding a `script` widget with a command such as `"\"$STABLEBAR_SCRIPTS/cpu.sh\""` and an interval. Widget menus use themed popups. The app's management menus (right-click and macOS status icon) remain native.
+The AeroSpace connection subscribes to workspace, monitor, window and focus events. It loads an initial snapshot, coalesces pending events and reconnects after a disconnect. The accent color marks the focused workspace; an outline marks a workspace visible on another monitor. Empty, inactive workspaces are hidden. App icons are deduplicated per workspace. Active-app updates come from NSWorkspace notifications.
 
 ## Create a widget
 
@@ -397,7 +399,7 @@ Add an entry to `widgets`:
 }
 ```
 
-Commands run through `/bin/zsh -lc`. Use absolute paths or `~` for your own scripts, and make them executable. Widgets can be written in shell, Python, Swift, Rust or anything that prints to stdout.
+Commands run through `/bin/zsh -c` with your login shell's environment, which StableBar reads once at launch. Restart StableBar after changing `PATH` or other exported variables in your shell profile. Use absolute paths or `~` for your own scripts, and make them executable. Widgets can be written in shell, Python, Swift, Rust or anything that prints to stdout.
 
 Return plain text, or one JSON object:
 
@@ -452,6 +454,8 @@ Define a provider once and reference it from several widgets. StableBar keeps on
 ```
 
 Provider `type` is `command`, `stream`, `system`, `network`, `battery` or `audio`. `command` and `stream` require a shell `command`. `interval` defaults to 5 seconds: the polling interval for commands and native sources, or the initial reconnect delay for streams. `timeout` defaults to 10 seconds and applies to command providers; streams remain running until they exit, fail, suspend or stop. Provider intervals and timeouts must be positive and finite.
+
+A widget with `type` set to `system`, `network`, `battery` or `audio` uses the provider of that name. Without a definition in `providers`, it is a native provider of that type with default settings, shared by every widget that names it. Define a provider with the same name to change its interval or other settings. `{ "id": "power", "type": "battery", "position": "right" }` is enough for a battery widget.
 
 Provider `environment` overlays the top-level environment. `NAME` is the provider name and `CONFIG_DIR` remains the main configuration directory. The environment of a consuming widget applies to that widget's actions, not the shared update process. Add `events` to a provider or consuming widget to request updates; one event refreshes a shared provider once. An explicit stream refresh restarts its process with the new event payload.
 
@@ -512,9 +516,9 @@ The [interactive example](examples/interactive/config.json) combines groups, an 
 
 ## Custom popups
 
-Add `popup` to any widget. For a popup shared by multiple widgets, define it once in the top-level `popups` object and set each widget's `popupName` to its key. Each anchor uses its own script data. An inline `popup` takes precedence over `popupName`. It takes precedence over `menu` and `onClick`. Its layout is independent of the script, so you can change the layout without changing the data source or rebuilding the app. The example below uses fields from [cpu.sh](Resources/widgets/cpu.sh).
+Add `popup` to any widget. For a popup shared by multiple widgets, define it once in the top-level `popups` object and set each widget's `popupName` to its key. Each anchor uses its own script data. An inline `popup` takes precedence over `popupName`. It takes precedence over `menu` and `onClick`. Its layout is independent of the script, so you can change the layout without changing the data source or rebuilding the app. The example below uses the fields returned by the script output that follows it.
 
-Widgets with `menu` entries already open a shared popup without additional configuration. To customize that popup, add `popup` with your preferred height and style and `"layout": { "type": "menu" }`. You can also place a `menu` block alongside other blocks in a custom layout. Entries retain their titles, details and click commands, and refresh while the popup is open.
+Widgets with `menu` entries already open a shared popup without additional configuration. To customize that popup, add `popup` with your preferred style and `"layout": { "type": "menu" }`. You can also place a `menu` block alongside other blocks in a custom layout. Entries retain their titles, details and click commands, and refresh while the popup is open.
 
 ```json
 "popup": {
@@ -542,7 +546,7 @@ Widgets with `menu` entries already open a shared popup without additional confi
 }
 ```
 
-`height`, `style` and `layout` are required. Use `"style": {}` to inherit the widget's theme. Popup colors, typography, borders, corners and shadow inherit widget styles and then global defaults. Popup width defaults to 360 points independently of the bar widget width; set it with `popup.style.width`. Padding and spacing can be overridden separately. Height is capped to the space below the bar; long content scrolls.
+`style` and `layout` are required. Use `"style": {}` to inherit the widget's theme. Without `height`, a popup fits its content when it opens; set `height` for a fixed size. Popup colors, typography, borders, corners and shadow inherit widget styles and then global defaults. Popup width defaults to 360 points independently of the bar widget width; set it with `popup.style.width`. Padding and spacing can be overridden separately. Height is capped to the space below the bar; long content scrolls.
 
 Layout blocks:
 
@@ -592,7 +596,7 @@ For example, a script can return:
 
 Field and list values are display strings; scripts supply units and formatting. Missing fields display `—` and missing lists are empty while data loads. Values and graphs update while the popup stays open. Click the widget again, click outside, or press Escape to close it. Saving configuration closes the popup; reopen it to see the new layout. Style and layout changes keep healthy scripts and their graph history running.
 
-To use this popup, add it to a CPU script widget in your personal configuration.
+Add the popup to the script widget that returns those fields.
 
 For new native widget types, add a case to `WidgetContent`, decode its settings in `WidgetConfiguration`, and render it in `WidgetView.content`. New popup components belong in `PopupContent` and `PopupBlockView`. Runtime SwiftUI plugins and arbitrary chart types are not implemented.
 

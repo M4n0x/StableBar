@@ -28,16 +28,18 @@ import Testing
     try store.applyEdits([ConfigurationEdit(action: .add, properties: ["id": .string("c"), "type": .string("text"),
         "position": .string("left"), "text": .string("C")]), ConfigurationEdit(action: .remove, id: "b"),
         ConfigurationEdit(action: .reorder, ids: ["c", "a"])], persist: true)
-    #expect(store.configuration?.widgets.map(\.id) == ["c", "a"])
+    #expect(store.configuration?.widgets.map(\.id) == ["c", "a", "b"])
+    #expect(store.configuration?.widgets[2].enabled == false)
     #expect(store.sessionEdits.isEmpty)
     #expect(try Data(contentsOf: module) == moduleData)
     let saved = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: root))
     #expect(saved["includes"] == .array([.string("module.json")]))
     var loader = ConfigurationLoader()
     #expect(try loader.load(root).widgets[1].content == .text("Live"))
-    try store.applyEdits([ConfigurationEdit(action: .remove, id: "a"),
-                         ConfigurationEdit(action: .add, properties: ["id": .string("a"), "type": .string("clock"), "position": .string("right")])], persist: false)
-    #expect(store.configuration?.widgets.first(where: { $0.id == "a" })?.content == .clock(format: "EEE d MMM  HH:mm"))
+    #expect(saved["widgets"] == .array([.object(["id": .string("c"), "type": .string("text"), "position": .string("left"), "text": .string("C")])]))
+    try store.applyEdits([ConfigurationEdit(action: .remove, id: "c"),
+                         ConfigurationEdit(action: .add, properties: ["id": .string("c"), "type": .string("clock"), "position": .string("right")])], persist: false)
+    #expect(store.configuration?.widgets.first(where: { $0.id == "c" })?.content == .clock(format: "EEE d MMM  HH:mm"))
 }
 
 @Test @MainActor func editorUndoRedoAndSessionReloadKeepExternalEdits() throws {
@@ -57,18 +59,18 @@ import Testing
     #expect(store.configuration?.widgets[0].content == .text("Session"))
     let editor = ConfigurationEditor(store: store)
     editor.set(["position": .string("right")])
-    #expect(editor.preview.configuration?.widgets[0].position == .right)
-    #expect(store.configuration?.widgets[0].position == .left)
+    #expect(store.configuration?.widgets[0].position == .right)
+    #expect(store.sessionEdits.count == 2)
     editor.undo()
-    #expect(editor.preview.configuration?.widgets[0].position == .left)
+    #expect(store.configuration?.widgets[0].position == .left)
     editor.redo()
-    #expect(editor.preview.configuration?.widgets[0].position == .right)
+    #expect(store.configuration?.widgets[0].position == .right)
     editor.change(ConfigurationEdit(action: .add, properties: ["id": .string("new"), "type": .string("text"),
         "position": .string("left"), "text": .string("New")]))
     editor.selectedID = "new"
     editor.undo()
     #expect(editor.selectedID == "a")
-    editor.apply()
+    editor.save()
     #expect(store.configuration?.bar.height == 50)
     #expect(store.configuration?.widgets[0].position == .right)
     #expect(store.sessionEdits.isEmpty)
@@ -136,7 +138,7 @@ import Testing
     let editor = ConfigurationEditor(store: store)
     editor.set(["text": .string("Edited base")])
     #expect(editor.error == nil)
-    editor.apply()
+    editor.save()
     #expect(editor.error == nil)
     #expect(store.sessionEdits.isEmpty)
     store.context.appearance = "light"
@@ -166,20 +168,84 @@ import Testing
         editor.set(["style": .object(["paddingHorizontal": .number(10)])])
         editor.set(["style": .object(["cornerRadius": .number(14)])])
     }
-    #expect(editor.edits.isEmpty)
+    #expect(store.sessionEdits.isEmpty)
     #expect(editor.undoSteps.isEmpty)
     editor.set(["text": .string("Changed")])
     editor.undo()
     editor.set(["text": .string("Ready")])
     #expect(editor.redoSteps.count == 1)
     editor.redo()
-    #expect(editor.preview.configuration?.widgets[0].content == .text("Changed"))
+    #expect(store.configuration?.widgets[0].content == .text("Changed"))
     editor.set(["style": .object(["minWidth": .number(200)])])
     #expect(editor.error != nil)
+    #expect(store.configuration?.widgets[0].style.minWidth == 80)
     editor.set(["style": .object(["minWidth": .number(80)])])
     #expect(editor.error == nil)
     editor.discard()
-    editor.change(ConfigurationEdit(action: .set, id: "title", properties: ["style": .object(["fontSize": .number(12)])]))
-    #expect(editor.edits.count == 1)
-    #expect(editor.preview.configuration?.widgets[0].style.fontSize == 12)
+    #expect(store.sessionEdits.isEmpty)
+    for size in [13.0, 14, 15] { editor.set(["style": .object(["fontSize": .number(size)])]) }
+    #expect(store.sessionEdits.count == 1)
+    #expect(store.configuration?.widgets[0].style.fontSize == 15)
+    editor.set(["text": .string("Other")])
+    editor.undo()
+    #expect(store.configuration?.widgets[0].content == .text("Ready"))
+    editor.undo()
+    #expect(store.configuration?.widgets[0].style.fontSize == nil)
+    #expect(editor.undoSteps.isEmpty)
+    editor.replaceProperties(["type": .string("text"), "position": .string("right"), "text": .string("Ready")])
+    #expect(store.configuration?.widgets[0].position == .right)
+    #expect(store.configuration?.widgets[0].style.minWidth == nil)
+}
+
+@Test func savedEditsKeepTheLayoutOfUntouchedValues() throws {
+    let original = Data("""
+    {
+        "bar": { "height": 40, "offset": 0 },
+        "widgets": [
+            {"id": "a", "type": "text", "position": "left", "text": "A"},
+            {
+                "id": "b",
+                "type": "clock",
+                "position": "right"
+            }
+        ],
+        "defaults": {}
+    }
+
+    """.utf8)
+    var document = try JSONDecoder().decode([String: ConfigurationValue].self, from: original)
+    #expect(try configurationData(document, editing: original) == original)
+    document["bar"] = .object(["height": .number(44), "offset": .number(0)])
+    document["widgets"] = .array([
+        .object(["id": .string("b"), "type": .string("clock"), "position": .string("right"), "format": .string("HH:mm")]),
+        .object(["id": .string("a"), "type": .string("text"), "position": .string("left"), "text": .string("A")]),
+        .object(["id": .string("c"), "type": .string("text"), "position": .string("left"), "text": .string("C")])
+    ])
+    document["defaults"] = .object(["fontSize": .number(12)])
+    document["profile"] = .string("dark")
+    #expect(String(decoding: try configurationData(document, editing: original), as: UTF8.self) == """
+    {
+        "bar": { "height": 44, "offset": 0 },
+        "widgets": [
+            {
+                "id": "b",
+                "type": "clock",
+                "position": "right",
+                "format": "HH:mm"
+            },
+            {"id": "a", "type": "text", "position": "left", "text": "A"},
+            {
+                "id": "c",
+                "position": "left",
+                "text": "C",
+                "type": "text"
+            }
+        ],
+        "defaults": {
+            "fontSize": 12
+        },
+        "profile": "dark"
+    }
+
+    """)
 }

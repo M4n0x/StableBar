@@ -39,7 +39,7 @@ and comments link fixes in progress and record maintainer decisions.
 
 **Code and docs on current main.** The local checkout can be stale or on another branch. Run
 `git fetch origin`, then `git grep -n -i "<term>" origin/main`. `README.md` documents almost every
-configuration feature; `examples/` and `Resources/widgets/` hold working setups.
+configuration feature; `examples/` holds working setups.
 
 **Releases.** `CHANGELOG.md` lists released fixes and features. `git tag --contains <sha>` names the
 release that shipped a commit; commits after the newest tag on `origin/main` are unreleased.

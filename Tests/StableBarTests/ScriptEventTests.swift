@@ -161,7 +161,7 @@ import Testing
     await action.value
     try await Task.sleep(for: .milliseconds(120))
     #expect(replacement.output.text == "New")
-    #expect(store.actionError == nil)
+    #expect(store.actionErrors.isEmpty)
     #expect(try String(contentsOf: log, encoding: .utf8) == "old\nnew\n")
 }
 
@@ -295,5 +295,33 @@ func widgetActionsRunInOrderAndStoppingCancelsQueuedWork(stop: Bool) async throw
     await third.value
     let expected = stop ? "begin:first\nother\n" : "begin:first\nother\nend:first\nsecond\nthird\n"
     #expect(try String(contentsOf: log, encoding: .utf8) == expected)
-    #expect(store.actionError == nil)
+    #expect(store.actionErrors.isEmpty)
+}
+
+@Test @MainActor func triggerDataCannotReplaceLoginShellVariables() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let url = directory.appending(path: "config.json")
+    try Data(#"""
+    {"widgets":[{"id":"external","type":"script","position":"right","interval":null,"events":["external"],
+      "command":"printf '%s|%s' \"$HOME\" \"$INFO\""}]}
+    """#.utf8).write(to: url)
+    let store = BarStore(configurationURL: url)
+    defer {
+        store.stop()
+        try? FileManager.default.removeItem(at: directory)
+    }
+    store.reloadConfiguration()
+    let script = try #require(store.scripts["external"])
+    let home = try #require(shellEnvironment.withLock { $0["HOME"] })
+    for _ in 0..<100 {
+        if script.output.text == "\(home)|" { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    _ = try store.handle(RuntimeRequest(action: .trigger, id: "external", environment: ["HOME": "/nowhere", "INFO": "payload"]))
+    for _ in 0..<100 {
+        if script.output.text == "\(home)|payload" { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(script.output.text == "\(home)|payload")
 }

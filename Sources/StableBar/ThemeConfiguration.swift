@@ -12,6 +12,16 @@ struct ConfigurationProfile: Decodable {
     let name: String
     let when: ProfileConditions?
     let configuration: [String: ConfigurationValue]
+
+    enum CodingKeys: String, CodingKey, CaseIterable { case name, when, configuration }
+
+    init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        name = try values.decode(String.self, forKey: .name)
+        when = try values.decodeIfPresent(ProfileConditions.self, forKey: .when)
+        configuration = try values.decode([String: ConfigurationValue].self, forKey: .configuration)
+    }
 }
 
 struct ProfileConditions: Decodable {
@@ -20,6 +30,18 @@ struct ProfileConditions: Decodable {
     let displayCount: Int?
     let externalDisplay: Bool?
     let app: String?
+
+    enum CodingKeys: String, CodingKey, CaseIterable { case appearance, onBattery, displayCount, externalDisplay, app }
+
+    init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        appearance = try values.decodeIfPresent(String.self, forKey: .appearance)
+        onBattery = try values.decodeIfPresent(Bool.self, forKey: .onBattery)
+        displayCount = try values.decodeIfPresent(Int.self, forKey: .displayCount)
+        externalDisplay = try values.decodeIfPresent(Bool.self, forKey: .externalDisplay)
+        app = try values.decodeIfPresent(String.self, forKey: .app)
+    }
 
     func matches(_ context: ConfigurationContext) -> Bool {
         (appearance == nil || appearance == context.appearance)

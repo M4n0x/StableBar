@@ -371,3 +371,19 @@ private func provider(_ command: String, type: String = "stream", interval: Doub
     #expect(processes.count == 12)
     #expect(processes.allSatisfy { kill($0, 0) == -1 })
 }
+
+@Test func nativeWidgetTypesShareABuiltInProviderUnlessOneIsDefined() throws {
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
+    {"providers":{"system":{"type":"system","interval":2}},
+     "widgets":[{"id":"power","type":"battery","position":"right"},{"id":"charge","type":"provider","provider":"battery","position":"right"},
+                {"id":"cpu","type":"system","position":"right"}]}
+    """#.utf8))
+    #expect(configuration.widgets.map(\.content) == [.provider("battery"), .provider("battery"), .provider("system")])
+    #expect(configuration.providers["battery"] == ProviderConfiguration(type: .battery))
+    #expect(configuration.providers["system"]?.interval == 2)
+    for widget in [#"{"id":"x","type":"command","position":"right"}"#, #"{"id":"x","type":"provider","provider":"stream","position":"right"}"#] {
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(Configuration.self, from: Data("{\"widgets\":[\(widget)]}".utf8))
+        }
+    }
+}

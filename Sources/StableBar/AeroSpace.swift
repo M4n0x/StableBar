@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 
 struct Workspace: Decodable, Identifiable, Sendable, Equatable {
     let name: String
@@ -30,6 +31,10 @@ struct WorkspaceApp: Decodable, Identifiable, Sendable, Equatable {
     }
 }
 
+private struct AeroSpaceEvent: Decodable {
+    let mode: String?
+}
+
 func workspaceSnapshot(workspaces: Data, windows: Data) throws -> [Workspace] {
     let apps = try JSONDecoder().decode([WorkspaceApp].self, from: windows)
     return try JSONDecoder().decode([Workspace].self, from: workspaces)
@@ -48,9 +53,10 @@ final class AeroSpace {
     var workspaces: [Workspace] = []
     var error: String?
     var onWorkspaceChange: (() -> Void)?
+    var onModeChange: ((String) -> Void)?
+    private var mode: String?
     private var task: Task<Void, Never>?
     private var process: Process?
-    private let executable = "/opt/homebrew/bin/aerospace"
 
     func start() {
         stop()
@@ -59,17 +65,28 @@ final class AeroSpace {
                 do {
                     let stream = Process()
                     let output = Pipe()
-                    stream.executableURL = URL(filePath: executable)
-                    stream.arguments = ["subscribe", "focused-workspace-changed", "focused-monitor-changed", "focus-changed", "window-detected"]
+                    stream.executableURL = URL(filePath: try executable())
+                    stream.arguments = ["subscribe", "focused-workspace-changed", "focused-monitor-changed", "focus-changed",
+                                        "window-detected", "mode-changed"]
                     stream.standardOutput = output
                     stream.standardError = FileHandle.standardError
+                    let received = OSAllocatedUnfairLock(initialState: (pending: Data(), mode: String?.none))
                     let events = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { continuation in
                         output.fileHandleForReading.readabilityHandler = { handle in
-                            if handle.availableData.isEmpty {
+                            let data = handle.availableData
+                            if data.isEmpty {
                                 continuation.finish()
-                            } else {
-                                continuation.yield(())
+                                return
                             }
+                            received.withLock { received in
+                                received.pending.append(data)
+                                while let newline = received.pending.firstIndex(of: 10) {
+                                    let line = Data(received.pending[..<newline])
+                                    received.pending.removeSubrange(...newline)
+                                    if let mode = try? JSONDecoder().decode(AeroSpaceEvent.self, from: line).mode { received.mode = mode }
+                                }
+                            }
+                            continuation.yield(())
                         }
                         continuation.onTermination = { _ in output.fileHandleForReading.readabilityHandler = nil }
                     }
@@ -84,6 +101,11 @@ final class AeroSpace {
                     for await _ in events {
                         try Task.checkCancellation()
                         try await refresh()
+                        let current = received.withLock { $0.mode }
+                        if let current, current != mode {
+                            mode = current
+                            onModeChange?(current)
+                        }
                     }
                     throw CommandFailure(message: "AeroSpace disconnected. Reconnecting…")
                 } catch {
@@ -98,6 +120,7 @@ final class AeroSpace {
     }
 
     private func refresh() async throws {
+        let executable = try executable()
         async let spaces = runCommand(executable, arguments: [
             "list-workspaces", "--all", "--format",
             "%{workspace} %{workspace-is-focused} %{workspace-is-visible} %{monitor-appkit-nsscreen-screens-id}", "--json"
@@ -116,11 +139,19 @@ final class AeroSpace {
     func select(_ workspace: Workspace) {
         Task {
             do {
-                _ = try await runCommand(executable, arguments: ["workspace", workspace.name])
+                _ = try await runCommand(executable(), arguments: ["workspace", workspace.name])
             } catch {
                 self.error = error.localizedDescription
             }
         }
+    }
+
+    private func executable() throws -> String {
+        let directories = shellEnvironment.withLock { $0["PATH"] ?? "" }.split(separator: ":")
+        guard let directory = directories.first(where: { FileManager.default.isExecutableFile(atPath: "\($0)/aerospace") }) else {
+            throw CommandFailure(message: "AeroSpace is not on your login shell's PATH.")
+        }
+        return "\(directory)/aerospace"
     }
 
     func stop() {

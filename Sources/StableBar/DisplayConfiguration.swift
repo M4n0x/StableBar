@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 
 struct BarDisplay {
     let id: Int
@@ -63,7 +62,7 @@ enum DisplaySelection: Decodable, Equatable, Sendable {
     }
 }
 
-struct BarLayout: Layout {
+struct BarLayout {
     let inset: CGFloat
     let spacing: CGFloat
     let notchSpacing: CGFloat
@@ -84,18 +83,5 @@ struct BarLayout: Layout {
             }
         }
         return origins
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        proposal.replacingUnspecifiedDimensions()
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
-        let x = origins(width: bounds.width, sizes: sizes.map(\.width))
-        for index in subviews.indices {
-            subviews[index].place(at: CGPoint(x: bounds.minX + x[index], y: bounds.midY),
-                                  anchor: .leading, proposal: ProposedViewSize(sizes[index]))
-        }
     }
 }

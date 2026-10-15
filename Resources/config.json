@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/Seb-GRAF/StableBar/main/stablebar.schema.json",
   "bar": {
     "height": 40,
     "offset": 0,

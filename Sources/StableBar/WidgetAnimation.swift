@@ -9,7 +9,7 @@ struct WidgetAnimation: Decodable, Equatable, Sendable {
     var curve: Curve = .easeOut
     var duration: Double = 0.22
 
-    enum CodingKeys: String, CodingKey { case curve, duration }
+    enum CodingKeys: String, CodingKey, CaseIterable { case curve, duration }
 
     init(curve: Curve = .easeOut, duration: Double = 0.22) {
         self.curve = curve
@@ -17,6 +17,7 @@ struct WidgetAnimation: Decodable, Equatable, Sendable {
     }
 
     init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         curve = try values.decodeIfPresent(Curve.self, forKey: .curve) ?? curve
         duration = try values.decodeIfPresent(Double.self, forKey: .duration) ?? duration
@@ -61,4 +62,26 @@ struct WorkspaceConfiguration: Decodable, Sendable {
     var appGlyphs: [String: String]?
     var showEmpty: Bool?
     var showApps: Bool?
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case indicator, indicatorStyle, style, focusedStyle, visibleStyle, emptyStyle, appStyle, focusedAppStyle, visibleAppStyle
+        case appGlyphs, showEmpty, showApps
+    }
+
+    init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        indicator = try values.decodeIfPresent(Indicator.self, forKey: .indicator)
+        indicatorStyle = try values.decodeIfPresent(WidgetStyle.self, forKey: .indicatorStyle)
+        style = try values.decodeIfPresent(WidgetStyle.self, forKey: .style)
+        focusedStyle = try values.decodeIfPresent(WidgetStyle.self, forKey: .focusedStyle)
+        visibleStyle = try values.decodeIfPresent(WidgetStyle.self, forKey: .visibleStyle)
+        emptyStyle = try values.decodeIfPresent(WidgetStyle.self, forKey: .emptyStyle)
+        appStyle = try values.decodeIfPresent(WidgetStyle.self, forKey: .appStyle)
+        focusedAppStyle = try values.decodeIfPresent(WidgetStyle.self, forKey: .focusedAppStyle)
+        visibleAppStyle = try values.decodeIfPresent(WidgetStyle.self, forKey: .visibleAppStyle)
+        appGlyphs = try values.decodeIfPresent([String: String].self, forKey: .appGlyphs)
+        showEmpty = try values.decodeIfPresent(Bool.self, forKey: .showEmpty)
+        showApps = try values.decodeIfPresent(Bool.self, forKey: .showApps)
+    }
 }
