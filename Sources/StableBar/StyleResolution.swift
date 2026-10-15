@@ -1,11 +1,24 @@
 import Foundation
 
 /// The states active for one drawn element. Their styles apply over the base style in the order
-/// of `names`, later ones winning.
+/// of `names`, later ones winning: the workspace state, then `hover`.
 struct StyleStates: Equatable, Sendable {
+    var workspace: WorkspaceState?
     var hover = false
 
-    var names: [String] { hover ? ["hover"] : [] }
+    var names: [String] { [workspace?.rawValue, hover ? "hover" : nil].compactMap { $0 } }
+}
+
+/// A workspace cell's state. A cell has at most one: focused, else visible, else empty.
+enum WorkspaceState: String, CaseIterable, Sendable {
+    case focused, visible, empty
+
+    init?(_ workspace: Workspace) {
+        if workspace.isFocused { self = .focused }
+        else if workspace.isVisible { self = .visible }
+        else if workspace.apps.isEmpty { self = .empty }
+        else { return nil }
+    }
 }
 
 extension WidgetStyle {
@@ -59,4 +72,51 @@ struct ResolvedWidgetStyle: Equatable, Sendable {
     }
 
     func style(hovered isHovered: Bool) -> WidgetStyle { isHovered ? hovered : rest }
+}
+
+/// A workspace cell's styles in one workspace state, resolved when the configuration loads.
+/// Hover changes the label and app glyphs; the indicators follow the workspace state only.
+struct WorkspaceCellStyle: Equatable, Sendable {
+    /// The label at rest, and the background indicator's fill, border and corners.
+    let resting: WidgetStyle
+    let hovered: WidgetStyle
+    let underline: WidgetStyle
+    let app: WidgetStyle
+    let hoveredApp: WidgetStyle
+
+    init(state: WorkspaceState? = nil, cell: WidgetStyle = WidgetStyle(), underline: WidgetStyle = WidgetStyle(),
+         app: WidgetStyle = WidgetStyle()) {
+        let rest = StyleStates(workspace: state)
+        let hover = StyleStates(workspace: state, hover: true)
+        resting = cell.resolved(for: rest)
+        hovered = cell.resolved(for: hover)
+        self.underline = underline.resolved(for: rest)
+        self.app = app.resolved(for: rest)
+        hoveredApp = app.resolved(for: hover)
+    }
+
+    func label(hovered isHovered: Bool) -> WidgetStyle { isHovered ? hovered : resting }
+    func glyph(hovered isHovered: Bool) -> WidgetStyle { isHovered ? hoveredApp : app }
+}
+
+/// A layout block's styles for one draw.
+struct BlockStyle: Equatable, Sendable {
+    /// The block's style over the inherited one, without states: what its child blocks inherit.
+    let inherited: WidgetStyle
+    /// Fonts, colors, accent and spacing, inherited and own, with the active states.
+    let text: WidgetStyle
+    /// Background, border, padding, size, offset and opacity: the block's own, with the active states.
+    let box: WidgetStyle
+}
+
+extension PopupBlock {
+    /// Resolves this block's styles: its `style`, under the named output style that `styleField`
+    /// (read from `fields`) or `styleSource` selects, over `inherited`.
+    func resolvedStyle(inherited: WidgetStyle, styles: [String: WidgetStyle], fields: [String: String],
+                       states: StyleStates) -> BlockStyle {
+        let name = styleField.flatMap { fields[$0] } ?? styleSource
+        let own = resolveStyle([style, name.flatMap { styles[$0] } ?? WidgetStyle()])
+        let merged = resolveStyle([inherited, own])
+        return BlockStyle(inherited: merged, text: merged.resolved(for: states), box: own.resolved(for: states))
+    }
 }

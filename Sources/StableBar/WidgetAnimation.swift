@@ -51,17 +51,10 @@ struct WorkspaceConfiguration: Decodable, Sendable {
     }
 
     var indicator: Indicator?
-    var indicatorStyle: WidgetStyle?
-    var style: WidgetStyle?
-    var focusedStyle: WidgetStyle?
-    var visibleStyle: WidgetStyle?
-    var emptyStyle: WidgetStyle?
-    var appStyle: WidgetStyle?
-    var focusedAppStyle: WidgetStyle?
-    var visibleAppStyle: WidgetStyle?
     var appGlyphs: [String: String]?
     var showEmpty: Bool?
     var showApps: Bool?
+    private var cells: [WorkspaceState?: WorkspaceCellStyle] = [:]
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case indicator, indicatorStyle, style, focusedStyle, visibleStyle, emptyStyle, appStyle, focusedAppStyle, visibleAppStyle
@@ -72,16 +65,24 @@ struct WorkspaceConfiguration: Decodable, Sendable {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         indicator = try values.decodeIfPresent(Indicator.self, forKey: .indicator)
-        indicatorStyle = try values.decodeIfPresent(WidgetStyle.self, forKey: .indicatorStyle)
-        style = try values.decodeIfPresent(WidgetStyle.self, forKey: .style)
-        focusedStyle = try values.decodeIfPresent(WidgetStyle.self, forKey: .focusedStyle)
-        visibleStyle = try values.decodeIfPresent(WidgetStyle.self, forKey: .visibleStyle)
-        emptyStyle = try values.decodeIfPresent(WidgetStyle.self, forKey: .emptyStyle)
-        appStyle = try values.decodeIfPresent(WidgetStyle.self, forKey: .appStyle)
-        focusedAppStyle = try values.decodeIfPresent(WidgetStyle.self, forKey: .focusedAppStyle)
-        visibleAppStyle = try values.decodeIfPresent(WidgetStyle.self, forKey: .visibleAppStyle)
         appGlyphs = try values.decodeIfPresent([String: String].self, forKey: .appGlyphs)
         showEmpty = try values.decodeIfPresent(Bool.self, forKey: .showEmpty)
         showApps = try values.decodeIfPresent(Bool.self, forKey: .showApps)
+        let focused = try values.decodeIfPresent(WidgetStyle.self, forKey: .focusedStyle)
+        let visible = try values.decodeIfPresent(WidgetStyle.self, forKey: .visibleStyle)
+        let empty = try values.decodeIfPresent(WidgetStyle.self, forKey: .emptyStyle)
+        let focusedApp = try values.decodeIfPresent(WidgetStyle.self, forKey: .focusedAppStyle)
+        let visibleApp = try values.decodeIfPresent(WidgetStyle.self, forKey: .visibleAppStyle)
+        let cell = (try values.decodeIfPresent(WidgetStyle.self, forKey: .style) ?? WidgetStyle())
+            .addingStates(["focused": focused, "visible": visible, "empty": empty].compactMapValues { $0 })
+        let app = (try values.decodeIfPresent(WidgetStyle.self, forKey: .appStyle) ?? WidgetStyle())
+            .addingStates(["focused": focusedApp, "visible": visibleApp].compactMapValues { $0 })
+        let underline = try values.decodeIfPresent(WidgetStyle.self, forKey: .indicatorStyle) ?? WidgetStyle()
+        let states: [WorkspaceState?] = [nil, .focused, .visible, .empty]
+        for state in states {
+            cells[state] = WorkspaceCellStyle(state: state, cell: cell, underline: underline, app: app)
+        }
     }
+
+    func cellStyle(_ state: WorkspaceState?) -> WorkspaceCellStyle { cells[state] ?? WorkspaceCellStyle() }
 }

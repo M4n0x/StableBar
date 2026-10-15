@@ -854,6 +854,7 @@ For new native widget types, add a case to `WidgetContent`, decode its settings 
 ## Architecture
 
 - [Configuration.swift](Sources/StableBar/Configuration.swift): config, widget definitions and style inheritance.
+- [StyleResolution.swift](Sources/StableBar/StyleResolution.swift): style layers and states resolved in one place for bar widgets, workspace cells, layout blocks and the bar.
 - [BarStore.swift](Sources/StableBar/BarStore.swift): live reload, shared provider lifetimes, visibility and sleep.
 - [ConfigurationLoader.swift](Sources/StableBar/ConfigurationLoader.swift): includes, profiles, tokens and provenance.
 - [ConfigurationEdits.swift](Sources/StableBar/ConfigurationEdits.swift): file-preserving edits shared by CLI and editor.

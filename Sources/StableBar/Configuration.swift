@@ -189,7 +189,6 @@ let fontWeights: [(name: String, weight: Font.Weight)] = [
 
 struct WidgetAppearance {
     let foreground: Color
-    let hoverForeground: Color
     let background: Color
     let hoverBackground: Color
     let borderColor: Color
@@ -208,7 +207,6 @@ struct WidgetAppearance {
 
     init(_ style: WidgetStyle, defaults: WidgetStyle) {
         foreground = (style.foreground ?? defaults.foreground)?.color ?? .primary
-        hoverForeground = (style.hoverForeground ?? defaults.hoverForeground)?.color ?? foreground
         background = (style.background ?? defaults.background)?.color ?? .clear
         hoverBackground = (style.hoverBackground ?? defaults.hoverBackground)?.color ?? background
         borderColor = (style.borderColor ?? defaults.borderColor)?.color ?? .clear
