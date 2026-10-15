@@ -19,9 +19,10 @@ struct PopupView: View {
                 PopupBlockView(block: popup.layout, inheritedStyle: style,
                                fields: fields, lists: lists, samples: samples, menu: menu,
                                values: script?.output.values ?? [:], targets: script?.output.targets ?? [:],
-                               styles: script?.output.styles ?? [:], series: script?.output.series ?? [:]) { command in
-                    if popup.dismissOnAction { store.popup.close() }
-                    store.runAction(command, widget: widget)
+                               styles: script?.output.styles ?? [:], series: script?.output.series ?? [:]) { command, environment in
+                    if environment.isEmpty ? popup.dismissOnAction : popup.dismissOnControl { store.popup.close() }
+                    store.runAction(command, widget: widget,
+                                    event: ScriptEvent(sender: environment.isEmpty ? "mouse.clicked" : "control.changed", environment: environment))
                 }
                 if let error {
                     Text(error).foregroundStyle(.red).textSelection(.enabled)
@@ -52,8 +53,9 @@ struct PopupBlockView: View {
     var styles: [String: WidgetStyle] = [:]
     var series: [String: [Double]] = [:]
     var fillsWidth = true
-    let runAction: (String) -> Void
+    let runAction: (String, [String: String]) -> Void
     @State private var hovered = false
+    @State private var query = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @ViewBuilder
@@ -62,6 +64,13 @@ struct PopupBlockView: View {
             EmptyView()
         } else {
             styledContent
+        }
+    }
+
+    private var handlesInteraction: Bool {
+        switch block.content {
+        case .button, .slider, .toggle, .segmented, .search: true
+        default: false
         }
     }
 
@@ -76,10 +85,10 @@ struct PopupBlockView: View {
         case .trailing: .trailing
         }
         return Group {
-            if case .button = block.content {
+            if handlesInteraction {
                 content(style, ownStyle: ownStyle, appearance: appearance)
             } else if let command = block.onClickField.flatMap({ fields[$0] }) ?? block.onClick {
-                Button { runAction(command) } label: { content(style, ownStyle: ownStyle, appearance: appearance) }
+                Button { runAction(command, [:]) } label: { content(style, ownStyle: ownStyle, appearance: appearance) }
                     .buttonStyle(.plain)
             } else {
                 content(style, ownStyle: ownStyle, appearance: appearance)
@@ -87,6 +96,7 @@ struct PopupBlockView: View {
         }
             .font(appearance.font)
             .foregroundStyle(hovered ? appearance.hoverForeground : appearance.foreground)
+            .tint(appearance.accent)
             .padding(.leading, ownStyle.paddingLeading ?? ownStyle.paddingHorizontal ?? 0)
             .padding(.trailing, ownStyle.paddingTrailing ?? ownStyle.paddingHorizontal ?? 0)
             .padding(.top, ownStyle.paddingTop ?? ownStyle.paddingVertical ?? 0)
@@ -151,14 +161,34 @@ struct PopupBlockView: View {
                 }
             }
         case let .button(title, command):
-            Button { runAction(command) } label: {
+            Button { runAction(command, [:]) } label: {
                 Text(title).frame(maxWidth: .infinity).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+        case let .slider(title, source, minimum, maximum, step, command):
+            PopupSlider(title: title, value: values[source] ?? Double(fields[source] ?? "") ?? minimum,
+                        minimum: minimum, maximum: maximum, step: step) { runAction(command, ["VALUE": String($0)]) }
+        case let .toggle(title, source, command):
+            PopupToggle(title: title, value: fields[source] == "true" || fields[source] == "1" || values[source] == 1) {
+                runAction(command, ["VALUE": $0 ? "true" : "false"])
+            }
+        case let .segmented(title, source, options, command):
+            PopupSegmented(title: title, value: fields[source] ?? options[0].value, options: options) {
+                runAction(command, ["VALUE": $0])
+            }
+        case let .search(title, source, searchFields, row):
+            VStack(alignment: .leading, spacing: appearance.spacing) {
+                TextField(title, text: $query).textFieldStyle(.roundedBorder).accessibilityLabel(title)
+                ForEach(Array(searchPopupRows(lists[source] ?? [], query: query, fields: searchFields).enumerated()), id: \.offset) { _, fields in
+                    AnyView(PopupBlockView(block: row, inheritedStyle: style, fields: fields,
+                                          lists: lists, samples: samples, menu: menu, values: values,
+                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, runAction: runAction))
+                }
+            }
         case .menu:
             VStack(spacing: appearance.spacing) {
                 ForEach(Array(menu.enumerated()), id: \.offset) { _, item in
-                    PopupMenuRow(item: item, appearance: appearance, runAction: runAction)
+                    PopupMenuRow(item: item, appearance: appearance) { runAction($0, [:]) }
                 }
             }
         case .divider:
@@ -177,6 +207,64 @@ struct PopupBlockView: View {
                          track: style.background?.color ?? .clear, cornerRadius: appearance.cornerRadius)
                 .frame(height: height)
         }
+    }
+}
+
+private struct PopupSlider: View {
+    let title: String
+    let value: Double
+    let minimum: Double
+    let maximum: Double
+    let step: Double
+    let onChange: (Double) -> Void
+    @State private var localValue: Double?
+    @State private var editing = false
+
+    var body: some View {
+        Slider(value: Binding(get: { localValue ?? min(max(value, minimum), maximum) }, set: { localValue = $0 }),
+               in: minimum...maximum, step: step) {
+            Text(title)
+        } onEditingChanged: { editing in
+            self.editing = editing
+            if !editing, let localValue { onChange(localValue) }
+        }
+        .accessibilityLabel(title)
+        .onChange(of: value) { if !editing { localValue = nil } }
+    }
+}
+
+private struct PopupToggle: View {
+    let title: String
+    let value: Bool
+    let onChange: (Bool) -> Void
+    @State private var localValue: Bool?
+
+    var body: some View {
+        Toggle(title, isOn: Binding(get: { localValue ?? value }, set: {
+            localValue = $0
+            onChange($0)
+        }))
+        .onChange(of: value) { localValue = nil }
+    }
+}
+
+private struct PopupSegmented: View {
+    let title: String
+    let value: String
+    let options: [PopupControlOption]
+    let onChange: (String) -> Void
+    @State private var localValue: String?
+
+    var body: some View {
+        Picker(title, selection: Binding(get: { localValue ?? value }, set: {
+            localValue = $0
+            onChange($0)
+        })) {
+            ForEach(options, id: \.value) { option in Text(option.title).tag(option.value) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityLabel(title)
+        .onChange(of: value) { localValue = nil }
     }
 }
 

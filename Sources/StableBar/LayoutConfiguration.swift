@@ -1,0 +1,164 @@
+import Foundation
+
+struct WidgetGroupConfiguration: Decodable, Sendable {
+    var style: WidgetStyle
+
+    enum CodingKeys: String, CodingKey { case style }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        style = try values.decodeIfPresent(WidgetStyle.self, forKey: .style) ?? WidgetStyle()
+    }
+}
+
+enum WidgetOverflow: String, Decodable, Sendable {
+    case automatic, never
+}
+
+struct BarUnit: Identifiable {
+    let id: String
+    var widgets: [WidgetConfiguration]
+    let style: WidgetStyle?
+
+    var position: WidgetPosition { widgets[0].position }
+    var priority: Int { widgets.map(\.priority).max()! }
+    var canOverflow: Bool { widgets.allSatisfy { $0.overflow == .automatic } }
+    var isSpacer: Bool { widgets.count == 1 && widgets[0].content == .spacer }
+
+    static func make(widgets: [WidgetConfiguration], groups: [String: WidgetGroupConfiguration]) -> [BarUnit] {
+        var units: [BarUnit] = []
+        for widget in widgets {
+            if let group = widget.group {
+                let id = "group:\(group)"
+                if let index = units.firstIndex(where: { $0.id == id }) {
+                    units[index].widgets.append(widget)
+                } else {
+                    units.append(BarUnit(id: id, widgets: [widget], style: groups[group]!.style))
+                }
+            } else {
+                units.append(BarUnit(id: "widget:\(widget.id)", widgets: [widget], style: nil))
+            }
+        }
+        return units
+    }
+}
+
+struct BarLayoutItem {
+    let id: String
+    let position: WidgetPosition
+    let width: CGFloat
+    var priority = 0
+    var canOverflow = true
+    var isSpacer = false
+}
+
+struct BarPlacement: Equatable {
+    let x: CGFloat
+    let width: CGFloat
+}
+
+struct AdaptiveBarPlan {
+    var placements: [String: BarPlacement] = [:]
+    var overflow: Set<String> = []
+    var overflowX: CGFloat?
+}
+
+struct AdaptiveBarPlanner {
+    let inset: CGFloat
+    let spacing: CGFloat
+    let notchSpacing: CGFloat
+    let notch: ClosedRange<CGFloat>?
+    let overflowWidth: CGFloat = 30
+
+    func plan(width: CGFloat, items: [BarLayoutItem]) -> AdaptiveBarPlan {
+        var result = AdaptiveBarPlan()
+        if let notch {
+            let left = items.filter { $0.position == .left || $0.position == .notchLeft }
+            let right = items.filter { $0.position != .left && $0.position != .notchLeft }
+            let leftEnd = max(inset, notch.lowerBound - notchSpacing)
+            let rightStart = min(width - inset, notch.upperBound + notchSpacing)
+            let leftVisible = fitting(left, capacity: leftEnd - inset, overflow: &result.overflow)
+            var rightVisible = fitting(right, capacity: width - inset - rightStart, overflow: &result.overflow)
+            let reserve = result.overflow.isEmpty ? 0 : overflowWidth + spacing
+            if reserve > 0 {
+                rightVisible = fitting(rightVisible, capacity: width - inset - rightStart - reserve, overflow: &result.overflow)
+                result.overflowX = width - inset - overflowWidth
+            }
+            place(leftVisible, start: inset, end: leftEnd, positions: [.left, .notchLeft], result: &result)
+            place(rightVisible, start: rightStart, end: width - inset - reserve,
+                  positions: [.notchRight, .center, .right], result: &result)
+        } else {
+            var visible = fitting(items, capacity: width - inset * 2, overflow: &result.overflow)
+            let reserve = result.overflow.isEmpty ? 0 : overflowWidth + spacing
+            if reserve > 0 {
+                visible = fitting(visible, capacity: width - inset * 2 - reserve, overflow: &result.overflow)
+                result.overflowX = width - inset - overflowWidth
+            }
+            place(visible, start: inset, end: width - inset - reserve,
+                  positions: [.left, .notchLeft, .center, .notchRight, .right], result: &result)
+        }
+        return result
+    }
+
+    private func fitting(_ items: [BarLayoutItem], capacity: CGFloat, overflow: inout Set<String>) -> [BarLayoutItem] {
+        var visible = items
+        let candidates = items.enumerated().filter { $0.element.canOverflow && !$0.element.isSpacer }.sorted {
+            if $0.element.priority != $1.element.priority { return $0.element.priority < $1.element.priority }
+            return $0.offset > $1.offset
+        }
+        for candidate in candidates {
+            if occupiedWidth(visible) <= capacity { break }
+            overflow.insert(candidate.element.id)
+            visible.removeAll { $0.id == candidate.element.id }
+        }
+        return visible
+    }
+
+    private func occupiedWidth(_ items: [BarLayoutItem]) -> CGFloat {
+        items.reduce(0) { $0 + $1.width } + CGFloat(max(items.count - 1, 0)) * spacing
+    }
+
+    private func place(_ items: [BarLayoutItem], start: CGFloat, end: CGFloat,
+                       positions: [WidgetPosition], result: inout AdaptiveBarPlan) {
+        let capacity = max(end - start, 0)
+        let ordered = positions.flatMap { position in items.filter { $0.position == position } }
+        let gaps = min(spacing, capacity / CGFloat(max(ordered.count - 1, 1)))
+        let contentWidth = ordered.reduce(CGFloat.zero) { $0 + $1.width }
+        let availableWidth = max(capacity - CGFloat(max(ordered.count - 1, 0)) * gaps, 0)
+        let scale = contentWidth > availableWidth ? availableWidth / contentWidth : 1
+        let spacerCount = ordered.filter(\.isSpacer).count
+        let extra = spacerCount == 0 ? 0 : max(availableWidth - contentWidth, 0) / CGFloat(spacerCount)
+        let widths = Dictionary(uniqueKeysWithValues: ordered.map { ($0.id, $0.width * scale + ($0.isSpacer ? extra : 0)) })
+        let buckets = positions.map { position in ordered.filter { $0.position == position } }
+        let sizes = buckets.map { bucket in bucket.reduce(CGFloat.zero) { $0 + widths[$1.id]! } + CGFloat(max(bucket.count - 1, 0)) * gaps }
+        var origins = [CGFloat](repeating: start, count: buckets.count)
+        if positions.count == 5 {
+            origins = BarLayout(inset: 0, spacing: gaps, notchSpacing: 0, notch: nil)
+                .origins(width: capacity, sizes: sizes).map { $0 + start }
+            let middle = (1...3).filter { !buckets[$0].isEmpty }
+            let middleWidth = middle.reduce(CGFloat.zero) { $0 + sizes[$1] } + CGFloat(max(middle.count - 1, 0)) * gaps
+            let lower = start + sizes[0] + (buckets[0].isEmpty || middle.isEmpty ? 0 : gaps)
+            let upper = end - sizes[4] - middleWidth - (buckets[4].isEmpty || middle.isEmpty ? 0 : gaps)
+            if let first = middle.first {
+                let x = min(max(origins[first], lower), max(lower, upper))
+                let shift = x - origins[first]
+                for index in middle { origins[index] += shift }
+            }
+        } else {
+            var trailingX = end
+            for index in buckets.indices.reversed() where index > 0 && !buckets[index].isEmpty {
+                trailingX -= sizes[index]
+                origins[index] = trailingX
+                trailingX -= gaps
+            }
+        }
+        for index in buckets.indices {
+            var x = origins[index]
+            for item in buckets[index] {
+                let itemWidth = widths[item.id]!
+                result.placements[item.id] = BarPlacement(x: x, width: itemWidth)
+                x += itemWidth + gaps
+            }
+        }
+    }
+}

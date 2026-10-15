@@ -3,6 +3,8 @@ import SwiftUI
 struct BarView: View {
     let store: BarStore
     let display: BarDisplay
+    @State private var measuredWidths: [String: CGFloat] = [:]
+    @State private var overflowAnchor = NSView()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -17,31 +19,72 @@ struct BarView: View {
                         return (center - width / 2)...(center + width / 2)
                     } ?? range
                 }
-                ZStack {
-                    (style.background ?? config.bar.background).color
-                    BarLayout(inset: config.bar.inset, spacing: config.bar.spacing,
-                              notchSpacing: config.bar.notchSpacing, notch: notch) {
-                        HStack(spacing: config.bar.spacing) { widgets(at: .left, in: config) }.fixedSize()
-                        HStack(spacing: config.bar.spacing) { widgets(at: .notchLeft, in: config) }.fixedSize()
-                        HStack(spacing: config.bar.spacing) { widgets(at: .center, in: config) }.fixedSize()
-                        HStack(spacing: config.bar.spacing) { widgets(at: .notchRight, in: config) }.fixedSize()
-                        HStack(spacing: config.bar.spacing) {
-                            widgets(at: .right, in: config)
-                            if let error = store.configurationError ?? store.actionError {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(.orange)
-                                    .help(error)
-                            }
-                        }.fixedSize()
+                let activeID = store.aerospace.workspaces.first(where: \.isFocused)?.monitor ?? store.activeDisplayID
+                let widgets = config.widgets.filter { widget in
+                    let output = store.scripts[widget.id]?.output
+                    return widget.enabled && (output?.display ?? widget.display).includes(display, activeID: activeID)
+                        && (output?.hidden != true || store.scripts[widget.id]?.error != nil)
+                }
+                let units = BarUnit.make(widgets: widgets, groups: config.groups)
+                GeometryReader { geometry in
+                    let items = units.map { unit in
+                        BarLayoutItem(id: unit.id, position: unit.position, width: measuredWidths[unit.id] ?? 0,
+                                      priority: unit.priority, canOverflow: unit.canOverflow, isSpacer: unit.isSpacer)
                     }
+                    let plan = AdaptiveBarPlanner(inset: config.bar.inset, spacing: config.bar.spacing,
+                                                  notchSpacing: config.bar.notchSpacing, notch: notch)
+                        .plan(width: geometry.size.width, items: items)
+                    let visible = Set(units.filter { plan.placements[$0.id] != nil }.flatMap { $0.widgets.map(\.id) })
+                    ZStack(alignment: .topLeading) {
+                        (style.background ?? config.bar.background).color
+                        ForEach(units) { unit in
+                            if let placement = plan.placements[unit.id] {
+                                unitView(unit, config: config, width: placement.width)
+                                    .frame(width: placement.width, height: geometry.size.height)
+                                    .offset(x: placement.x)
+                            }
+                        }
+                        if let x = plan.overflowX {
+                            overflowMenu(units.filter { plan.overflow.contains($0.id) }, config: config)
+                                .frame(width: 30, height: geometry.size.height)
+                                .background(PopupAnchor(view: overflowAnchor, popup: store.popup))
+                                .offset(x: x)
+                        }
+                    }
+                    .overlay {
+                        HStack(spacing: 0) {
+                            ForEach(units) { unit in
+                                BarUnitView(unit: unit, config: config, store: store, display: display.id)
+                                    .fixedSize()
+                                    .background {
+                                        GeometryReader { proxy in
+                                            Color.clear.preference(key: BarWidthPreference.self, value: [unit.id: proxy.size.width])
+                                        }
+                                    }
+                            }
+                        }
+                        .fixedSize()
+                        .hidden()
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    }
+                    .onPreferenceChange(BarWidthPreference.self) { measuredWidths = $0 }
+                    .onChange(of: visible, initial: true) { _, ids in store.setVisibleWidgets(ids: ids, displayID: display.id) }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius ?? 0))
                 .overlay(alignment: .bottom) {
                     (style.borderColor?.color ?? .clear).frame(height: style.borderWidth ?? 0)
                 }
+                .overlay(alignment: .topTrailing) {
+                    if let error = store.configurationError ?? store.actionError {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 9)).foregroundStyle(.orange).help(error)
+                    }
+                }
                 .animation(reduceMotion ? nil : .easeOut(duration: config.bar.animationDuration), value: style)
             }
         }
+        .onDisappear { store.setVisibleWidgets(ids: [], displayID: display.id) }
         .contextMenu {
             Text("StableBar")
             Button("Set up StableBar…") { NSApp.sendAction(#selector(AppDelegate.showSetup), to: NSApp.delegate, from: nil) }
@@ -58,18 +101,117 @@ struct BarView: View {
     }
 
     @ViewBuilder
-    private func widgets(at position: WidgetPosition, in config: Configuration) -> some View {
-        ForEach(config.widgets.filter { $0.enabled && $0.position == position }) { widget in
-            let output = store.scripts[widget.id]?.output
-            let activeID = store.aerospace.workspaces.first(where: \.isFocused)?.monitor ?? store.activeDisplayID
-            if (output?.display ?? widget.display).includes(display, activeID: activeID) {
-                if output?.hidden != true || store.scripts[widget.id]?.error != nil {
-                    WidgetView(widget: widget, defaults: config.defaults, store: store,
-                               monitor: display.id, animationDuration: config.bar.animationDuration)
+    private func unitView(_ unit: BarUnit, config: Configuration, width: CGFloat) -> some View {
+        if width < measuredWidths[unit.id, default: 0] - 0.5 {
+            ScrollView(.horizontal) {
+                BarUnitView(unit: unit, config: config, store: store, display: display.id).fixedSize()
+            }
+            .scrollIndicators(.hidden)
+        } else {
+            BarUnitView(unit: unit, config: config, store: store, display: display.id)
+        }
+    }
+
+    private func overflowMenu(_ units: [BarUnit], config: Configuration) -> some View {
+        Menu {
+            ForEach(units) { unit in
+                Section {
+                    ForEach(unit.widgets) { widget in
+                        let popup = widgetPopup(widget, store: store)
+                        let command = store.scripts[widget.id]?.output.onClick ?? widget.onClick
+                        if widget.content == .workspaces && popup == nil && command == nil {
+                            ForEach(store.aerospace.workspaces.filter { $0.monitor == display.id }) { workspace in
+                                Button("Workspace \(workspace.name)") { store.aerospace.select(workspace) }
+                            }
+                        } else {
+                            Button(overflowTitle(widget)) {
+                                if let popup {
+                                    store.popup.toggle(popup, widget: widget, defaults: config.defaults, store: store, anchor: overflowAnchor)
+                                } else if let command {
+                                    store.runAction(command, widget: widget,
+                                                    event: ScriptEvent(sender: "mouse.clicked", environment: ["BUTTON": "left", "SID": String(display.id)]))
+                                }
+                            }
+                            .disabled(popup == nil && command == nil)
+                        }
+                    }
                 }
+            }
+        } label: {
+            Image(systemName: "ellipsis").frame(width: 30, height: 24).contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .accessibilityLabel("More widgets")
+        .help("More widgets")
+    }
+
+    private func overflowTitle(_ widget: WidgetConfiguration) -> String {
+        switch widget.content {
+        case let .text(text): return text
+        case let .clock(format):
+            let formatter = DateFormatter()
+            formatter.dateFormat = format
+            return formatter.string(from: Date())
+        case .activeApp: return store.activeApp?.localizedName ?? "Desktop"
+        case .script, .provider:
+            let text = store.scripts[widget.id]?.output.text ?? ""
+            return text.isEmpty ? widget.id : text
+        case .workspaces, .spacer: return widget.id
+        }
+    }
+}
+
+private struct BarWidthPreference: PreferenceKey {
+    static let defaultValue: [String: CGFloat] = [:]
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+private struct BarUnitView: View {
+    let unit: BarUnit
+    let config: Configuration
+    let store: BarStore
+    let display: Int
+
+    var body: some View {
+        if unit.isSpacer {
+            Color.clear.frame(minWidth: unit.widgets[0].style.minWidth ?? 0,
+                              idealWidth: unit.widgets[0].style.minWidth ?? 0, maxWidth: .infinity, minHeight: 1)
+        } else {
+            let style = unit.style ?? WidgetStyle()
+            HStack(spacing: style.spacing ?? config.bar.spacing) {
+                ForEach(unit.widgets) { widget in
+                    WidgetView(widget: widget, defaults: config.defaults, store: store,
+                               monitor: display, animationDuration: config.bar.animationDuration)
+                }
+            }
+            .padding(.leading, style.paddingLeading ?? style.paddingHorizontal ?? 0)
+            .padding(.trailing, style.paddingTrailing ?? style.paddingHorizontal ?? 0)
+            .padding(.top, style.paddingTop ?? style.paddingVertical ?? 0)
+            .padding(.bottom, style.paddingBottom ?? style.paddingVertical ?? 0)
+            .background(style.background?.color ?? .clear, in: RoundedRectangle(cornerRadius: style.cornerRadius ?? 0))
+            .overlay {
+                RoundedRectangle(cornerRadius: style.cornerRadius ?? 0)
+                    .strokeBorder(style.borderColor?.color ?? .clear, lineWidth: style.borderWidth ?? 0)
             }
         }
     }
+}
+
+@MainActor
+private func widgetPopup(_ widget: WidgetConfiguration, store: BarStore) -> PopupConfiguration? {
+    if let popup = widget.popup { return popup }
+    if let name = widget.popupName { return store.configuration!.popups[name]! }
+    if let menu = store.scripts[widget.id]?.output.menu ?? widget.menu, !menu.isEmpty {
+        return PopupConfiguration(
+            height: min(Double(menu.count) * 50 + 24, 480),
+            style: WidgetStyle(fontSize: 12, paddingHorizontal: 12, paddingVertical: 12, spacing: 4),
+            layout: PopupBlock(content: .menu)
+        )
+    }
+    return nil
 }
 
 struct WidgetView: View {
@@ -95,25 +237,12 @@ struct WidgetView: View {
         return style
     }
 
-    private var popup: PopupConfiguration? {
-        if let popup = widget.popup { return popup }
-        if let name = widget.popupName { return store.configuration!.popups[name]! }
-        if let menu = store.scripts[widget.id]?.output.menu ?? widget.menu, !menu.isEmpty {
-            return PopupConfiguration(
-                height: min(Double(menu.count) * 50 + 24, 480),
-                style: WidgetStyle(fontSize: 12, paddingHorizontal: 12, paddingVertical: 12, spacing: 4),
-                layout: PopupBlock(content: .menu)
-            )
-        }
-        return nil
-    }
-
     var body: some View {
         let output = store.scripts[widget.id]?.output
         let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let animation = output?.animation ?? widget.animation ?? WidgetAnimation(duration: animationDuration)
         Group {
-            if let popup {
+            if let popup = widgetPopup(widget, store: store) {
                 Button {
                     store.popup.toggle(popup, widget: widget, defaults: defaults, store: store, anchor: popupAnchor)
                 } label: { content(appearance) }
@@ -132,6 +261,7 @@ struct WidgetView: View {
         .padding(.top, style.paddingTop ?? appearance.paddingVertical)
         .padding(.bottom, style.paddingBottom ?? appearance.paddingVertical)
         .frame(width: appearance.width, height: style.height.map { CGFloat($0) })
+        .frame(minWidth: style.minWidth.map { CGFloat($0) }, maxWidth: style.maxWidth.map { CGFloat($0) })
         .background(hovered ? appearance.hoverBackground : appearance.background,
                     in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
         .overlay {
@@ -195,7 +325,7 @@ struct WidgetView: View {
                     Text(store.activeApp?.localizedName ?? "Desktop").lineLimit(1)
                 }
             case let .clock(format):
-                TimelineView(.everyMinute) { context in
+                TimelineView(.periodic(from: .now, by: 1)) { context in
                     let formatter = DateFormatter()
                     let _ = formatter.dateFormat = format
                     label(formatter.string(from: context.date), icon: widget.icon, appearance: appearance)
@@ -203,7 +333,9 @@ struct WidgetView: View {
                 }
             case let .text(text):
                 label(text, icon: widget.icon, appearance: appearance)
-            case .script:
+            case .spacer:
+                Spacer(minLength: style.minWidth ?? 0)
+            case .script, .provider:
                 if let script = store.scripts[widget.id] {
                     HStack(spacing: appearance.spacing) {
                         if script.output.value != nil {
@@ -231,7 +363,7 @@ struct WidgetView: View {
         switch widget.content {
         case let .text(text): fields["text"] = text
         case .activeApp: fields["text"] = store.activeApp?.localizedName ?? "Desktop"
-        case .script:
+        case .script, .provider:
             fields["text"] = script?.output.text ?? "…"
             fields["icon"] = script?.output.icon ?? widget.icon ?? ""
         default: break
@@ -241,7 +373,14 @@ struct WidgetView: View {
                               menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
                               targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
                               series: script?.output.series ?? [:],
-                              fillsWidth: fillsWidth) { runAction($0, sender: "mouse.clicked", button: "left") }
+                              fillsWidth: fillsWidth) { command, environment in
+            if environment.isEmpty {
+                runAction(command, sender: "mouse.clicked", button: "left")
+            } else {
+                store.runAction(command, widget: widget,
+                                event: ScriptEvent(sender: "control.changed", environment: environment.merging(["SID": String(monitor)]) { first, _ in first }))
+            }
+        }
     }
 
     private func label(_ text: String, icon: String?, appearance: WidgetAppearance) -> some View {

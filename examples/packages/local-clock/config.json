@@ -1,0 +1,16 @@
+{
+  "widgets": [
+    {
+      "id": "local-clock",
+      "type": "script",
+      "position": "right",
+      "command": "\"$PACKAGE_DIR/scripts/clock.sh\"",
+      "interval": 1,
+      "environment": { "FORMAT": "@setting.format" },
+      "style": {
+        "fontSize": "@setting.fontSize",
+        "foreground": "@setting.foreground"
+      }
+    }
+  ]
+}

@@ -79,7 +79,7 @@ Split a setup into JSON files and load them from the main configuration:
 }
 ```
 
-Include paths are relative to the file that names them; absolute paths and `~` also work. Includes can have their own includes. Files apply in listed order, followed by the containing file. Objects merge recursively, with later values winning. Arrays replace earlier arrays, except the top-level `widgets` arrays, which concatenate in order. Modules can contain only a theme, templates, popups, environment variables, or overrides; they do not need widgets.
+Include paths are relative to the file that names them; absolute paths and `~` also work. Includes can have their own includes. Files apply in listed order, followed by the containing file. Objects merge recursively, with later values winning. Arrays replace earlier arrays, except top-level `widgets`, which concatenate in order, and `packages`, whose selections merge by package ID. Root package selections can disable or change versions inherited from includes. Modules can contain only a theme, templates, popups, environment variables, or overrides; they do not need widgets.
 
 Define reusable widget properties in `templates`, then select one with `template`:
 
@@ -121,6 +121,77 @@ Each widget can override any of these styles:
 `fontName` is `system` or an installed font name. `fontWeight` is `regular`, `medium`, `semibold` or `bold`. Set `width` on frequently changing widgets to keep their footprint stable. The workspace highlight uses `accent` and `accentText`; its motion respects Reduce Motion. Set `animationDuration` to `0` to remove transition time.
 
 Styles also accept `hoverForeground`, `height`, `paddingLeading`, `paddingTrailing`, `paddingTop`, `paddingBottom`, `offsetX`, `offsetY` and `opacity`. Side-specific padding overrides horizontal/vertical padding. `ultralight`, `thin` and `light` font weights are available too. Offsets move the drawing without moving its neighbours.
+
+### Theme tokens and automatic profiles
+
+Define reusable JSON values in `tokens` and reference them with a whole string such as `"@token.accent"`. Values retain their type: a token can supply a number, boolean, array, object, or string. Tokens can reference other tokens; unknown names and cycles reject the change while the current configuration keeps running. References are not interpolated inside shell commands or other strings.
+
+```json
+{
+  "tokens": { "accent": "#db733f", "fontSize": 12 },
+  "defaults": { "accent": "@token.accent", "fontSize": "@token.fontSize" },
+  "profiles": [
+    {
+      "name": "dark",
+      "when": { "appearance": "dark" },
+      "configuration": { "tokens": { "accent": "#ffa66b" } }
+    },
+    {
+      "name": "laptop",
+      "when": { "onBattery": true, "displayCount": 1 },
+      "configuration": { "bar": { "height": 34 }, "tokens": { "fontSize": 11 } }
+    }
+  ],
+  "widgets": [{ "id": "clock", "type": "clock", "position": "right" }]
+}
+```
+
+Profiles match `appearance` (`light` or `dark`), `onBattery`, `displayCount`, `externalDisplay`, and the focused app's bundle identifier in `app`. Conditions in one profile must all match. Matching profiles apply in array order after modules and the root configuration; later profiles win. A profile without `when` always matches. Widgets in profiles append to the bar; use `widgetOverrides` to change existing widgets. Appearance, power, screen and focused-app changes update the active profiles automatically.
+
+Set `"profile": "laptop"` to apply only that profile, regardless of its conditions. Remove `profile` to resume automatic matching, or set it to `null` to override a manual profile inherited from a module. The inspector reports active profiles and the file, template, override and token sources behind effective widget properties.
+
+The editor saves widget, bar and default-style overrides inside the root file’s `customization` object. This final layer applies after profiles, so explicit changes stay in effect when automatic profiles switch. The editor also writes `removedWidgets` into the root file and `widgetOrder` into `customization`, keeping imported modules editable independently. `removedWidgets` hides named definitions and their overrides. `widgetOrder` lists surviving widget IDs first; unlisted widgets keep their original relative order. Saved customization overrides and ordering for widgets in an inactive profile stay dormant until those widgets return. Ordinary `widgetOverrides` still reject unknown IDs.
+
+### Local widget packages
+
+Open **Customize → Packages** to review a local package folder, inspect its commands and settings, and install it. Installation does not enable a package or execute its commands. Select an installed version, review its commands, adjust its settings, and enable it explicitly. Settings and the selected version are saved in the root configuration. Selecting an older installed version rolls back the pin.
+
+A package is a folder containing `package.json`, its configuration, and any scripts or assets. [examples/packages/local-clock](examples/packages/local-clock/package.json) is a working package using a bundled script. Its manifest has this shape:
+
+```json
+{
+  "id": "local-clock",
+  "name": "Local clock",
+  "version": "1.0.0",
+  "entry": "config.json",
+  "settings": {
+    "format": { "type": "string", "title": "Time format", "default": "%H:%M" },
+    "fontSize": { "type": "number", "title": "Font size", "default": 12 }
+  }
+}
+```
+
+Settings support `string`, `number`, and `bool`, with a required matching `default`. Reference a setting as a whole value, such as `"fontSize": "@setting.fontSize"` or `"environment": { "FORMAT": "@setting.format" }`. Put settings needed by shell commands in environment variables and quote them normally in the script. Widgets, templates and providers receive `PACKAGE_DIR`, the absolute path of the installed package, for commands such as `"$PACKAGE_DIR/scripts/clock.sh"`.
+
+Packages install atomically into `packages/<id>/<version>` beside the main configuration. Existing versions cannot be overwritten. Configuration includes and static image paths stay inside the package; traversal and symlinks escaping the folder are rejected. Static image paths are resolved relative to the package folder, including token references. Package commands can run arbitrary code as your user; review the files as well as the displayed command strings before enabling an unfamiliar package.
+
+```sh
+StableBar --inspect-package examples/packages/local-clock
+StableBar --install-package examples/packages/local-clock
+StableBar --packages
+```
+
+Enable an exact installed version in the root configuration:
+
+```json
+{
+  "packages": [
+    { "id": "local-clock", "version": "1.0.0", "enabled": true, "settings": { "format": "%H:%M:%S" } }
+  ]
+}
+```
+
+Package selections in modules merge by package ID, with later modules and the root taking precedence. Enabled packages load once before the composed modules and root properties. Root templates, tokens and widget overrides can customize them. Set `enabled` to `false` to stop loading a package; installation alone has no runtime effect. Packages cannot enable other packages. There is no network registry or automatic update process: versions remain pinned until you choose another installed version.
 
 ### Displays and notch placement
 
@@ -234,11 +305,50 @@ These commands receive `SENDER=mouse.clicked`, `mouse.scrolled`, `mouse.entered`
 
 ### Command-line controls
 
-- `--config PATH`: launch with a separate configuration, including its modules.
-- `--validate [PATH]`: load and validate without opening a bar or executing scripts; exits nonzero on errors. Defaults to your personal config.
-- `--trigger EVENT [KEY=VALUE ...]`: notify running bars subscribed to that event.
-- `--reload`: ask running bars to reload their configuration.
-- `--help`: print usage. Invalid arguments exit with an error instead of launching another bar.
+The executable is `StableBar.app/Contents/MacOS/StableBar`. Prefix commands with `--config PATH` to address a specific running configuration; otherwise live commands target the default configuration. Replies are JSON, and errors exit with status 1. Each configuration has one local control endpoint per user.
+
+```sh
+StableBar --query
+StableBar --query clock
+StableBar --set clock '{"format":"HH:mm:ss","style":{"fontSize":15}}'
+StableBar --add '{"id":"note","type":"text","position":"left","text":"Hello"}'
+StableBar --reorder note clock
+StableBar --remove note
+StableBar --profile dark
+StableBar --profile auto
+StableBar --reset
+StableBar --customize
+```
+
+Changes are live for the current session. Add `--persist` to save the session changes into the root file. `--reset` discards unsaved session changes and reloads the files. Session edits reapply over external file changes. Imports and package source files are preserved.
+
+Use one batch for changes that must appear together:
+
+```sh
+StableBar --batch '[
+  {"action":"set","id":"clock","properties":{"position":"left"}},
+  {"action":"bar","properties":{"height":44}},
+  {"action":"defaults","properties":{"fontSize":13}}
+]' --persist
+```
+
+A batch validates the whole resulting configuration before replacing the running bar or writing the file. A failed batch leaves both intact. Supported edit actions are `set` (`id`, `properties`), `add` (`properties`, including `id`), `remove` (`id`), `reorder` (`ids`), `bar`/`defaults` (`properties`), `profile` (`name`, omitted for automatic), and `package` (`properties`: `id`, `version`, optional `enabled` and `settings`).
+
+- `--validate [PATH]`: compose and validate files without starting scripts.
+- `--refresh ID`: refresh a running widget. Hidden, suspended providers must first be made visible or opened in the inspector.
+- `--trigger EVENT [KEY=VALUE ...]`: send an event. Without `--config`, this broadcasts to all subscribed bars for compatibility; with `--config`, it targets that configuration.
+- `--reload`: reload configuration; without `--config`, notify all running bars.
+- `--packages`, `--inspect-package PATH`, `--install-package PATH`, `--enable-package ID VERSION [--persist]`: review and manage local packages. Installation does not enable commands. Package selections belong in the root file or its includes; use profile widget overrides to hide package widgets contextually.
+
+### Editor and inspector
+
+Open **Customize and inspect…** from the menu-bar icon, reopen the running app, or run `StableBar --customize`.
+
+The **Editor** shows a bar preview and a draggable widget list. Change positions, icons, text, clock formats, colors, font size, padding and corners; use advanced JSON properties for the rest of a widget’s configuration. Add/remove widgets, undo/redo changes, then **Apply and save**. Invalid drafts cannot be applied. Preview does not launch extra scripts or run click actions.
+
+The **Inspector** shows the composed widget configuration, defaults, source paths, provider output, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while that inspector is visible. Closing the window restores its visibility policy.
+
+The **Packages** tab reviews local folders and their declared commands, edits typed settings, installs versions and enables a chosen version. Select an older installed version to roll back.
 
 ## Built-in widgets
 
@@ -249,6 +359,7 @@ These commands receive `SENDER=mouse.clicked`, `mouse.scrolled`, `mouse.entered`
 | `clock` | Local date/time, updated each minute | `format`: DateFormatter format |
 | `text` | Static text and optional icon | `text` |
 | `script` | Output of a shell command | `command`, `interval` in seconds or `null` for event-only updates |
+| `provider` | Shared command, stream or native data | `provider`: key from the top-level `providers` object |
 
 The AeroSpace connection subscribes to workspace, monitor, window and focus events. It loads an initial snapshot, coalesces pending events and reconnects after a disconnect. The accent color marks the focused workspace; an outline marks a workspace visible on another monitor. Empty, inactive workspaces are hidden. App icons are deduplicated per workspace. Active-app updates come from NSWorkspace notifications. The clock updates once a minute.
 
@@ -303,11 +414,101 @@ Return plain text, or one JSON object:
 - `fields`: named display strings for popup field blocks.
 - `lists`: named arrays of objects containing display strings for popup list blocks.
 
-A nonzero exit, timeout, excessive output or invalid JSON preserves the previous output and adds a warning with the error in its tooltip. Polling scripts retry at their configured interval; event-only scripts retry on their next event or action. A completed click action requests an immediate refresh. `onClick` runs only when clicked.
+A nonzero exit, timeout, excessive output or invalid JSON preserves the previous output and adds a warning with the error in its tooltip. Repeated polling failures increase the retry delay exponentially up to five minutes, without shortening a configured interval longer than that. A successful update resets the delay; event-only scripts retry on their next event or action. A completed click action requests an immediate refresh. `onClick` runs only when clicked.
 
 Commands have a 10-second timeout by default. Set a widget's `timeout` to another positive number of seconds; it applies to both updates and actions. Stdout and stderr are each limited to 1 MiB. Successful stderr logging does not corrupt the widget's stdout JSON. Failures display stderr, stdout, or the exit status when neither contains a message.
 
 Commands must finish; do not start background daemons from widget scripts. Timeout, cancellation, and shutdown kill the command's process group and direct process. A descendant that deliberately starts another session or process group can outlive it, but cannot hold the widget's output pipe open past its timeout.
+
+## Shared providers and native data
+
+Define a provider once and reference it from several widgets. StableBar keeps one sampler or command process for all enabled consumers; each widget can use a different layout, popup, display and style. Provider output uses the same `text`, `fields`, `values`, `lists` and other fields as script output.
+
+```json
+{
+  "providers": {
+    "machine": { "type": "system", "interval": 2 },
+    "music": {
+      "type": "stream",
+      "command": "\"$CONFIG_DIR/music-events\"",
+      "interval": 2,
+      "whenVisible": true
+    }
+  },
+  "widgets": [
+    {
+      "id": "cpu", "type": "provider", "provider": "machine", "position": "right",
+      "layout": { "type": "field", "field": "cpu" }
+    },
+    {
+      "id": "memory", "type": "provider", "provider": "machine", "position": "right",
+      "layout": { "type": "progress", "source": "memory", "style": { "width": 60 } }
+    },
+    {
+      "id": "song", "type": "provider", "provider": "music", "position": "left"
+    }
+  ]
+}
+```
+
+Provider `type` is `command`, `stream`, `system`, `network`, `battery` or `audio`. `command` and `stream` require a shell `command`. `interval` defaults to 5 seconds: the polling interval for commands and native sources, or the initial reconnect delay for streams. `timeout` defaults to 10 seconds and applies to command providers; streams remain running until they exit, fail, suspend or stop. Provider intervals and timeouts must be positive and finite.
+
+Provider `environment` overlays the top-level environment. `NAME` is the provider name and `CONFIG_DIR` remains the main configuration directory. The environment of a consuming widget applies to that widget's actions, not the shared update process. Add `events` to a provider or consuming widget to request updates; one event refreshes a shared provider once. An explicit stream refresh restarts its process with the new event payload.
+
+A stream writes one complete JSON object per line, including `text`, and flushes stdout after each update. Empty lines are ignored; the final line may omit its newline. Streaming output represents current state: when updates arrive faster than the UI consumes them, only the newest pending update is retained. Each line is limited to 1 MiB; stderr retains its latest 16 KiB. Malformed output stops the process and retains the last good value. Clean exits and failures reconnect with exponential backoff, capped at five minutes or the configured interval if longer. Ten seconds of successful streaming resets the failure streak.
+
+Set `whenVisible` to `true` to suspend a provider when none of its consumers is visible on any display, including widgets moved to overflow. Removing or disabling the last consuming widget stops the provider. System sleep suspends scripts and providers; resuming preserves the last output and graph history, and starts a fresh update with `SENDER=resume`.
+
+Native providers use public macOS APIs and launch no shell commands:
+
+| Type | Output contract |
+| --- | --- |
+| `system` | `value` and `values.cpu`: CPU fraction; `values.memory`: used-memory fraction; `values.memoryUsed` and `values.memoryTotal`: bytes. `fields.cpu` and `fields.memory` are whole percentages. Used memory includes internal, wired and compressed pages, excluding purgeable pages. |
+| `network` | `values.download` and `values.upload`: aggregate bytes/second across up `en*` Wi-Fi/Ethernet interfaces. `fields.interface`: interface names. `lists.interfaces`: rows with `name`, `download`, `upload`. Virtual VPN interfaces are excluded to avoid counting the same traffic twice. |
+| `battery` | `value` and `values.percent`: charge fraction. `fields.percent`: whole percentage; `fields.state`: `charging`, `charged`, `battery` or `ac`; `fields.present`: `true`/`false`; optional `fields.timeRemaining`: minutes. Desktops without a battery return `AC` without a charge value. |
+| `audio` | `value` and `values.volume`: output-volume fraction when supported. `fields.device`, `fields.deviceID`, `fields.volumeAvailable` and optional `fields.muted`; `lists.devices`: output-device rows with `id` and `name`. Fixed-volume devices can omit volume, and no output device returns `No output`. |
+
+Fractions use 0–1. CPU and network rates are deltas; their first sample after startup or resume is zero. Native audio is a data source; use a control's `onChange` command to change volume or devices.
+
+Scripts and providers expose diagnostics in the inspector and runtime query: running/suspended state, last event/start/update, execution duration, bounded stdout/stderr, execution/failure/restart counts and next retry delay. CPU time is cumulative completed-command CPU time, not a live resource meter for a running stream. Diagnostics and graph history survive style-only edits and suspension. The existing process-group cancellation limit for deliberately detached descendants also applies to streams.
+
+## Adaptive layout and groups
+
+Widgets keep their configured order within `left`, `notchLeft`, `center`, `notchRight`, and `right`. The center cluster shifts within the free space before anything overflows. On a notched screen, `center` widgets join the right side of the notch; neither side can use the other side's space.
+
+Set `priority` on a widget to keep it visible longer; higher numbers win. The default is `0`. When space runs out, lower-priority widgets move to the **More widgets** menu. Equal priorities overflow from the end of the configuration first. The menu still opens their popups and runs their click actions. Workspaces remain selectable there. Widgets return automatically when space becomes available.
+
+Use `"overflow": "never"` for essential widgets. If these alone exceed the available width, their containers scroll horizontally so the full content remains reachable. This is useful for a required workspace list on a narrow display.
+
+```json
+{
+  "groups": {
+    "system": {
+      "style": {
+        "background": "#202027",
+        "paddingHorizontal": 4,
+        "paddingVertical": 3,
+        "borderColor": "#484850",
+        "borderWidth": 1,
+        "cornerRadius": 12,
+        "spacing": 4
+      }
+    }
+  },
+  "widgets": [
+    { "id": "app", "type": "activeApp", "position": "left", "style": { "minWidth": 80, "maxWidth": 200 } },
+    { "id": "space", "type": "spacer", "position": "left" },
+    { "id": "status", "type": "text", "text": "Ready", "position": "right", "group": "system" },
+    { "id": "time", "type": "clock", "position": "right", "group": "system", "priority": 10 }
+  ]
+}
+```
+
+A named group has one shared background, padding, border and spacing. Members must use the same `position`; their first appearance places the group. A group overflows as one unit, takes its highest member priority, and stays visible if any member sets `overflow` to `never`.
+
+A `spacer` uses the remaining width. Place it between widgets to separate them without choosing a fixed gap. Widget styles accept `minWidth` and `maxWidth` in addition to a fixed `width`.
+
+The [interactive example](examples/interactive/config.json) combines groups, an expanding spacer, constrained text, and all popup controls. Copy both files from `examples/interactive` into your configuration directory. Its controls update demo state in `.control-state` next to the configuration; they do not alter macOS settings. The app list opens the selected application.
 
 ## Custom popups
 
@@ -354,6 +555,10 @@ Layout blocks:
 | `graph` | `height` | The widget's existing 60 samples on the 0–1 scale; optional `source` reads `series[source]` instead and `lineWidth` sets stroke width |
 | `list` | `source`, `row` | Repeat the `row` block for each object in `lists[source]` |
 | `button` | `title`, `onClick` | Run a command and close the popup |
+| `slider` | `title`, `source`, `onChange` | Native slider; reads `values[source]` or numeric `fields[source]`. `min`, `max`, `step` default to 0, 1, 0.01. |
+| `toggle` | `title`, `source`, `onChange` | Native toggle; true for `"true"`/`"1"` in fields or 1 in values. |
+| `segmented` | `title`, `source`, `options`, `onChange` | Native segmented picker. Options are `{ "title": "Label", "value": "id" }`; selection reads `fields[source]`. |
+| `search` | `title`, `source`, `row` | Text field and filtered rows from `lists[source]`. `searchFields` limits matching to named fields; omitted searches all row values. |
 | `menu` | — | The widget's script or configured menu entries, with their existing actions |
 | `divider` | — | A horizontal rule |
 | `image` | `path` or `source` | Local path, `file://`, or HTTP(S) image; `source` reads a path from `fields`. `fit` is `fit` or `fill`; size defaults to 52 × 52. |
@@ -364,7 +569,11 @@ Every block accepts `style` and `alignment` (`leading`, `center`, `trailing`). F
 
 Text and field blocks can set `scrollSpeed` in points per second with a fixed `style.width`. Overflow scrolls back and forth with a pause at each end; fitting text and Reduce Motion do not scroll. `hideWhenEmpty` names a field: the block occupies no space when that field is absent or empty, which is useful for optional list-row headings and pipeline details.
 
-Any block can also have `onClick`, or `onClickField` to read a command from the current fields/list row. This allows a symbol button or a clickable agenda row. A popup accepts `alignment` (`leading`, `center`, `trailing`) and `offset` for placement relative to its widget. A popup's optional `animation` controls its opening/closing fold and fade. Reduce Motion keeps only the fade. Native panel animation maps `smooth` and `spring` to ease-in-out; other curves retain their names. `dismissOnAction` defaults to `true`; set it to `false` for player controls that should keep the popup open. Images load asynchronously and update when their source path changes. Use a different local filename for each cover, or supply its URL.
+Display blocks can also have `onClick`, or `onClickField` to read a command from the current fields/list row. This allows a symbol button or a clickable agenda row. A popup accepts `alignment` (`leading`, `center`, `trailing`) and `offset` for placement relative to its widget. A popup's optional `animation` controls its opening/closing fold and fade. Reduce Motion keeps only the fade. Native panel animation maps `smooth` and `spring` to ease-in-out; other curves retain their names. `dismissOnAction` defaults to `true`; set it to `false` for player controls that should keep the popup open. Images load asynchronously and update when their source path changes. Use a different local filename for each cover, or supply its URL.
+
+Controls pass their new value in the `VALUE` environment variable with `SENDER=control.changed`. Sliders send a number when editing ends, toggles send `true` or `false`, and segmented controls send the selected option's value. Read it as `"$VALUE"` in a shell command; StableBar never inserts the value into command text. Completed actions refresh the widget's data. Controls stay open by default; set `popup.dismissOnControl` to `true` to close after a change. `dismissOnAction` still controls buttons and list rows independently.
+
+Controls support native keyboard traversal, and Escape closes the popup. Search filters locally without running a command; matching ignores case and accents. Use `searchFields` to avoid matching command text or other hidden row fields.
 
 For example, a script can return:
 
@@ -385,17 +594,23 @@ Field and list values are display strings; scripts supply units and formatting. 
 
 To use this popup, add it to a CPU script widget in your personal configuration.
 
-For new native widget types, add a case to `WidgetContent`, decode its settings in `WidgetConfiguration`, and render it in `WidgetView.content`. New popup components belong in `PopupContent` and `PopupBlockView`. Runtime SwiftUI plugins, arbitrary chart types and a graphical widget editor are not implemented.
+For new native widget types, add a case to `WidgetContent`, decode its settings in `WidgetConfiguration`, and render it in `WidgetView.content`. New popup components belong in `PopupContent` and `PopupBlockView`. Runtime SwiftUI plugins and arbitrary chart types are not implemented.
 
-The three layout groups can overlap if their combined content exceeds the available display width. Overflow priorities and automatic hiding are not implemented.
 
 ## Architecture
 
 - [Configuration.swift](Sources/StableBar/Configuration.swift): config, widget definitions and style inheritance.
-- [BarStore.swift](Sources/StableBar/BarStore.swift): live reload and widget lifetimes.
+- [BarStore.swift](Sources/StableBar/BarStore.swift): live reload, shared provider lifetimes, visibility and sleep.
+- [ConfigurationLoader.swift](Sources/StableBar/ConfigurationLoader.swift): includes, profiles, tokens and provenance.
+- [ConfigurationEdits.swift](Sources/StableBar/ConfigurationEdits.swift): file-preserving edits shared by CLI and editor.
+- [RuntimeControl.swift](Sources/StableBar/RuntimeControl.swift): local request/reply control endpoint.
+- [ConfigurationEditor.swift](Sources/StableBar/ConfigurationEditor.swift): preview, undo/redo and validated persistence.
+- [NativeMetrics.swift](Sources/StableBar/NativeMetrics.swift): public macOS metric sources.
+- [WidgetPackage.swift](Sources/StableBar/WidgetPackage.swift): local package inspection, installation and version selection.
 - [AeroSpace.swift](Sources/StableBar/AeroSpace.swift): event subscription and workspace actions.
 - [ScriptWidget.swift](Sources/StableBar/ScriptWidget.swift): custom widget output and refresh tasks.
 - [BarView.swift](Sources/StableBar/BarView.swift): native rendering and selection animation.
+- [LayoutConfiguration.swift](Sources/StableBar/LayoutConfiguration.swift): groups, priority overflow and notch-aware placement.
 - [PopupConfiguration.swift](Sources/StableBar/PopupConfiguration.swift): popup layout blocks.
 - [PopupView.swift](Sources/StableBar/PopupView.swift): shared popup rendering and script bindings.
 - [WidgetPopup.swift](Sources/StableBar/WidgetPopup.swift): anchored panel, dismissal and screen placement.

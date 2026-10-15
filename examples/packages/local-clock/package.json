@@ -1,0 +1,11 @@
+{
+  "id": "local-clock",
+  "name": "Local clock",
+  "version": "1.0.0",
+  "entry": "config.json",
+  "settings": {
+    "format": { "type": "string", "title": "Time format", "default": "%H:%M" },
+    "fontSize": { "type": "number", "title": "Font size", "default": 12 },
+    "foreground": { "type": "string", "title": "Text color", "default": "#d9e5ff" }
+  }
+}

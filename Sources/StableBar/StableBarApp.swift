@@ -16,6 +16,23 @@ struct StableBarApp {
                 var loader = ConfigurationLoader()
                 let configuration = try loader.load(url)
                 print("Valid configuration: \(configuration.widgets.count) widgets in \(loader.dependencies.count) files.")
+            case let .control(url, request):
+                let result = try RuntimeControl.send(request, url: url)
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+                print(String(decoding: try encoder.encode(result), as: UTF8.self))
+            case let .packages(url, action, source):
+                let packages = WidgetPackageStore(directory: url.deletingLastPathComponent().appending(path: "packages"))
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                if action == "list" {
+                    print(String(decoding: try encoder.encode(packages.list()), as: UTF8.self))
+                } else {
+                    let inspection = try action == "install" ? packages.install(source!) : packages.inspect(source!)
+                    print(String(decoding: try encoder.encode(inspection.manifest), as: UTF8.self))
+                    print("Commands to review before enabling:")
+                    for command in inspection.commands { print(command) }
+                }
             case .help:
                 print(LaunchCommand.usage)
             case let .run(url):
@@ -47,6 +64,9 @@ final class BarPanel: NSPanel {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let store: BarStore
     private let setup = SetupWindow()
+    private let customization = CustomizationWindow()
+    private var control: RuntimeControl?
+    private var systemContext: SystemContext?
     private var panels: [CGDirectDisplayID: BarPanel] = [:]
     private var statusItem: NSStatusItem!
 
@@ -62,23 +82,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
         store.onConfigurationChange = { [weak self] in self?.updatePanels() }
+        store.onCustomize = { [weak self] in self?.showCustomization() }
+        do {
+            let control = RuntimeControl { [store] in try store.handle($0) }
+            try control.start(url: store.configurationURL)
+            self.control = control
+        } catch {
+            FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
+            NSApp.terminate(nil)
+            return
+        }
         store.start()
+        systemContext = SystemContext { [store] in store.refreshContext() }
+        systemContext!.start()
         if !UserDefaults.standard.bool(forKey: "setupCompleted") { showSetup() }
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(sleeping),
+                                                          name: NSWorkspace.willSleepNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(woke),
                                                           name: NSWorkspace.didWakeNotification, object: nil)
     }
 
     @objc private func screensChanged() {
         store.popup.close()
+        store.retainDisplays(Set(NSScreen.screens.map { BarDisplay(screen: $0).id }))
+        store.refreshContext()
         updatePanels()
         if store.configuration?.widgets.contains(where: { $0.enabled && ($0.content == .workspaces || $0.display == .active) }) == true {
             store.aerospace.start()
         }
     }
 
+    @objc private func sleeping() { store.setSleeping(true) }
+
     @objc private func woke() {
+        store.setSleeping(false)
         screensChanged()
         store.refreshScripts(for: "wake")
     }
@@ -125,6 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "StableBar", action: nil, keyEquivalent: "")
         menu.addItem(.separator())
         addItem("Set up StableBar…", action: #selector(showSetup), to: menu)
+        addItem("Customize and inspect…", action: #selector(showCustomization), to: menu)
         addItem("Open configuration…", action: #selector(openConfiguration), to: menu)
         addItem("Reload configuration", action: #selector(reloadConfiguration), to: menu)
         addItem("Reconnect AeroSpace", action: #selector(reconnect), to: menu)
@@ -141,6 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.target = self
     }
 
+    @objc private func showCustomization() { customization.show(store: store) }
     @objc func showSetup() { setup.show(store: store) }
     @objc private func openConfiguration() { store.openConfiguration() }
     @objc private func reloadConfiguration() { store.reloadConfiguration() }
@@ -148,11 +189,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func quit() { NSApp.terminate(nil) }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        showSetup()
+        showCustomization()
         return false
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        control?.stop()
+        systemContext?.stop()
         store.stop()
     }
 }

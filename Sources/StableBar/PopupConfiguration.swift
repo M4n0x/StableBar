@@ -7,9 +7,10 @@ struct PopupConfiguration: Decodable, Sendable {
     var alignment: PopupAlignment = .center
     var offset = 6.0
     var dismissOnAction = true
+    var dismissOnControl = false
     var animation: WidgetAnimation?
 
-    enum CodingKeys: String, CodingKey { case height, style, layout, alignment, offset, dismissOnAction, animation }
+    enum CodingKeys: String, CodingKey { case height, style, layout, alignment, offset, dismissOnAction, dismissOnControl, animation }
 
     init(height: Double, style: WidgetStyle, layout: PopupBlock) {
         self.height = height
@@ -25,6 +26,7 @@ struct PopupConfiguration: Decodable, Sendable {
         alignment = try values.decodeIfPresent(PopupAlignment.self, forKey: .alignment) ?? alignment
         offset = try values.decodeIfPresent(Double.self, forKey: .offset) ?? offset
         dismissOnAction = try values.decodeIfPresent(Bool.self, forKey: .dismissOnAction) ?? dismissOnAction
+        dismissOnControl = try values.decodeIfPresent(Bool.self, forKey: .dismissOnControl) ?? dismissOnControl
         animation = try values.decodeIfPresent(WidgetAnimation.self, forKey: .animation)
     }
 }
@@ -37,6 +39,10 @@ indirect enum PopupContent: Sendable {
     case graph(height: Double, source: String?, lineWidth: Double)
     case list(source: String, row: PopupBlock)
     case button(title: String, command: String)
+    case slider(title: String, source: String, minimum: Double, maximum: Double, step: Double, command: String)
+    case toggle(title: String, source: String, command: String)
+    case segmented(title: String, source: String, options: [PopupControlOption], command: String)
+    case search(title: String, source: String, fields: [String]?, row: PopupBlock)
     case menu
     case divider
     case image(path: String, source: String?, fit: ImageFit)
@@ -59,7 +65,7 @@ struct PopupBlock: Decodable, Sendable {
     enum CodingKeys: String, CodingKey {
         case type, style, alignment, children, text, field, height, source, row, title, onClick
         case path, fit, name, animation, styleSource, styleField, onClickField, lineWidth
-        case hideWhenEmpty, scrollSpeed
+        case hideWhenEmpty, scrollSpeed, min, max, step, onChange, options, searchFields
     }
 
     init(content: PopupContent) {
@@ -104,6 +110,33 @@ struct PopupBlock: Decodable, Sendable {
         case "button":
             content = .button(title: try values.decode(String.self, forKey: .title),
                               command: try values.decode(String.self, forKey: .onClick))
+        case "slider":
+            let minimum = try values.decodeIfPresent(Double.self, forKey: .min) ?? 0
+            let maximum = try values.decodeIfPresent(Double.self, forKey: .max) ?? 1
+            let step = try values.decodeIfPresent(Double.self, forKey: .step) ?? 0.01
+            guard minimum < maximum, step > 0, minimum.isFinite, maximum.isFinite, step.isFinite else {
+                throw DecodingError.dataCorruptedError(forKey: .min, in: values, debugDescription: "A slider needs finite min < max and a positive finite step.")
+            }
+            content = .slider(title: try values.decode(String.self, forKey: .title),
+                              source: try values.decode(String.self, forKey: .source), minimum: minimum, maximum: maximum,
+                              step: step, command: try values.decode(String.self, forKey: .onChange))
+        case "toggle":
+            content = .toggle(title: try values.decode(String.self, forKey: .title),
+                              source: try values.decode(String.self, forKey: .source),
+                              command: try values.decode(String.self, forKey: .onChange))
+        case "segmented":
+            let options = try values.decode([PopupControlOption].self, forKey: .options)
+            guard !options.isEmpty, Set(options.map(\.value)).count == options.count else {
+                throw DecodingError.dataCorruptedError(forKey: .options, in: values, debugDescription: "A segmented control needs options with unique values.")
+            }
+            content = .segmented(title: try values.decode(String.self, forKey: .title),
+                                 source: try values.decode(String.self, forKey: .source), options: options,
+                                 command: try values.decode(String.self, forKey: .onChange))
+        case "search":
+            content = .search(title: try values.decode(String.self, forKey: .title),
+                              source: try values.decode(String.self, forKey: .source),
+                              fields: try values.decodeIfPresent([String].self, forKey: .searchFields),
+                              row: try values.decode(PopupBlock.self, forKey: .row))
         case "menu": content = .menu
         case "divider": content = .divider
         case "image":
@@ -128,4 +161,17 @@ enum ImageFit: String, Decodable, Sendable {
 
 enum PopupAlignment: String, Decodable, Sendable {
     case leading, center, trailing
+}
+
+struct PopupControlOption: Decodable, Sendable {
+    let title: String
+    let value: String
+}
+
+func searchPopupRows(_ rows: [[String: String]], query: String, fields: [String]?) -> [[String: String]] {
+    if query.isEmpty { return rows }
+    return rows.filter { row in
+        let text = fields.map { $0.compactMap { row[$0] } } ?? Array(row.values)
+        return text.contains { $0.localizedStandardContains(query) }
+    }
 }

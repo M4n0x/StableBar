@@ -44,6 +44,8 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
     var paddingVertical: Double?
     var spacing: Double?
     var width: Double?
+    var minWidth: Double?
+    var maxWidth: Double?
     var shadowRadius: Double?
     var shadowColor: HexColor?
     var height: Double?
@@ -74,6 +76,8 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
             paddingVertical: paddingVertical ?? defaults.paddingVertical,
             spacing: spacing ?? defaults.spacing,
             width: width ?? defaults.width,
+            minWidth: minWidth ?? defaults.minWidth,
+            maxWidth: maxWidth ?? defaults.maxWidth,
             shadowRadius: shadowRadius ?? defaults.shadowRadius,
             shadowColor: shadowColor ?? defaults.shadowColor,
             height: height ?? defaults.height,
@@ -146,6 +150,8 @@ enum WidgetPosition: String, Decodable, Sendable {
 }
 
 enum WidgetContent: Equatable, Sendable {
+    case spacer
+    case provider(String)
     case workspaces
     case activeApp
     case clock(format: String)
@@ -173,10 +179,13 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let timeout: Double
     let actions: WidgetActions?
     let enabled: Bool
+    let group: String?
+    let priority: Int
+    let overflow: WidgetOverflow
 
     enum CodingKeys: String, CodingKey {
         case id, position, type, icon, onClick, menu, popup, popupName, style, format, text, command, interval
-        case display, layout, overlay, animation, workspace, events, environment, timeout, actions, enabled
+        case display, layout, overlay, animation, workspace, events, environment, timeout, actions, enabled, provider, group, priority, overflow
     }
 
     init(from decoder: Decoder) throws {
@@ -202,7 +211,12 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
         }
         actions = try values.decodeIfPresent(WidgetActions.self, forKey: .actions)
         enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        group = try values.decodeIfPresent(String.self, forKey: .group)
+        priority = try values.decodeIfPresent(Int.self, forKey: .priority) ?? 0
+        overflow = try values.decodeIfPresent(WidgetOverflow.self, forKey: .overflow) ?? .automatic
         switch try values.decode(String.self, forKey: .type) {
+        case "spacer": content = .spacer
+        case "provider": content = .provider(try values.decode(String.self, forKey: .provider))
         case "aerospace": content = .workspaces
         case "activeApp": content = .activeApp
         case "clock": content = .clock(format: try values.decodeIfPresent(String.self, forKey: .format) ?? "EEE d MMM  HH:mm")
@@ -257,7 +271,10 @@ struct Configuration: Decodable, Sendable {
     let popups: [String: PopupConfiguration]
     let environment: [String: String]
 
-    enum CodingKeys: String, CodingKey { case bar, defaults, widgets, popups, templates, widgetOverrides, environment }
+    let providers: [String: ProviderConfiguration]
+    let groups: [String: WidgetGroupConfiguration]
+
+    enum CodingKeys: String, CodingKey { case bar, defaults, widgets, popups, templates, widgetOverrides, environment, providers, groups }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -278,8 +295,27 @@ struct Configuration: Decodable, Sendable {
         }
         environment = try values.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
         popups = try values.decodeIfPresent([String: PopupConfiguration].self, forKey: .popups) ?? [:]
+        providers = try values.decodeIfPresent([String: ProviderConfiguration].self, forKey: .providers) ?? [:]
+        groups = try values.decodeIfPresent([String: WidgetGroupConfiguration].self, forKey: .groups) ?? [:]
+        var groupPositions: [String: WidgetPosition] = [:]
         var ids = Set<String>()
         for widget in widgets {
+            let style = widget.style.inheriting(defaults)
+            if let min = style.minWidth, min < 0 { throw CommandFailure(message: "minWidth must be nonnegative.") }
+            if let max = style.maxWidth, max < 0 { throw CommandFailure(message: "maxWidth must be nonnegative.") }
+            if let min = style.minWidth, let max = style.maxWidth, min > max {
+                throw CommandFailure(message: "minWidth must not exceed maxWidth.")
+            }
+            if case let .provider(name) = widget.content, providers[name] == nil {
+                throw CommandFailure(message: "Unknown provider: \(name).")
+            }
+            if let group = widget.group {
+                guard groups[group] != nil else { throw CommandFailure(message: "Unknown group: \(group).") }
+                if let position = groupPositions[group], position != widget.position {
+                    throw CommandFailure(message: "Widgets in group \(group) must share a position.")
+                }
+                groupPositions[group] = widget.position
+            }
             if let name = widget.popupName, popups[name] == nil {
                 throw DecodingError.dataCorruptedError(forKey: .popups, in: values, debugDescription: "Unknown popup: \(name).")
             }

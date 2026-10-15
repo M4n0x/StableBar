@@ -1,0 +1,114 @@
+{
+  "bar": { "height": 42, "spacing": 8, "inset": 12 },
+  "defaults": {
+    "foreground": "#f4f4f5",
+    "background": "#25252c",
+    "hoverBackground": "#383842",
+    "accent": "#69d2b0",
+    "borderWidth": 0,
+    "cornerRadius": 9,
+    "fontSize": 12
+  },
+  "groups": {
+    "session": {
+      "style": {
+        "background": "#17171d",
+        "borderColor": "#494953",
+        "borderWidth": 1,
+        "cornerRadius": 12,
+        "paddingHorizontal": 4,
+        "paddingVertical": 3,
+        "spacing": 4
+      }
+    }
+  },
+  "widgets": [
+    {
+      "id": "application",
+      "type": "activeApp",
+      "position": "left",
+      "priority": 5,
+      "style": { "minWidth": 80, "maxWidth": 200 }
+    },
+    { "id": "flex", "type": "spacer", "position": "left" },
+    {
+      "id": "controls",
+      "type": "script",
+      "position": "right",
+      "group": "session",
+      "priority": 10,
+      "interval": null,
+      "command": "/bin/zsh \"$CONFIG_DIR/controls.sh\"",
+      "icon": "slider.horizontal.3",
+      "popup": {
+        "height": 360,
+        "dismissOnAction": false,
+        "style": {
+          "width": 360,
+          "paddingHorizontal": 18,
+          "paddingVertical": 16,
+          "spacing": 16
+        },
+        "layout": {
+          "type": "column",
+          "children": [
+            { "type": "text", "text": "Interactive controls", "style": { "fontWeight": "bold", "fontSize": 16 } },
+            {
+              "type": "slider",
+              "title": "Level",
+              "source": "level",
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "onChange": "/bin/zsh \"$CONFIG_DIR/controls.sh\" level"
+            },
+            {
+              "type": "toggle",
+              "title": "Enabled",
+              "source": "enabled",
+              "onChange": "/bin/zsh \"$CONFIG_DIR/controls.sh\" enabled"
+            },
+            {
+              "type": "segmented",
+              "title": "Mode",
+              "source": "mode",
+              "options": [
+                { "title": "Quiet", "value": "quiet" },
+                { "title": "Balanced", "value": "balanced" },
+                { "title": "Focus", "value": "focus" }
+              ],
+              "onChange": "/bin/zsh \"$CONFIG_DIR/controls.sh\" mode"
+            },
+            { "type": "divider" },
+            {
+              "type": "search",
+              "title": "Find an app",
+              "source": "apps",
+              "searchFields": ["name"],
+              "row": {
+                "type": "field",
+                "field": "name",
+                "onClickField": "command",
+                "style": { "paddingVertical": 6 }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "session-label",
+      "type": "text",
+      "text": "Demo",
+      "position": "right",
+      "group": "session"
+    },
+    {
+      "id": "clock",
+      "type": "clock",
+      "position": "right",
+      "format": "HH:mm",
+      "overflow": "never"
+    }
+  ]
+}

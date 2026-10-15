@@ -58,43 +58,121 @@ final class ScriptWidget {
     var output = ScriptOutput(text: "…")
     var error: String?
     var samples: [Double] = []
+    var diagnostics = ScriptDiagnostics()
     private var task: Task<Void, Never>?
     private var timer: Task<Void, Never>?
     private var events: AsyncStream<ScriptEvent>.Continuation?
+    private var source: Source?
+    private var environment: [String: String] = [:]
+    private var metrics = NativeMetrics()
+
+    private enum Source {
+        case command(String, Double?, Double)
+        case provider(ProviderConfiguration)
+
+        var interval: Double? {
+            switch self {
+            case let .command(_, interval, _): interval
+            case let .provider(provider): provider.interval
+            }
+        }
+
+        var streaming: Bool {
+            if case let .provider(provider) = self { return provider.type == .stream }
+            return false
+        }
+    }
 
     func start(command: String, interval: Double?, timeout: Double = 10, environment: [String: String] = [:]) {
         stop()
+        source = .command(command, interval, timeout)
+        self.environment = environment
+        begin(ScriptEvent(sender: "startup"))
+    }
+
+    func start(provider: ProviderConfiguration, environment: [String: String] = [:]) {
+        stop()
+        source = .provider(provider)
+        self.environment = environment.merging(provider.environment) { _, value in value }
+        self.environment["NAME"] = environment["NAME"]
+        self.environment["CONFIG_DIR"] = environment["CONFIG_DIR"]
+        metrics = NativeMetrics()
+        begin(ScriptEvent(sender: "startup"))
+    }
+
+    private func begin(_ firstEvent: ScriptEvent) {
+        let source = source!
+        let environment = environment
+        diagnostics.suspended = false
         let (stream, events) = AsyncStream<ScriptEvent>.makeStream(bufferingPolicy: .bufferingNewest(1))
         self.events = events
-        events.yield(ScriptEvent(sender: "startup"))
+        events.yield(firstEvent)
         task = Task {
             for await event in stream {
+                if Task.isCancelled { return }
                 timer?.cancel()
-                var delay = interval
+                diagnostics.running = true
+                diagnostics.nextDelay = nil
+                diagnostics.lastEvent = event.sender
+                diagnostics.lastStarted = Date()
+                diagnostics.executionCount += 1
+                let started = ContinuousClock.now
+                var delay = source.interval
                 do {
-                    let data = try await runCommand("/bin/zsh", arguments: ["-lc", command],
-                                                    timeout: timeout, environment: event.commandEnvironment(environment))
-                    try Task.checkCancellation()
-                    let next = try ScriptOutput.read(data)
-                    if let interval = next.interval, !interval.isFinite || interval <= 0 {
-                        throw CommandFailure(message: "A script interval must be greater than zero.")
+                    switch source {
+                    case let .command(command, _, timeout):
+                        let result = try await runCommandResult("/bin/zsh", arguments: ["-lc", command], timeout: timeout,
+                                                                environment: event.commandEnvironment(environment))
+                        try Task.checkCancellation()
+                        record(result)
+                        try accept(ScriptOutput.read(result.stdout))
+                    case let .provider(provider):
+                        switch provider.type {
+                        case .command:
+                            let result = try await runCommandResult("/bin/zsh", arguments: ["-lc", provider.command!], timeout: provider.timeout,
+                                                                    environment: event.commandEnvironment(environment))
+                            try Task.checkCancellation()
+                            record(result)
+                            try accept(ScriptOutput.read(result.stdout))
+                        case .stream:
+                            for try await result in commandLines("/bin/zsh", arguments: ["-lc", provider.command!],
+                                                                environment: event.commandEnvironment(environment)) {
+                                try Task.checkCancellation()
+                                record(result)
+                                try accept(JSONDecoder().decode(ScriptOutput.self, from: result.stdout))
+                                if started.duration(to: .now) >= .seconds(10) { diagnostics.consecutiveFailures = 0 }
+                            }
+                            try Task.checkCancellation()
+                            throw CommandFailure(message: "Streaming provider exited.")
+                        default:
+                            try accept(metrics.sample(provider.type))
+                        }
                     }
-                    output = next
-                    if let value = output.value {
-                        samples.append(value)
-                        if samples.count > 60 { samples.removeFirst() }
-                    }
-                    error = nil
-                    if interval != nil { delay = next.interval ?? interval }
+                    diagnostics.consecutiveFailures = 0
+                    if delay != nil { delay = output.interval ?? delay }
                 } catch {
                     if Task.isCancelled { return }
                     self.error = error.localizedDescription
+                    diagnostics.failureCount += 1
+                    diagnostics.consecutiveFailures += 1
+                    if let failure = error as? CommandFailure {
+                        if !failure.stdout.isEmpty { diagnostics.lastStdout = String(decoding: failure.stdout.suffix(16_384), as: UTF8.self) }
+                        if !failure.stderr.isEmpty { diagnostics.lastStderr = String(decoding: failure.stderr.suffix(16_384), as: UTF8.self) }
+                    }
+                    if let interval = delay {
+                        delay = providerRetryDelay(interval: interval, failures: diagnostics.consecutiveFailures)
+                    }
                 }
+                let duration = started.duration(to: .now).components
+                diagnostics.lastDuration = Double(duration.seconds) + Double(duration.attoseconds) / 1e18
+                diagnostics.running = false
+                diagnostics.nextDelay = delay
                 if let delay {
                     timer = Task {
                         do {
                             try await Task.sleep(for: .seconds(delay))
                             try Task.checkCancellation()
+                            if source.streaming { diagnostics.restartCount += 1 }
                             events.yield(ScriptEvent(sender: "routine"))
                         } catch {}
                     }
@@ -103,15 +181,64 @@ final class ScriptWidget {
         }
     }
 
-    func refresh(_ event: ScriptEvent) {
-        timer?.cancel()
-        events?.yield(event)
+    private func record(_ result: CommandResult) {
+        diagnostics.lastStdout = String(decoding: result.stdout.suffix(16_384), as: UTF8.self)
+        diagnostics.lastStderr = String(decoding: result.stderr.suffix(16_384), as: UTF8.self)
+        diagnostics.cpuTime += result.cpuTime
     }
 
-    func stop() {
+    private func accept(_ next: ScriptOutput) throws {
+        if let interval = next.interval, !interval.isFinite || interval <= 0 {
+            throw CommandFailure(message: "A script interval must be greater than zero.")
+        }
+        output = next
+        output.series = output.series?.mapValues { Array($0.suffix(60)) }
+        if let value = output.value {
+            samples.append(value)
+            if samples.count > 60 { samples.removeFirst() }
+        }
+        error = nil
+        diagnostics.lastUpdated = Date()
+    }
+
+    func refresh(_ event: ScriptEvent) {
+        if diagnostics.suspended { return }
+        if source?.streaming == true {
+            cancel()
+            diagnostics.restartCount += 1
+            begin(event)
+        } else {
+            timer?.cancel()
+            events?.yield(event)
+        }
+    }
+
+    func suspend() {
+        if source == nil || diagnostics.suspended { return }
+        cancel()
+        diagnostics.suspended = true
+    }
+
+    func resume() {
+        if !diagnostics.suspended { return }
+        metrics = NativeMetrics()
+        begin(ScriptEvent(sender: "resume"))
+    }
+
+    private func cancel() {
         task?.cancel()
         timer?.cancel()
         events?.finish()
+        task = nil
+        timer = nil
         events = nil
+        diagnostics.running = false
+        diagnostics.nextDelay = nil
+    }
+
+    func stop() {
+        cancel()
+        source = nil
+        diagnostics.suspended = false
     }
 }

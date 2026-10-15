@@ -10,6 +10,8 @@ final class PopupPanel: NSPanel {
 @MainActor
 final class WidgetPopup {
     private var panel: PopupPanel?
+    private var widgetID: String?
+    private weak var store: BarStore?
     private weak var anchor: NSView?
     private var localMonitor: Any?
     private var globalMonitor: Any?
@@ -17,7 +19,7 @@ final class WidgetPopup {
 
     func toggle(_ popup: PopupConfiguration, widget: WidgetConfiguration, defaults: WidgetStyle,
                 store: BarStore, anchor: NSView) {
-        if self.anchor === anchor {
+        if self.anchor === anchor && widgetID == widget.id {
             close()
             return
         }
@@ -45,12 +47,16 @@ final class WidgetPopup {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
+        panel.autorecalculatesKeyViewLoop = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
         panel.contentView = NSHostingView(rootView: PopupView(popup: popup, style: style, store: store, widget: widget)
             .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
             .padding(shadowInset))
         self.panel = panel
+        widgetID = widget.id
+        self.store = store
+        store.setPopupVisibleWidget(widget.id)
         self.anchor = anchor
         animation = popup.animation
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
@@ -91,6 +97,8 @@ final class WidgetPopup {
     }
 
     func close() {
+        store?.setPopupVisibleWidget(nil)
+        store = nil
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
         localMonitor = nil
@@ -111,6 +119,7 @@ final class WidgetPopup {
             panel?.close()
         }
         panel = nil
+        widgetID = nil
         anchor = nil
         animation = nil
     }

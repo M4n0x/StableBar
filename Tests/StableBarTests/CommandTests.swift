@@ -3,6 +3,13 @@ import Foundation
 import Testing
 @testable import StableBar
 
+@Test func commandResultRetainsSeparateDiagnostics() async throws {
+    let result = try await runCommandResult("/bin/zsh", arguments: ["-c", "printf output; printf warning >&2"])
+    #expect(String(decoding: result.stdout, as: UTF8.self) == "output")
+    #expect(String(decoding: result.stderr, as: UTF8.self) == "warning")
+    #expect(result.cpuTime >= 0)
+}
+
 @Test func commandWarningsDoNotCorruptJSONOutput() async throws {
     let data = try await runCommand("/bin/zsh", arguments: ["-c", "head -c 131072 /dev/zero >&2; printf '{\"text\":\"Ready\"}'"])
     #expect(try ScriptOutput.read(data).text == "Ready")

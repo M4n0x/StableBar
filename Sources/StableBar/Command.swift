@@ -3,13 +3,26 @@ import Foundation
 
 struct CommandFailure: LocalizedError {
     let message: String
+    var stdout = Data()
+    var stderr = Data()
     var errorDescription: String? { message }
+}
+
+struct CommandResult: Sendable {
+    var stdout: Data
+    var stderr: Data
+    var cpuTime: Double = 0
 }
 
 func runCommand(_ executable: String, arguments: [String], timeout: Double = 10,
                 environment: [String: String] = [:]) async throws -> Data {
+    try await runCommandResult(executable, arguments: arguments, timeout: timeout, environment: environment).stdout
+}
+
+func runCommandResult(_ executable: String, arguments: [String], timeout: Double = 10,
+                      environment: [String: String] = [:]) async throws -> CommandResult {
     let command = CommandProcess()
-    let data = try await withTaskCancellationHandler {
+    let result = try await withTaskCancellationHandler {
         try await withCheckedThrowingContinuation { continuation in
             command.start(executable, arguments: arguments, timeout: timeout, environment: environment,
                           continuation: continuation)
@@ -18,26 +31,53 @@ func runCommand(_ executable: String, arguments: [String], timeout: Double = 10,
         command.cancel()
     }
     try Task.checkCancellation()
-    return data
+    return result
+}
+
+func commandLines(_ executable: String, arguments: [String], environment: [String: String] = [:]) -> AsyncThrowingStream<CommandResult, Error> {
+    AsyncThrowingStream(bufferingPolicy: .bufferingNewest(1)) { updates in
+        let command = CommandProcess()
+        let task = Task {
+            do {
+                _ = try await withTaskCancellationHandler {
+                    try await withCheckedThrowingContinuation { continuation in
+                        command.start(executable, arguments: arguments, timeout: nil, environment: environment,
+                                      onLine: { updates.yield($0) }, continuation: continuation)
+                    }
+                } onCancel: {
+                    command.cancel()
+                }
+                updates.finish()
+            } catch {
+                updates.finish(throwing: error)
+            }
+        }
+        updates.onTermination = { _ in task.cancel() }
+    }
 }
 
 private final class CommandProcess: @unchecked Sendable {
     private let queue = DispatchQueue(label: "StableBar.Command")
-    private var continuation: CheckedContinuation<Data, Error>?
+    private var continuation: CheckedContinuation<CommandResult, Error>?
+    private var onLine: (@Sendable (CommandResult) -> Void)?
     private var processGroup: pid_t = 0
     private var processSource: DispatchSourceProcess?
     private var outputSources: [DispatchSourceRead] = []
     private var timer: DispatchSourceTimer?
     private var stdout = Data()
     private var stderr = Data()
+    private var lastLine = Data()
+    private var cpuTime = 0.0
     private var closedStreams = 0
     private var exitStatus: Int32?
     private var failure: Error?
 
-    func start(_ executable: String, arguments: [String], timeout: Double, environment: [String: String],
-               continuation: CheckedContinuation<Data, Error>) {
+    func start(_ executable: String, arguments: [String], timeout: Double?, environment: [String: String],
+               onLine: (@Sendable (CommandResult) -> Void)? = nil,
+               continuation: CheckedContinuation<CommandResult, Error>) {
         queue.async { [self] in
             self.continuation = continuation
+            self.onLine = onLine
             if let failure {
                 self.continuation = nil
                 continuation.resume(throwing: failure)
@@ -100,7 +140,27 @@ private final class CommandProcess: @unchecked Sendable {
                         finish()
                     } else if failure == nil {
                         let size = index == 0 ? stdout.count : stderr.count
-                        if size + count > 1_048_576 {
+                        if onLine != nil && index == 0 {
+                            stdout.append(buffer, count: count)
+                            while let newline = stdout.firstIndex(of: 10) {
+                                let line = Data(stdout[..<newline])
+                                stdout.removeSubrange(...newline)
+                                if line.count > 1_048_576 {
+                                    terminate(CommandFailure(message: "Provider line exceeded 1 MiB."))
+                                    return
+                                }
+                                if !line.isEmpty {
+                                    lastLine = line
+                                    onLine!(CommandResult(stdout: line, stderr: stderr))
+                                }
+                            }
+                            if stdout.count > 1_048_576 {
+                                terminate(CommandFailure(message: "Provider line exceeded 1 MiB."))
+                            }
+                        } else if onLine != nil {
+                            stderr.append(buffer, count: count)
+                            stderr = Data(stderr.suffix(16_384))
+                        } else if size + count > 1_048_576 {
                             terminate(CommandFailure(message: "Command output exceeded 1 MiB."))
                         } else if index == 0 {
                             stdout.append(buffer, count: count)
@@ -116,17 +176,26 @@ private final class CommandProcess: @unchecked Sendable {
             let process = DispatchSource.makeProcessSource(identifier: processGroup, eventMask: .exit, queue: queue)
             process.setEventHandler { [self] in
                 var status: Int32 = 0
-                while waitpid(processGroup, &status, 0) == -1 && errno == EINTR {}
+                var usage = rusage()
+                while wait4(processGroup, &status, 0, &usage) == -1 && errno == EINTR {}
+                cpuTime = Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec)
+                    + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
                 exitStatus = status
                 processSource!.cancel()
+                if onLine != nil {
+                    kill(-processGroup, SIGKILL)
+                    self.timer?.schedule(deadline: .now() + 1)
+                }
                 finish()
             }
             processSource = process
             process.resume()
             let timer = DispatchSource.makeTimerSource(queue: queue)
-            timer.schedule(deadline: .now() + timeout)
+            timer.schedule(deadline: timeout.map { .now() + $0 } ?? .distantFuture)
             timer.setEventHandler { [self] in
-                terminate(CommandFailure(message: "Command timed out after \(timeout) seconds."))
+                let message = timeout.map { "Command timed out after \($0) seconds." }
+                    ?? "Provider exited while a child kept its output open."
+                terminate(CommandFailure(message: message))
             }
             self.timer = timer
             timer.resume()
@@ -157,7 +226,11 @@ private final class CommandProcess: @unchecked Sendable {
         timer = nil
         processSource = nil
         outputSources.removeAll()
-        if let failure {
+        if var failure = failure as? CommandFailure {
+            failure.stdout = onLine == nil ? stdout : lastLine
+            failure.stderr = stderr
+            continuation.resume(throwing: failure)
+        } else if let failure {
             continuation.resume(throwing: failure)
         } else if exitStatus != 0 {
             let message = String(decoding: stderr.isEmpty ? stdout : stderr, as: UTF8.self)
@@ -165,9 +238,13 @@ private final class CommandProcess: @unchecked Sendable {
             let status = exitStatus & 0x7f == 0
                 ? "Command exited with status \(exitStatus >> 8)."
                 : "Command terminated by signal \(exitStatus & 0x7f)."
-            continuation.resume(throwing: CommandFailure(message: message.isEmpty ? status : message))
+            continuation.resume(throwing: CommandFailure(message: message.isEmpty ? status : message,
+                                                       stdout: onLine == nil ? stdout : lastLine, stderr: stderr))
         } else {
-            continuation.resume(returning: stdout)
+            if let onLine, !stdout.isEmpty {
+                onLine(CommandResult(stdout: stdout, stderr: stderr, cpuTime: cpuTime))
+            }
+            continuation.resume(returning: CommandResult(stdout: stdout, stderr: stderr, cpuTime: cpuTime))
         }
     }
 }

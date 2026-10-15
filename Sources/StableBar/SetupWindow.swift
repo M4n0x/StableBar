@@ -259,9 +259,9 @@ struct SetupView: View {
     private func refreshPreview() {
         do {
             let data = try preferences.applying(to: Data(contentsOf: store.configurationURL), menuBarHeight: menuBarHeight,
-                                               configurationURL: store.configurationURL)
+                                               configurationURL: store.configurationURL, context: store.context)
             var loader = ConfigurationLoader()
-            preview.configuration = try loader.load(store.configurationURL, data: data)
+            preview.configuration = try loader.load(store.configurationURL, data: data, context: store.context)
             preview.scripts = store.scripts
             preview.aerospace.workspaces = store.aerospace.workspaces
             error = nil
@@ -287,7 +287,8 @@ struct SetupView: View {
     private func finish() {
         do {
             let original = try Data(contentsOf: store.configurationURL)
-            let data = try preferences.applying(to: original, menuBarHeight: menuBarHeight, configurationURL: store.configurationURL)
+            let data = try preferences.applying(to: original, menuBarHeight: menuBarHeight,
+                                               configurationURL: store.configurationURL, context: store.context)
             if data != original { try data.write(to: store.configurationURL, options: .atomic) }
             store.reloadConfiguration()
             UserDefaults.standard.set(true, forKey: "setupCompleted")

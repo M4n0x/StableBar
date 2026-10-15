@@ -269,3 +269,58 @@ import Testing
     #expect(document["includes"] as? [String] == ["clocks.json"])
     #expect((document["widgets"] as! [[String: Any]]).count == 1)
 }
+
+@Test func setupPreferencesOverrideActiveProfileAndPreserveOtherCustomizations() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "setup-profile.json")
+    let data = Data(##"""
+    {
+      "bar": {"height": 40, "offset": 5},
+      "defaults": {"fontSize": 16, "foreground": "#abcdef"},
+      "widgets": [{"id": "clock", "type": "clock", "position": "right"}],
+      "profiles": [{"name": "desktop", "configuration": {
+        "defaults": {"foreground": "#112233"},
+        "bar": {"offset": 90},
+        "widgetOverrides": {"clock": {"format": "ss"}}
+      }}],
+      "customization": {
+        "defaults": {"accent": "#ff8800"},
+        "bar": {"height": 48, "offset": 100},
+        "widgetOverrides": {"clock": {"format": "mm", "style": {"fontSize": 20}}}
+      }
+    }
+    """##.utf8)
+    let updated = try SetupPreferences(appearance: .dark, placement: .belowMenuBar, clock: .twelveHour)
+        .applying(to: data, menuBarHeight: 24, configurationURL: root)
+    var loader = ConfigurationLoader()
+    let configuration = try loader.load(root, data: updated)
+    #expect(configuration.defaults.foreground == HexColor(0xf5f5f7ff))
+    #expect(configuration.defaults.accent == HexColor(0xff8800ff))
+    #expect(configuration.defaults.fontSize == 16)
+    #expect(configuration.bar.height == 48)
+    #expect(configuration.bar.offset == 24)
+    #expect(configuration.widgets[0].content == .clock(format: "EEE d MMM  h:mm a"))
+    #expect(configuration.widgets[0].style.fontSize == 20)
+    let original = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    let result = try JSONSerialization.jsonObject(with: updated) as! [String: Any]
+    for key in ["defaults", "bar"] {
+        #expect(original[key] as! NSDictionary == result[key] as! NSDictionary)
+    }
+    #expect(original["profiles"] as! NSArray == result["profiles"] as! NSArray)
+}
+
+@Test func setupFindsClocksIntroducedByTheCurrentProfile() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "setup-profile-clock.json")
+    let data = Data(#"""
+    {"widgets":[],"profiles":[
+      {"name":"portable","when":{"onBattery":true},"configuration":{
+        "widgets":[{"id":"portable-clock","type":"clock","position":"right","format":"ss"}]
+      }}
+    ]}
+    """#.utf8)
+    let context = ConfigurationContext(onBattery: true)
+    let updated = try SetupPreferences(clock: .twelveHour)
+        .applying(to: data, menuBarHeight: 24, configurationURL: root, context: context)
+    var loader = ConfigurationLoader()
+    let configuration = try loader.load(root, data: updated, context: context)
+    #expect(configuration.widgets[0].content == .clock(format: "EEE d MMM  h:mm a"))
+}
