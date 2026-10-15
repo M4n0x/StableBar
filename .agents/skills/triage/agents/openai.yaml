@@ -1,0 +1,4 @@
+interface:
+  display_name: "Triage"
+  short_description: "Check reports against issues, PRs and main"
+  default_prompt: "Use $triage to check whether this report is already tracked, fixed, supported or declined, and draft a GitHub issue if it is new."
