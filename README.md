@@ -617,3 +617,18 @@ For new native widget types, add a case to `WidgetContent`, decode its settings 
 - [StableBarApp.swift](Sources/StableBar/StableBarApp.swift): non-activating panels and application lifecycle.
 
 There is no web view, custom drawing loop or private window-server API. Styling and data updates are separate from window placement. Performance and long-term stability still need measurement with your actual widgets and displays.
+
+## Releases
+
+Pull requests run `swift test` on macOS and check that every commit message, and the pull request title, follows [Conventional Commits](https://www.conventionalcommits.org). Squash merges use the title as the commit message.
+
+After the tests pass on `main`, [semantic-release](https://github.com/semantic-release/semantic-release) reads the commits since the last tag and decides the next version:
+
+| Commit | Release |
+| --- | --- |
+| `fix:`, `perf:` | Patch: 0.1.0 → 0.1.1 |
+| `feat:` | Minor: 0.1.0 → 0.2.0 |
+| `feat!:`, or a `BREAKING CHANGE:` footer | Major: 0.1.0 → 1.0.0 |
+| `build:`, `chore:`, `ci:`, `docs:`, `refactor:`, `style:`, `test:` | None |
+
+A release sets `CFBundleShortVersionString` and `CFBundleVersion` in [Resources/Info.plist](Resources/Info.plist) with `scripts/set-version.sh`, adds its notes to `CHANGELOG.md`, commits both as `chore(release): <version>`, tags `v<version>` and publishes the notes as a GitHub release.
