@@ -16,6 +16,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
                               styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Set up StableBar"
         window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = NSHostingView(rootView: SetupView(store: store) { [weak window] in window?.close() })
@@ -122,8 +123,8 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: 24) {
             heading("Your Mac, at a glance.", detail: "Your active app, the time, and room for what matters to you. A quiet bar that stays close at hand.")
             barPreview
-            HStack(alignment: .top, spacing: 16) {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.title2)
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.title2).frame(width: 28)
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Ready with the essentials").font(.headline)
                     Text("The starter bar works without extra permissions, accounts, or downloads.")
@@ -131,8 +132,8 @@ struct SetupView: View {
                 }
             }
             if !installed {
-                HStack(alignment: .top, spacing: 16) {
-                    Image(systemName: "folder").foregroundStyle(.secondary).font(.title2)
+                HStack(alignment: .top, spacing: 14) {
+                    Image(systemName: "folder").foregroundStyle(.secondary).font(.title2).frame(width: 28)
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Give StableBar a home").font(.headline)
                         Text("Drag the app to Applications, then open it there. You can try the setup here first.")

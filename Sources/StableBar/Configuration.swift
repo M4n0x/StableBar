@@ -145,7 +145,7 @@ struct WidgetAppearance {
     }
 }
 
-enum WidgetPosition: String, Decodable, Sendable {
+enum WidgetPosition: String, Decodable, Sendable, CaseIterable {
     case left, notchLeft, center, notchRight, right
 }
 
