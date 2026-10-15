@@ -51,6 +51,9 @@ final class BarStore: NSObject {
             let focused = aerospace.workspaces.first(where: \.isFocused)
             refreshScripts(for: "workspace", environment: ["INFO": focused?.name ?? "", "SID": String(focused?.monitor ?? activeDisplayID)])
         }
+        aerospace.onModeChange = { [weak self] mode in
+            self?.refreshScripts(for: "aerospaceMode", environment: ["INFO": mode])
+        }
         do {
             let directory = configurationURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

@@ -259,12 +259,12 @@ For a sliding underline, set `workspace.indicator` to `underline`, `workspace.st
 
 ### Script events
 
-Add `events` to a script widget to refresh it on named events, alongside its interval. Set `"interval": null` to run once at startup and then only on events or after a click action. Omitting the interval keeps the default 30-second polling. Numeric intervals must be greater than zero. `frontApp`, `workspace` and `wake` are emitted by StableBar. Other names subscribe to macOS distributed notifications, for example `com.spotify.client.PlaybackStateChanged`.
+Add `events` to a script widget to refresh it on named events, alongside its interval. Set `"interval": null` to run once at startup and then only on events or after a click action. Omitting the interval keeps the default 30-second polling. Numeric intervals must be greater than zero. `frontApp`, `workspace`, `aerospaceMode` and `wake` are emitted by StableBar. Other names subscribe to macOS distributed notifications, for example `com.spotify.client.PlaybackStateChanged`.
 
 External hooks can trigger an event without launching another bar:
 
 ```sh
-/path/to/StableBar.app/Contents/MacOS/StableBar --trigger aerospace_mode_change
+/path/to/StableBar.app/Contents/MacOS/StableBar --trigger deploy_started
 /path/to/StableBar.app/Contents/MacOS/StableBar --trigger build_finished 'INFO=Build passed' STATUS=success
 ```
 
@@ -278,7 +278,7 @@ Commands inherit your login shell's environment, then top-level `environment`, t
 | `CONFIG_DIR` | Directory containing the main configuration; event data cannot replace it |
 | `STABLEBAR_SCRIPTS` | Bundled widget script directory |
 | `SENDER` | `startup`, `routine`, the subscribed event name, `action` after an action completes, or a mouse event below |
-| `INFO` | Explicit trigger value; front-app name for `frontApp`; focused workspace name for `workspace`; otherwise the distributed notification's JSON payload when available |
+| `INFO` | Explicit trigger value; front-app name for `frontApp`; focused workspace name for `workspace`; mode name for `aerospaceMode`; otherwise the distributed notification's JSON payload when available |
 | `SID` | Display number for pointer actions and workspace events |
 | `BUTTON` | `left`, `right` or `middle` for widget mouse clicks |
 | `MODIFIER` | Space-separated `shift`, `ctrl`, `alt`, `cmd`, `fn` for pointer actions |
