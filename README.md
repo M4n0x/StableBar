@@ -14,7 +14,7 @@ Appearance choices update global widget colors; individual widget styles still t
 
 ## Build and run
 
-Requires macOS 14+ and Xcode's Swift 6 toolchain. Optional workspace widgets require AeroSpace 0.21+ at `/opt/homebrew/bin/aerospace`.
+Requires macOS 14+ and Xcode's Swift 6 toolchain. Optional workspace widgets require AeroSpace 0.21+ on your login shell's `PATH`.
 
 Quit the running app before rebuilding its bundle.
 

@@ -50,7 +50,6 @@ final class AeroSpace {
     var onWorkspaceChange: (() -> Void)?
     private var task: Task<Void, Never>?
     private var process: Process?
-    private let executable = "/opt/homebrew/bin/aerospace"
 
     func start() {
         stop()
@@ -59,7 +58,7 @@ final class AeroSpace {
                 do {
                     let stream = Process()
                     let output = Pipe()
-                    stream.executableURL = URL(filePath: executable)
+                    stream.executableURL = URL(filePath: try executable())
                     stream.arguments = ["subscribe", "focused-workspace-changed", "focused-monitor-changed", "focus-changed", "window-detected"]
                     stream.standardOutput = output
                     stream.standardError = FileHandle.standardError
@@ -98,6 +97,7 @@ final class AeroSpace {
     }
 
     private func refresh() async throws {
+        let executable = try executable()
         async let spaces = runCommand(executable, arguments: [
             "list-workspaces", "--all", "--format",
             "%{workspace} %{workspace-is-focused} %{workspace-is-visible} %{monitor-appkit-nsscreen-screens-id}", "--json"
@@ -116,11 +116,19 @@ final class AeroSpace {
     func select(_ workspace: Workspace) {
         Task {
             do {
-                _ = try await runCommand(executable, arguments: ["workspace", workspace.name])
+                _ = try await runCommand(executable(), arguments: ["workspace", workspace.name])
             } catch {
                 self.error = error.localizedDescription
             }
         }
+    }
+
+    private func executable() throws -> String {
+        let directories = shellEnvironment.withLock { $0["PATH"] ?? "" }.split(separator: ":")
+        guard let directory = directories.first(where: { FileManager.default.isExecutableFile(atPath: "\($0)/aerospace") }) else {
+            throw CommandFailure(message: "AeroSpace is not on your login shell's PATH.")
+        }
+        return "\(directory)/aerospace"
     }
 
     func stop() {
