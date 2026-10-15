@@ -117,7 +117,6 @@ private final class CommandProcess: @unchecked Sendable {
             posix_spawn_file_actions_adddup2(&actions, output.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
             posix_spawn_file_actions_adddup2(&actions, errors.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
             var variables = shellEnvironment.withLock { $0 }
-            variables["STABLEBAR_SCRIPTS"] = Bundle.main.resourceURL!.appending(path: "widgets").path
             variables.merge(environment) { _, value in value }
             var argv = ([executable] + arguments).map { strdup($0) } + [nil]
             var envp = variables.map { strdup("\($0.key)=\($0.value)") } + [nil]

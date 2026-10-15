@@ -26,9 +26,9 @@ func commandFailureWithoutDiagnosticsIncludesExitCode(command: String, message: 
 }
 
 @Test func commandEnvironmentOverridesAreAvailableToScripts() async throws {
-    let data = try await runCommand("/bin/zsh", arguments: ["-c", "printf '%s:%s:%s' \"$NAME\" \"$SENDER\" \"${STABLEBAR_SCRIPTS:t}\""],
+    let data = try await runCommand("/bin/zsh", arguments: ["-c", "printf '%s:%s' \"$NAME\" \"$SENDER\""],
                                     environment: ["NAME": "weather", "SENDER": "wake"])
-    #expect(String(decoding: data, as: UTF8.self) == "weather:wake:widgets")
+    #expect(String(decoding: data, as: UTF8.self) == "weather:wake")
 }
 
 @Test(arguments: [false, true])

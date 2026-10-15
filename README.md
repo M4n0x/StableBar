@@ -48,7 +48,7 @@ NOTARY_PROFILE='stablebar-notary' ./scripts/package.sh
 
 The script signs with the hardened runtime, submits the DMG to Apple, then staples and validates its notarization ticket. See [Apple's notarization guide](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) for certificate and keychain-profile setup. A local DMG is suitable for development; building it alone does not make it a notarized release.
 
-Keep personal settings in `~/.config/stablebar/config.json` and personal scripts in `~/.config/stablebar/widgets/`, outside the repository. Point commands directly at those scripts. `Resources/config.json` is the shared starter configuration; rebuilding the app does not overwrite your personal file. Local scripts should load any supporting files from their own directory. `$STABLEBAR_SCRIPTS` always refers to the bundled scripts.
+Keep personal settings in `~/.config/stablebar/config.json` and personal scripts in `~/.config/stablebar/widgets/`, outside the repository. Point commands directly at those scripts. `Resources/config.json` is the shared starter configuration; rebuilding the app does not overwrite your personal file. Local scripts should load any supporting files from their own directory.
 
 StableBar sits at the top edge of each display. `bar.offset` moves it down from that edge. It hides on native fullscreen Spaces. AeroSpace gaps and macOS menu-bar settings are managed separately; this app does not change them. Keep the center clear on a notched display. The default configuration uses only the left and right groups.
 
@@ -280,7 +280,6 @@ Commands inherit your login shell's environment, then top-level `environment`, t
 | --- | --- |
 | `NAME` | Widget ID; event data cannot replace it |
 | `CONFIG_DIR` | Directory containing the main configuration; event data cannot replace it |
-| `STABLEBAR_SCRIPTS` | Bundled widget script directory |
 | `SENDER` | `startup`, `routine`, the subscribed event name, `action` after an action completes, or a mouse event below |
 | `INFO` | Explicit trigger value; front-app name for `frontApp`; focused workspace name for `workspace`; mode name for `aerospaceMode`; otherwise the distributed notification's JSON payload when available |
 | `SID` | Display number for pointer actions and workspace events |
@@ -367,18 +366,6 @@ The **Packages** tab reviews local folders and their declared commands, edits ty
 | `system`, `network`, `battery`, `audio` | Native CPU and memory, network, battery or audio output data | — |
 
 The AeroSpace connection subscribes to workspace, monitor, window and focus events. It loads an initial snapshot, coalesces pending events and reconnects after a disconnect. The accent color marks the focused workspace; an outline marks a workspace visible on another monitor. Empty, inactive workspaces are hidden. App icons are deduplicated per workspace. Active-app updates come from NSWorkspace notifications.
-
-## Optional scripts
-
-The scripts in [Resources/widgets](Resources/widgets) are bundled but disabled by default. They require `jq` and use local system data. `$STABLEBAR_SCRIPTS` points to their bundled directory when a widget or click command runs.
-
-| Widget | Source and behavior | Refresh |
-| --- | --- | --- |
-| CPU | `ps` and `sysctl`; 60-sample graph, load averages, five busiest processes with CPU and memory | 2 s |
-| Volume | Output volume/mute | 5 s |
-| Battery | `pmset`; charge, power source and remaining time | 120 s |
-
-Enable a script by adding a `script` widget with a command such as `"\"$STABLEBAR_SCRIPTS/cpu.sh\""` and an interval. Widget menus use themed popups. The app's management menus (right-click and macOS status icon) remain native.
 
 ## Create a widget
 
@@ -519,7 +506,7 @@ The [interactive example](examples/interactive/config.json) combines groups, an 
 
 ## Custom popups
 
-Add `popup` to any widget. For a popup shared by multiple widgets, define it once in the top-level `popups` object and set each widget's `popupName` to its key. Each anchor uses its own script data. An inline `popup` takes precedence over `popupName`. It takes precedence over `menu` and `onClick`. Its layout is independent of the script, so you can change the layout without changing the data source or rebuilding the app. The example below uses fields from [cpu.sh](Resources/widgets/cpu.sh).
+Add `popup` to any widget. For a popup shared by multiple widgets, define it once in the top-level `popups` object and set each widget's `popupName` to its key. Each anchor uses its own script data. An inline `popup` takes precedence over `popupName`. It takes precedence over `menu` and `onClick`. Its layout is independent of the script, so you can change the layout without changing the data source or rebuilding the app. The example below uses the fields returned by the script output that follows it.
 
 Widgets with `menu` entries already open a shared popup without additional configuration. To customize that popup, add `popup` with your preferred height and style and `"layout": { "type": "menu" }`. You can also place a `menu` block alongside other blocks in a custom layout. Entries retain their titles, details and click commands, and refresh while the popup is open.
 
@@ -599,7 +586,7 @@ For example, a script can return:
 
 Field and list values are display strings; scripts supply units and formatting. Missing fields display `—` and missing lists are empty while data loads. Values and graphs update while the popup stays open. Click the widget again, click outside, or press Escape to close it. Saving configuration closes the popup; reopen it to see the new layout. Style and layout changes keep healthy scripts and their graph history running.
 
-To use this popup, add it to a CPU script widget in your personal configuration.
+Add the popup to the script widget that returns those fields.
 
 For new native widget types, add a case to `WidgetContent`, decode its settings in `WidgetConfiguration`, and render it in `WidgetView.content`. New popup components belong in `PopupContent` and `PopupBlockView`. Runtime SwiftUI plugins and arbitrary chart types are not implemented.
 
