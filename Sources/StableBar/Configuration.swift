@@ -317,6 +317,9 @@ struct BarSettings: Decodable, Sendable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         height = try values.decodeIfPresent(Double.self, forKey: .height) ?? height
         displayScale = try values.decodeIfPresent([String: Double].self, forKey: .displayScale) ?? displayScale
+        guard displayScale.allSatisfy({ ["builtIn", "external"].contains($0.key) && $0.value > 0 && $0.value.isFinite }) else {
+            throw DecodingError.dataCorruptedError(forKey: .displayScale, in: values, debugDescription: "Use builtIn or external with a positive number.")
+        }
         offset = try values.decodeIfPresent(Double.self, forKey: .offset) ?? offset
         inset = try values.decodeIfPresent(Double.self, forKey: .inset) ?? inset
         spacing = try values.decodeIfPresent(Double.self, forKey: .spacing) ?? spacing

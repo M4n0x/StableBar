@@ -213,7 +213,7 @@ Package selections in modules merge by package ID, with later modules and the ro
 
 Each widget accepts `display`: `"all"` (default), `"active"`, `"main"`, `"builtIn"`, `"external"`, `"notched"`, `"unnotched"`, or an array of screen numbers, for example `[1, 2]`. Numbers are one-based positions in `NSScreen.screens`, matching AeroSpace and SketchyBar; they can change when displays are rearranged. `active` follows AeroSpace focus. Use `aerospace list-monitors --format '%{monitor-name}|%{monitor-appkit-nsscreen-screens-id}'` to list them.
 
-Set `bar.displayScale` to `{ "builtIn": 0.85, "external": 1 }` to shrink the laptop bar while keeping external displays at their original size. Each factor scales the bar height, widgets, text and spacing; omitted display types use `1`. Use positive factors. The bar offset and popup sizes stay in screen points. This setting also works inside automatic profiles.
+Set `bar.displayScale` to `{ "builtIn": 0.85, "external": 1 }` to shrink the laptop bar while keeping external displays at their original size. Each factor scales the bar height, widgets, text and spacing; omitted display types use `1`. Factors must be positive, and other keys are rejected. The bar offset and popup sizes stay in screen points. This setting also works inside automatic profiles.
 
 `bar.style` accepts `background`, `cornerRadius`, `borderColor` and `borderWidth`. The border is drawn along the bottom edge. Scripts can return `barStyle` to change those properties; later widgets override earlier widgets when they set the same property.
 
