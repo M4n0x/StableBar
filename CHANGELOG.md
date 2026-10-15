@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/Seb-GRAF/StableBar/compare/v0.2.0...v0.3.0) (2026-10-15)
+
+### Features
+
+* open Customize from the bar's right-click menu ([361f2e8](https://github.com/Seb-GRAF/StableBar/commit/361f2e8c45478b9f46293e33b27e188e137539c5))
+* scale the bar separately on built-in and external displays ([c0b6007](https://github.com/Seb-GRAF/StableBar/commit/c0b600725b032b4f4466de993915972781323f5c))
+
+### Bug Fixes
+
+* hide workspace widgets on displays without workspaces and let the row grow ([59dd4d2](https://github.com/Seb-GRAF/StableBar/commit/59dd4d2c1290de897bfedeb483af615ffb18dfbc))
+* reject unknown display types and non-positive display scales ([b6d0bbc](https://github.com/Seb-GRAF/StableBar/commit/b6d0bbc2b3a3f3ca734982e033854edbec0fe681))
+
 ## [0.2.0](https://github.com/Seb-GRAF/StableBar/compare/v0.1.1...v0.2.0) (2026-10-15)
 
 ### Features
