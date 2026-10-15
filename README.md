@@ -355,7 +355,7 @@ A batch validates the whole resulting configuration before replacing the running
 
 ### Editor and inspector
 
-Open **Customize and inspect…** from the menu-bar icon, reopen the running app, or run `StableBar --customize`.
+Open **Customize StableBar…** from the menu-bar icon or by right-clicking the bar, reopen the running app, or run `StableBar --customize`.
 
 The **Editor** lists your widgets by position; drag to reorder them. Change positions, icons, text, clock formats, colors, font size, padding and corners, or edit a widget's properties as JSON. **Bar** sets the bar's size and the default text color, background and font size. Changes apply to the bar immediately, like command-line edits without `--persist`. Undo and redo step through them, **Save** writes them to your configuration and **Discard** returns to the saved file. A change that would make the configuration invalid is rejected and its error is shown.
 
