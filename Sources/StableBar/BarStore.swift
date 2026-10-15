@@ -5,7 +5,7 @@ import Observation
 final class BarStore: NSObject {
     var configuration: Configuration?
     var configurationError: String?
-    var actionError: String?
+    var actionErrors: [String: String] = [:]
     var activeApp = NSWorkspace.shared.frontmostApplication
     var activeDisplayID = 1
     var scripts: [String: ScriptWidget] = [:]
@@ -366,10 +366,10 @@ final class BarStore: NSObject {
                 if let script, scripts[widget.id] === script {
                     script.refresh(ScriptEvent(sender: "action", environment: event.environment))
                 }
-                actionError = nil
+                actionErrors[widget.id] = nil
             } catch {
                 if Task.isCancelled { return }
-                actionError = error.localizedDescription
+                actionErrors[widget.id] = error.localizedDescription
             }
         }
         actions[id] = task

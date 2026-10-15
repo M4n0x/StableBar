@@ -161,7 +161,7 @@ import Testing
     await action.value
     try await Task.sleep(for: .milliseconds(120))
     #expect(replacement.output.text == "New")
-    #expect(store.actionError == nil)
+    #expect(store.actionErrors.isEmpty)
     #expect(try String(contentsOf: log, encoding: .utf8) == "old\nnew\n")
 }
 
@@ -295,5 +295,5 @@ func widgetActionsRunInOrderAndStoppingCancelsQueuedWork(stop: Bool) async throw
     await third.value
     let expected = stop ? "begin:first\nother\n" : "begin:first\nother\nend:first\nsecond\nthird\n"
     #expect(try String(contentsOf: log, encoding: .utf8) == expected)
-    #expect(store.actionError == nil)
+    #expect(store.actionErrors.isEmpty)
 }

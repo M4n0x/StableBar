@@ -54,7 +54,7 @@ StableBar sits at the top edge of each display. `bar.offset` moves it down from 
 
 ## Layout and style
 
-Save the configuration to apply changes. Direct saves and atomic file replacements are watched, including files imported with `includes`. Invalid edits retain the last working configuration and show an error indicator. Script instances, their last output, and graph history survive style-only changes, including when a script has an error.
+Save the configuration to apply changes. Direct saves and atomic file replacements are watched, including files imported with `includes`. Invalid edits retain the last working configuration and show an error indicator; click it to open Customize StableBar, which shows the error. Script instances, their last output, and graph history survive style-only changes, including when a script has an error.
 
 - `bar`: `height`, `offset`, `inset`, `spacing`, `background`, `animationDuration` (seconds).
 - `defaults`: styles inherited by every widget.
@@ -305,7 +305,7 @@ Keep `onClick` for the primary action. Add `actions` to any widget for additiona
 }
 ```
 
-These commands receive `SENDER=mouse.clicked`, `mouse.scrolled`, `mouse.entered` or `mouse.exited`. Scroll direction follows the signed native vertical delta. Only configured mouse actions intercept input; an unconfigured right click opens the bar's management menu. Actions run in order per widget, while other widgets remain independent. Successful actions refresh the same script instance with `SENDER=action`. Quitting cancels running and queued actions.
+These commands receive `SENDER=mouse.clicked`, `mouse.scrolled`, `mouse.entered` or `mouse.exited`. Scroll direction follows the signed native vertical delta. Only configured mouse actions intercept input; an unconfigured right click opens the bar's management menu. Actions run in order per widget, while other widgets remain independent. Successful actions refresh the same script instance with `SENDER=action`. A failed action marks its widget with a red badge, with the error in its tooltip, until that widget's next action succeeds. Quitting cancels running and queued actions.
 
 ### Command-line controls
 

@@ -125,7 +125,7 @@ private struct ConfigurationEditorView: View {
                 }
                 .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
             }
-            if let error = editor.error {
+            if let error = editor.error ?? store.configurationError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
                     .foregroundStyle(.red)

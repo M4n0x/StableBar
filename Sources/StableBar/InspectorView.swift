@@ -57,7 +57,7 @@ struct InspectorView: View {
                 .defaultScrollAnchor(.topLeading)
                 .background(Color(nsColor: .textBackgroundColor))
             }
-            if let error = error ?? store.configurationError ?? store.actionError {
+            if let error = error ?? store.configurationError ?? store.actionErrors[selectedID] {
                 Divider()
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)

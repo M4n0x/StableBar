@@ -171,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         addItem("Open configuration…", action: #selector(openConfiguration), to: menu)
         addItem("Reload configuration", action: #selector(reloadConfiguration), to: menu)
         addItem("Reconnect AeroSpace", action: #selector(reconnect), to: menu)
-        if let error = store.configurationError ?? store.actionError ?? store.aerospace.error {
+        if let error = store.configurationError ?? store.aerospace.error {
             menu.addItem(.separator())
             menu.addItem(withTitle: error, action: nil, keyEquivalent: "")
         }

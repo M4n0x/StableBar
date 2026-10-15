@@ -13,7 +13,7 @@ struct PopupView: View {
         let lists = script?.output.lists ?? [:]
         let samples = script?.samples ?? []
         let menu = script?.output.menu ?? widget.menu ?? []
-        let error = script?.error ?? store.actionError
+        let error = script?.error ?? store.actionErrors[widget.id]
         ScrollView {
             VStack(alignment: .leading, spacing: appearance.spacing) {
                 PopupBlockView(block: popup.layout, inheritedStyle: style,

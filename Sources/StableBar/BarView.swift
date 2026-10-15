@@ -76,9 +76,12 @@ struct BarView: View {
                     (style.borderColor?.color ?? .clear).frame(height: style.borderWidth ?? 0)
                 }
                 .overlay(alignment: .topTrailing) {
-                    if let error = store.configurationError ?? store.actionError {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 9)).foregroundStyle(.orange).help(error)
+                    if let error = store.configurationError {
+                        Button { store.onCustomize?() } label: {
+                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(.orange)
+                        }
+                        .buttonStyle(.plain)
+                        .help("\(error)\nClick to open Customize StableBar.")
                     }
                 }
                 .animation(reduceMotion ? nil : .easeOut(duration: config.bar.animationDuration), value: style)
@@ -91,7 +94,7 @@ struct BarView: View {
             Button("Open configuration…") { store.openConfiguration() }
             Button("Reload configuration") { store.reloadConfiguration() }
             Button("Reconnect AeroSpace") { store.aerospace.start() }
-            if let error = store.configurationError ?? store.actionError ?? store.aerospace.error {
+            if let error = store.configurationError ?? store.aerospace.error {
                 Divider()
                 Text(error)
             }
@@ -268,6 +271,11 @@ struct WidgetView: View {
             RoundedRectangle(cornerRadius: appearance.cornerRadius)
                 .strokeBorder(appearance.borderColor, lineWidth: appearance.borderWidth)
         }
+        .overlay(alignment: .topTrailing) {
+            if let error = store.scripts[widget.id]?.error ?? store.actionErrors[widget.id] {
+                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red).font(.system(size: 8)).help(error)
+            }
+        }
         .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
         .overlay(alignment: .bottom) {
             if let overlay = widget.overlay {
@@ -306,11 +314,6 @@ struct WidgetView: View {
         if let layout = widget.layout {
             block(layout, style: style, fillsWidth: false)
                 .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
-                .overlay(alignment: .topTrailing) {
-                    if store.scripts[widget.id]?.error != nil {
-                        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red).font(.system(size: 8))
-                    }
-                }
         } else {
             switch widget.content {
             case .workspaces:
@@ -347,11 +350,6 @@ struct WidgetView: View {
                     }
                         .foregroundStyle(hovered ? appearance.hoverForeground : appearance.foreground)
                         .help(script.error ?? script.output.tooltip ?? "")
-                        .overlay(alignment: .topTrailing) {
-                            if script.error != nil {
-                                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red).font(.system(size: 8))
-                            }
-                        }
                 }
             }
         }
