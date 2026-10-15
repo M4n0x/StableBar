@@ -15,7 +15,7 @@ struct ProviderConfiguration: Decodable, Equatable, Sendable {
     let whenVisible: Bool
     let events: [String]
 
-    enum CodingKeys: String, CodingKey { case type, command, interval, timeout, environment, whenVisible, events }
+    enum CodingKeys: String, CodingKey, CaseIterable { case type, command, interval, timeout, environment, whenVisible, events }
 
     init(type: ProviderType) {
         self.type = type
@@ -28,6 +28,7 @@ struct ProviderConfiguration: Decodable, Equatable, Sendable {
     }
 
     init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         type = try values.decode(ProviderType.self, forKey: .type)
         switch type {

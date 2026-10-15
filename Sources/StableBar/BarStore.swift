@@ -67,7 +67,7 @@ final class BarStore: NSObject {
             try migrateConfigurationFile(configurationURL)
             reloadConfiguration()
         } catch {
-            configurationError = error.localizedDescription
+            configurationError = errorMessage(error)
         }
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(updateActiveApp), name: NSWorkspace.didActivateApplicationNotification, object: nil)
@@ -112,7 +112,7 @@ final class BarStore: NSObject {
             }
             apply(next)
         } catch {
-            configurationError = error.localizedDescription
+            configurationError = errorMessage(error)
         }
     }
 

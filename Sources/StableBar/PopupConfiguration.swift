@@ -10,7 +10,7 @@ struct PopupConfiguration: Decodable, Sendable {
     var dismissOnControl = false
     var animation: WidgetAnimation?
 
-    enum CodingKeys: String, CodingKey { case height, style, layout, alignment, offset, dismissOnAction, dismissOnControl, animation }
+    enum CodingKeys: String, CodingKey, CaseIterable { case height, style, layout, alignment, offset, dismissOnAction, dismissOnControl, animation }
 
     init(height: Double, style: WidgetStyle, layout: PopupBlock) {
         self.height = height
@@ -19,6 +19,7 @@ struct PopupConfiguration: Decodable, Sendable {
     }
 
     init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         height = try values.decode(Double.self, forKey: .height)
         style = try values.decode(WidgetStyle.self, forKey: .style)
@@ -62,7 +63,7 @@ struct PopupBlock: Decodable, Sendable {
     let hideWhenEmpty: String?
     let scrollSpeed: Double?
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case type, style, alignment, children, text, field, height, source, row, title, onClick
         case path, fit, name, animation, styleSource, styleField, onClickField, lineWidth
         case hideWhenEmpty, scrollSpeed, min, max, step, onChange, options, searchFields
@@ -82,6 +83,7 @@ struct PopupBlock: Decodable, Sendable {
     }
 
     init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         style = try values.decodeIfPresent(WidgetStyle.self, forKey: .style) ?? WidgetStyle()
         alignment = try values.decodeIfPresent(PopupAlignment.self, forKey: .alignment) ?? .leading
@@ -166,6 +168,15 @@ enum PopupAlignment: String, Decodable, Sendable {
 struct PopupControlOption: Decodable, Sendable {
     let title: String
     let value: String
+
+    enum CodingKeys: String, CodingKey, CaseIterable { case title, value }
+
+    init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        title = try values.decode(String.self, forKey: .title)
+        value = try values.decode(String.self, forKey: .value)
+    }
 }
 
 func searchPopupRows(_ rows: [[String: String]], query: String, fields: [String]?) -> [[String: String]] {

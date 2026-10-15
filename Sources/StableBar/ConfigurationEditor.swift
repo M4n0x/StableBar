@@ -39,7 +39,7 @@ final class ConfigurationEditor {
             redoSteps.removeAll()
             error = nil
         } catch {
-            self.error = error.localizedDescription
+            self.error = errorMessage(error)
         }
         keepSelection()
     }
@@ -80,7 +80,7 @@ final class ConfigurationEditor {
             undoSteps = []
             redoSteps = []
             error = nil
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = errorMessage(error) }
     }
 
     func discard() {
@@ -93,7 +93,7 @@ final class ConfigurationEditor {
         do {
             try store.setSessionEdits(edits)
             error = nil
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = errorMessage(error) }
         keepSelection()
     }
 

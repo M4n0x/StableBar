@@ -43,8 +43,7 @@ struct StableBarApp {
                 withExtendedLifetime(delegate) { app.run() }
             }
         } catch {
-            let message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
-            FileHandle.standardError.write(Data("\(message)\n".utf8))
+            FileHandle.standardError.write(Data("\(errorMessage(error))\n".utf8))
             exit(1)
         }
     }

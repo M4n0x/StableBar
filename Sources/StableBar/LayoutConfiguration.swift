@@ -3,9 +3,10 @@ import Foundation
 struct WidgetGroupConfiguration: Decodable, Sendable {
     var style: WidgetStyle
 
-    enum CodingKeys: String, CodingKey { case style }
+    enum CodingKeys: String, CodingKey, CaseIterable { case style }
 
     init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         style = try values.decodeIfPresent(WidgetStyle.self, forKey: .style) ?? WidgetStyle()
     }

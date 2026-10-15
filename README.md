@@ -56,6 +56,12 @@ StableBar sits at the top edge of each display. `bar.offset` moves it down from 
 
 Save the configuration to apply changes. Direct saves and atomic file replacements are watched, including files imported with `includes`. Invalid edits retain the last working configuration and show an error indicator; click it to open Customize StableBar, which shows the error. Script instances, their last output, and graph history survive style-only changes, including when a script has an error.
 
+Unknown properties are errors, so a misspelled key cannot be silently ignored. The last working configuration stays in place and the error names the property, for example `widgets.clock: style.fontsize: Unknown property.` For completion and validation in editors that support JSON Schema, start a configuration file with:
+
+```json
+"$schema": "https://raw.githubusercontent.com/Seb-GRAF/StableBar/main/stablebar.schema.json"
+```
+
 - `bar`: `height`, `offset`, `inset`, `spacing`, `background`, `animationDuration` (seconds).
 - `defaults`: styles inherited by every widget.
 - `widgets`: ordered widget definitions with unique `id`, `type`, `position` and optional `style`, `icon`, `onClick`, `menu`, `popup`.
@@ -244,7 +250,7 @@ The widget can use:
 
 `text` and `icon` are supplied to bar layouts from the widget's normal content. Other fields come from the script. Active-app layouts receive `text` as the app name. Use the normal clock rendering for native clock widgets.
 
-Script output may include `style` to override the widget style, `display` to change its display filter, and `styles` to supply named element styles. A block with `"styleSource": "countdown"` reads `styles.countdown`, overlaid on its configured style. A list row can use `styleField` to read the style name from a field in that row. Scripts can return `widgetStyles`, keyed by widget ID, to style another widget (for example, change a workspace underline when the window-manager mode changes). Later scripts take precedence; a widget's own `style` output takes precedence over those overrides. Omitted overrides return to the configured style on the next update.
+Script output ignores unknown top-level fields, but styles, animations and menu items in it use the configuration's property names and reject unknown ones. Script output may include `style` to override the widget style, `display` to change its display filter, and `styles` to supply named element styles. A block with `"styleSource": "countdown"` reads `styles.countdown`, overlaid on its configured style. A list row can use `styleField` to read the style name from a field in that row. Scripts can return `widgetStyles`, keyed by widget ID, to style another widget (for example, change a workspace underline when the window-manager mode changes). Later scripts take precedence; a widget's own `style` output takes precedence over those overrides. Omitted overrides return to the configured style on the next update.
 
 Widgets and blocks accept `animation` with `duration` in seconds and `curve`: `linear`, `easeIn`, `easeOut`, `easeInOut`, `smooth` or `spring`. Widget animation defaults to `bar.animationDuration`. Block style animations are opt-in. Progress values use a 0–1 scale, clipped to that range when drawn. A progress block can also read a numeric string from its current list row when there is no matching entry in `values`. With a matching entry in `targets`, a progress rule starts at `values[source]` and animates toward `targets[source]`; without a target it animates between readings. Reduce Motion disables these animations.
 

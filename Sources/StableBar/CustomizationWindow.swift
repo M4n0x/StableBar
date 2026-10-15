@@ -285,7 +285,7 @@ private struct ConfigurationEditorView: View {
                             Button("Apply properties") {
                                 do {
                                     editor.replaceProperties(try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(advanced.utf8)))
-                                } catch { editor.error = error.localizedDescription }
+                                } catch { editor.error = errorMessage(error) }
                             }
                         }
                     }

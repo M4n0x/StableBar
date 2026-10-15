@@ -267,7 +267,7 @@ struct SetupView: View {
             preview.aerospace.workspaces = store.aerospace.workspaces
             error = nil
         } catch {
-            self.error = error.localizedDescription
+            self.error = errorMessage(error)
         }
     }
 
@@ -276,7 +276,7 @@ struct SetupView: View {
             if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
             error = nil
         } catch {
-            self.error = error.localizedDescription
+            self.error = errorMessage(error)
         }
         loginStatus = SMAppService.mainApp.status
     }
@@ -295,7 +295,7 @@ struct SetupView: View {
             UserDefaults.standard.set(true, forKey: "setupCompleted")
             close()
         } catch {
-            self.error = error.localizedDescription
+            self.error = errorMessage(error)
         }
     }
 }

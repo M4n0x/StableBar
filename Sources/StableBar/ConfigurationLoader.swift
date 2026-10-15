@@ -34,12 +34,53 @@ indirect enum ConfigurationValue: Codable, Sendable, Equatable {
         try JSONDecoder().decode(type, from: JSONEncoder().encode(self))
     }
 
+    func decoded<T: Decodable>(_ type: T.Type, at key: String) throws -> T {
+        try ConfigurationValue.object([key: self]).decoded([String: T].self)[key]!
+    }
+
     func overriding(_ earlier: ConfigurationValue) -> ConfigurationValue {
         if case let .object(base) = earlier, case let .object(next) = self {
             return .object(base.merging(next) { $1.overriding($0) })
         }
         return self
     }
+}
+
+struct ConfigurationKey: CodingKey {
+    let stringValue: String
+    var intValue: Int? { nil }
+    init(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { nil }
+}
+
+extension Decoder {
+    func rejectUnknownKeys<Key: CodingKey & CaseIterable>(_: Key.Type, allowing extra: [String] = []) throws {
+        let container = try container(keyedBy: ConfigurationKey.self)
+        let known = Set(Key.allCases.map(\.stringValue) + extra)
+        if let key = container.allKeys.first(where: { !known.contains($0.stringValue) }) {
+            throw DecodingError.dataCorruptedError(forKey: key, in: container, debugDescription: "Unknown property.")
+        }
+    }
+}
+
+func errorMessage(_ error: Error) -> String {
+    let context: DecodingError.Context
+    var message: String
+    switch error as? DecodingError {
+    case let .keyNotFound(key, keyContext)?:
+        context = keyContext
+        message = "Missing property \(key.stringValue)."
+    case let .dataCorrupted(errorContext)?, let .typeMismatch(_, errorContext)?, let .valueNotFound(_, errorContext)?:
+        context = errorContext
+        message = errorContext.debugDescription
+        if let detail = (errorContext.underlyingError as? NSError)?.userInfo[NSDebugDescriptionErrorKey] as? String {
+            message += " \(detail)"
+        }
+    default:
+        return error.localizedDescription
+    }
+    let path = context.codingPath.map { $0.intValue.map(String.init) ?? $0.stringValue }.joined(separator: ".")
+    return path.isEmpty ? message : "\(path): \(message)"
 }
 
 enum ConfigurationCompositionError: LocalizedError {
@@ -73,8 +114,9 @@ func expandWidgetTemplate(_ definition: [String: ConfigurationValue],
     guard let template = templates[name] else {
         throw ConfigurationCompositionError.unknownTemplate(name)
     }
-    let inherited = try expandWidgetTemplate(template, templates: templates, path: path + [name])
-    return inherited.merging(definition) { $1.overriding($0) }
+    var expanded = try expandWidgetTemplate(template, templates: templates, path: path + [name]).merging(definition) { $1.overriding($0) }
+    expanded["template"] = nil
+    return expanded
 }
 
 struct ConfigurationOrigin: Equatable, Sendable, CustomStringConvertible {
@@ -157,7 +199,7 @@ struct ConfigurationLoader {
         let base = try read(url.standardizedFileURL, data: data, path: [])
         let packageStore = WidgetPackageStore(directory: url.deletingLastPathComponent().appending(path: "packages"))
         var layer = ConfigurationLayer(values: ["widgets": .array([])], origins: [:])
-        for selection in try base.values["packages"]?.decoded([WidgetPackageSelection].self) ?? [] where selection.enabled {
+        for selection in try base.values["packages"]?.decoded([WidgetPackageSelection].self, at: "packages") ?? [] where selection.enabled {
             let directory = try packageStore.directory(id: selection.id, version: selection.version)
             dependencies.insert(directory.appending(path: "package.json"))
             let manifest = try packageStore.manifest(at: directory)
@@ -174,7 +216,7 @@ struct ConfigurationLoader {
     mutating func finish(_ input: ConfigurationLayer, context: ConfigurationContext) throws -> [String: ConfigurationValue] {
         var layer = input
         activeProfiles = []
-        let profiles = try layer.values["profiles"]?.decoded([ConfigurationProfile].self) ?? []
+        let profiles = try layer.values["profiles"]?.decoded([ConfigurationProfile].self, at: "profiles") ?? []
         matchesApps = profiles.contains { $0.when?.app != nil }
         let selected = try layer.values["profile"].flatMap { try $0.decoded(String?.self) }
         var names = Set<String>()
@@ -217,7 +259,6 @@ struct ConfigurationLoader {
             for (path, source) in layer.origins where path.hasPrefix(overridePrefix) {
                 propertyOrigins[String(path.dropFirst(overridePrefix.count))] = source.appending("(widget override)")
             }
-            expanded.removeValue(forKey: "template")
             for (path, source) in propertyOrigins { layer.origins["\(widgetPrefix).\(path)"] = source }
             widgets.append(expanded)
         }

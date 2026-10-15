@@ -60,6 +60,13 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
     var opacity: Double?
     var hoverForeground: HexColor?
 
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case foreground, background, hoverBackground, borderColor, accent, accentText, borderWidth, cornerRadius
+        case fontName, fontSize, fontWeight, iconSize, paddingHorizontal, paddingVertical, spacing, width
+        case minWidth, maxWidth, shadowRadius, shadowColor, height, paddingLeading, paddingTrailing, paddingTop
+        case paddingBottom, offsetX, offsetY, opacity, hoverForeground
+    }
+
     func inheriting(_ defaults: WidgetStyle) -> WidgetStyle {
         WidgetStyle(
             foreground: foreground ?? defaults.foreground,
@@ -96,6 +103,40 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
 }
 
 extension WidgetStyle {
+    init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        foreground = try values.decodeIfPresent(HexColor.self, forKey: .foreground)
+        background = try values.decodeIfPresent(HexColor.self, forKey: .background)
+        hoverBackground = try values.decodeIfPresent(HexColor.self, forKey: .hoverBackground)
+        borderColor = try values.decodeIfPresent(HexColor.self, forKey: .borderColor)
+        accent = try values.decodeIfPresent(HexColor.self, forKey: .accent)
+        accentText = try values.decodeIfPresent(HexColor.self, forKey: .accentText)
+        borderWidth = try values.decodeIfPresent(Double.self, forKey: .borderWidth)
+        cornerRadius = try values.decodeIfPresent(Double.self, forKey: .cornerRadius)
+        fontName = try values.decodeIfPresent(String.self, forKey: .fontName)
+        fontSize = try values.decodeIfPresent(Double.self, forKey: .fontSize)
+        fontWeight = try values.decodeIfPresent(String.self, forKey: .fontWeight)
+        iconSize = try values.decodeIfPresent(Double.self, forKey: .iconSize)
+        paddingHorizontal = try values.decodeIfPresent(Double.self, forKey: .paddingHorizontal)
+        paddingVertical = try values.decodeIfPresent(Double.self, forKey: .paddingVertical)
+        spacing = try values.decodeIfPresent(Double.self, forKey: .spacing)
+        width = try values.decodeIfPresent(Double.self, forKey: .width)
+        minWidth = try values.decodeIfPresent(Double.self, forKey: .minWidth)
+        maxWidth = try values.decodeIfPresent(Double.self, forKey: .maxWidth)
+        shadowRadius = try values.decodeIfPresent(Double.self, forKey: .shadowRadius)
+        shadowColor = try values.decodeIfPresent(HexColor.self, forKey: .shadowColor)
+        height = try values.decodeIfPresent(Double.self, forKey: .height)
+        paddingLeading = try values.decodeIfPresent(Double.self, forKey: .paddingLeading)
+        paddingTrailing = try values.decodeIfPresent(Double.self, forKey: .paddingTrailing)
+        paddingTop = try values.decodeIfPresent(Double.self, forKey: .paddingTop)
+        paddingBottom = try values.decodeIfPresent(Double.self, forKey: .paddingBottom)
+        offsetX = try values.decodeIfPresent(Double.self, forKey: .offsetX)
+        offsetY = try values.decodeIfPresent(Double.self, forKey: .offsetY)
+        opacity = try values.decodeIfPresent(Double.self, forKey: .opacity)
+        hoverForeground = try values.decodeIfPresent(HexColor.self, forKey: .hoverForeground)
+    }
+
     static let light = WidgetStyle(foreground: HexColor(0x1d1d1fff), background: HexColor(0xf8f8faed), hoverBackground: HexColor(0xffffffff),
                                    borderColor: HexColor(0xffffffb3), shadowColor: HexColor(0x00000014))
     static let dark = WidgetStyle(foreground: HexColor(0xf5f5f7ff), background: HexColor(0x242629ee), hoverBackground: HexColor(0x36383cff),
@@ -199,12 +240,13 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let priority: Int
     let overflow: WidgetOverflow
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id, position, type, icon, onClick, menu, popup, popupName, style, format, text, command, interval
         case display, layout, overlay, animation, workspace, events, environment, timeout, actions, enabled, provider, group, priority, overflow
     }
 
     init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(String.self, forKey: .id)
         position = try values.decode(WidgetPosition.self, forKey: .position)
@@ -263,13 +305,14 @@ struct BarSettings: Decodable, Sendable {
     var notchSpacing = 16.0
     var style = WidgetStyle()
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case height, offset, inset, spacing, background, animationDuration, notchWidth, notchSpacing, style
     }
 
     init() {}
 
     init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         height = try values.decodeIfPresent(Double.self, forKey: .height) ?? height
         offset = try values.decodeIfPresent(Double.self, forKey: .offset) ?? offset
@@ -293,9 +336,10 @@ struct Configuration: Decodable, Sendable {
     let providers: [String: ProviderConfiguration]
     let groups: [String: WidgetGroupConfiguration]
 
-    enum CodingKeys: String, CodingKey { case bar, defaults, widgets, popups, templates, widgetOverrides, environment, providers, groups }
+    enum CodingKeys: String, CodingKey, CaseIterable { case bar, defaults, widgets, popups, templates, widgetOverrides, environment, providers, groups }
 
     init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self, allowing: ["$schema", "tokens", "packages"])
         let values = try decoder.container(keyedBy: CodingKeys.self)
         bar = try values.decodeIfPresent(BarSettings.self, forKey: .bar) ?? BarSettings()
         defaults = try values.decodeIfPresent(WidgetStyle.self, forKey: .defaults) ?? WidgetStyle()
@@ -310,7 +354,11 @@ struct Configuration: Decodable, Sendable {
             if let id = expanded["id"], let properties = overrides[try id.decoded(String.self)] {
                 expanded.merge(properties) { $1.overriding($0) }
             }
-            return try JSONDecoder().decode(WidgetConfiguration.self, from: JSONEncoder().encode(expanded))
+            do {
+                return try JSONDecoder().decode(WidgetConfiguration.self, from: JSONEncoder().encode(expanded))
+            } catch {
+                throw CommandFailure(message: "widgets.\(expanded["id"].flatMap { try? $0.decoded(String.self) } ?? "?"): \(errorMessage(error))")
+            }
         }
         environment = try values.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
         popups = try values.decodeIfPresent([String: PopupConfiguration].self, forKey: .popups) ?? [:]

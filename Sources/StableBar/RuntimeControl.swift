@@ -35,7 +35,7 @@ final class RuntimeControl {
                     let request = try JSONDecoder().decode(RuntimeRequest.self, from: input)
                     response = RuntimeResponse(result: try control.handle(request))
                 } catch {
-                    response = RuntimeResponse(error: error.localizedDescription)
+                    response = RuntimeResponse(error: errorMessage(error))
                 }
                 return try! JSONEncoder().encode(response)
             }

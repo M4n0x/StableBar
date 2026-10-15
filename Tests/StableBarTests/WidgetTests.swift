@@ -92,7 +92,7 @@ import Testing
 }
 
 @Test func zeroIntervalCannotStartABusyLoop() {
-    #expect(throws: DecodingError.self) {
+    #expect(throws: CommandFailure.self) {
         try JSONDecoder().decode(Configuration.self, from: Data(#"{"widgets":[{"id":"test","type":"script","position":"left","command":"date","interval":0}]}"#.utf8))
     }
 }
@@ -197,7 +197,7 @@ import Testing
 }
 
 @Test func setupKeepsUntouchedConfigurationByteForByte() throws {
-    let data = Data(#"{ "widgets": [{"id":"time","type":"clock","position":"right","format":"HH.mm"}], "custom": true }"#.utf8)
+    let data = Data(#"{ "widgets": [{"id":"time","type":"clock","position":"right","format":"HH.mm"}], "bar": {"height": 30} }"#.utf8)
     #expect(try SetupPreferences().applying(to: data, menuBarHeight: 38) == data)
 }
 
@@ -209,9 +209,8 @@ import Testing
       "widgets": [
         {"id": "time", "type": "clock", "position": "right", "format": "HH.mm", "style": {"foreground": "#abcdef"}},
         {"id": "custom", "type": "script", "position": "left", "command": "~/my-widget.sh", "interval": 12,
-         "layout": {"type": "field", "field": "text"}, "events": ["wake"], "futureSetting": true}
-      ],
-      "futureRoot": {"enabled": true}
+         "layout": {"type": "field", "field": "text"}, "events": ["wake"]}
+      ]
     }
     """##.utf8)
     let preferences = SetupPreferences(appearance: .dark, placement: .belowMenuBar, clock: .twelveHour)
@@ -228,7 +227,6 @@ import Testing
     let original = try JSONSerialization.jsonObject(with: data) as! [String: Any]
     let result = try JSONSerialization.jsonObject(with: updated) as! [String: Any]
     #expect((original["widgets"] as! [NSDictionary])[1] == (result["widgets"] as! [NSDictionary])[1])
-    #expect(original["futureRoot"] as! NSDictionary == result["futureRoot"] as! NSDictionary)
     let clockOnly = try SetupPreferences(clock: .twentyFourHour).applying(to: updated, menuBarHeight: 24)
     let clockResult = try JSONSerialization.jsonObject(with: clockOnly) as! [String: Any]
     #expect(clockResult["defaults"] as! NSDictionary == result["defaults"] as! NSDictionary)
@@ -236,7 +234,7 @@ import Testing
 }
 
 @Test func setupRejectsInvalidConfigurationBeforeEditing() {
-    #expect(throws: DecodingError.self) {
+    #expect(throws: CommandFailure.self) {
         try SetupPreferences(appearance: .dark).applying(
             to: Data(#"{"widgets":[{"id":"custom","type":"script","position":"left","command":"date","interval":0}]}"#.utf8),
             menuBarHeight: 24)

@@ -5,6 +5,16 @@ struct WidgetPackageSetting: Codable, Sendable {
     let title: String?
     let `default`: ConfigurationValue
 
+    enum CodingKeys: String, CodingKey, CaseIterable { case type, title, `default` }
+
+    init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        type = try values.decode(String.self, forKey: .type)
+        title = try values.decodeIfPresent(String.self, forKey: .title)
+        `default` = try values.decode(ConfigurationValue.self, forKey: .default)
+    }
+
     func accepts(_ value: ConfigurationValue) -> Bool {
         switch (type, value) {
         case ("string", .string), ("number", .number), ("bool", .bool): true
@@ -20,9 +30,10 @@ struct WidgetPackageManifest: Codable, Sendable {
     let entry: String
     let settings: [String: WidgetPackageSetting]
 
-    enum CodingKeys: String, CodingKey { case id, name, version, entry, settings }
+    enum CodingKeys: String, CodingKey, CaseIterable { case id, name, version, entry, settings }
 
     init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(String.self, forKey: .id)
         name = try values.decode(String.self, forKey: .name)
@@ -53,9 +64,10 @@ struct WidgetPackageSelection: Decodable {
     let enabled: Bool
     let settings: [String: ConfigurationValue]
 
-    enum CodingKeys: String, CodingKey { case id, version, enabled, settings }
+    enum CodingKeys: String, CodingKey, CaseIterable { case id, version, enabled, settings }
 
     init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(String.self, forKey: .id)
         version = try values.decode(String.self, forKey: .version)

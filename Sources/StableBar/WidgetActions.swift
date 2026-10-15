@@ -8,6 +8,19 @@ struct WidgetActions: Decodable, Sendable {
     var scrollDown: String?
     var mouseEntered: String?
     var mouseExited: String?
+
+    enum CodingKeys: String, CodingKey, CaseIterable { case rightClick, middleClick, scrollUp, scrollDown, mouseEntered, mouseExited }
+
+    init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        rightClick = try values.decodeIfPresent(String.self, forKey: .rightClick)
+        middleClick = try values.decodeIfPresent(String.self, forKey: .middleClick)
+        scrollUp = try values.decodeIfPresent(String.self, forKey: .scrollUp)
+        scrollDown = try values.decodeIfPresent(String.self, forKey: .scrollDown)
+        mouseEntered = try values.decodeIfPresent(String.self, forKey: .mouseEntered)
+        mouseExited = try values.decodeIfPresent(String.self, forKey: .mouseExited)
+    }
 }
 
 struct WidgetActionContext: Sendable {

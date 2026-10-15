@@ -18,6 +18,16 @@ struct WidgetMenuItem: Decodable, Sendable {
     let title: String
     var detail: String?
     var onClick: String?
+
+    enum CodingKeys: String, CodingKey, CaseIterable { case title, detail, onClick }
+
+    init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        title = try values.decode(String.self, forKey: .title)
+        detail = try values.decodeIfPresent(String.self, forKey: .detail)
+        onClick = try values.decodeIfPresent(String.self, forKey: .onClick)
+    }
 }
 
 struct ScriptOutput: Decodable, Sendable {

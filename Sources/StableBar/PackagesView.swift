@@ -226,7 +226,7 @@ struct PackagesView: View {
             try action()
             error = nil
         } catch {
-            self.error = error.localizedDescription
+            self.error = errorMessage(error)
         }
     }
 }
