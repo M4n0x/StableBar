@@ -29,8 +29,8 @@ final class WidgetPopup {
         let frame = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
         let style = popup.style.inheriting(widget.style.inheriting(defaults))
         let appearance = WidgetAppearance(style, defaults: WidgetStyle())
-        let shadowInset = appearance.shadowRadius * 2 + 2
-        let width = min(popup.style.width ?? 360, screen.visibleFrame.width - shadowInset * 2 - 16)
+        let shadowInset = CGFloat(appearance.shadowRadius * 2 + 2)
+        let width = min(CGFloat(popup.style.width ?? 360), screen.visibleFrame.width - shadowInset * 2 - 16)
         let height = min(popup.height, frame.minY - screen.visibleFrame.minY - shadowInset * 2 - 8)
         let alignedX: CGFloat = switch popup.alignment {
         case .leading: frame.minX
