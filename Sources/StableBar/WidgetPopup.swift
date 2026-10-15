@@ -13,6 +13,7 @@ final class WidgetPopup {
     private weak var anchor: NSView?
     private var localMonitor: Any?
     private var globalMonitor: Any?
+    private var animation: WidgetAnimation?
 
     func toggle(_ popup: PopupConfiguration, widget: WidgetConfiguration, defaults: WidgetStyle,
                 store: BarStore, anchor: NSView) {
@@ -29,8 +30,13 @@ final class WidgetPopup {
         let shadowInset = appearance.shadowRadius * 2 + 2
         let width = min(popup.style.width ?? 360, screen.visibleFrame.width - shadowInset * 2 - 16)
         let height = min(popup.height, frame.minY - screen.visibleFrame.minY - shadowInset * 2 - 8)
-        let x = min(max(frame.midX - width / 2, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - width - 8)
-        let panel = PopupPanel(contentRect: NSRect(x: x - shadowInset, y: frame.minY - height - 6 - shadowInset,
+        let alignedX: CGFloat = switch popup.alignment {
+        case .leading: frame.minX
+        case .center: frame.midX - width / 2
+        case .trailing: frame.maxX - width
+        }
+        let x = min(max(alignedX, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - width - 8)
+        let panel = PopupPanel(contentRect: NSRect(x: x - shadowInset, y: frame.minY - height - popup.offset - shadowInset,
                                                   width: width + shadowInset * 2, height: height + shadowInset * 2),
                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.title = "\(widget.id) popup"
@@ -46,6 +52,7 @@ final class WidgetPopup {
             .padding(shadowInset))
         self.panel = panel
         self.anchor = anchor
+        animation = popup.animation
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
             let handled = MainActor.assumeIsolated {
                 guard let self else { return false }
@@ -65,7 +72,22 @@ final class WidgetPopup {
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             MainActor.assumeIsolated { self?.close() }
         }
+        let fullFrame = panel.frame
+        if popup.animation != nil {
+            panel.alphaValue = 0
+            if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                panel.setFrame(NSRect(x: fullFrame.minX, y: fullFrame.maxY - 1, width: fullFrame.width, height: 1), display: false)
+            }
+        }
         panel.makeKeyAndOrderFront(nil)
+        if let animation = popup.animation {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = animation.duration
+                context.timingFunction = animation.timingFunction
+                panel.animator().alphaValue = 1
+                panel.animator().setFrame(fullFrame, display: true)
+            }
+        }
     }
 
     func close() {
@@ -73,9 +95,24 @@ final class WidgetPopup {
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
         localMonitor = nil
         globalMonitor = nil
-        panel?.close()
+        if let panel, let animation {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = animation.duration
+                context.timingFunction = animation.timingFunction
+                panel.animator().alphaValue = 0
+                if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                    let frame = panel.frame
+                    panel.animator().setFrame(NSRect(x: frame.minX, y: frame.maxY - 1, width: frame.width, height: 1), display: true)
+                }
+            } completionHandler: {
+                Task { @MainActor in panel.close() }
+            }
+        } else {
+            panel?.close()
+        }
         panel = nil
         anchor = nil
+        animation = nil
     }
 
     func removeAnchor(_ view: NSView) {

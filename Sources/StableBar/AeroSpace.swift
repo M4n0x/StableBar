@@ -47,6 +47,7 @@ func workspaceSnapshot(workspaces: Data, windows: Data) throws -> [Workspace] {
 final class AeroSpace {
     var workspaces: [Workspace] = []
     var error: String?
+    var onWorkspaceChange: (() -> Void)?
     private var task: Task<Void, Never>?
     private var process: Process?
     private let executable = "/opt/homebrew/bin/aerospace"
@@ -106,7 +107,9 @@ final class AeroSpace {
         ])
         let snapshot = try await workspaceSnapshot(workspaces: spaces, windows: windows)
         try Task.checkCancellation()
+        let previousWorkspace = workspaces.first(where: \.isFocused)?.name
         if workspaces != snapshot { workspaces = snapshot }
+        if previousWorkspace != workspaces.first(where: \.isFocused)?.name { onWorkspaceChange?() }
         error = nil
     }
 

@@ -27,7 +27,7 @@ struct HexColor: Decodable, Equatable, Sendable {
     }
 }
 
-struct WidgetStyle: Decodable, Sendable {
+struct WidgetStyle: Decodable, Equatable, Sendable {
     var foreground: HexColor?
     var background: HexColor?
     var hoverBackground: HexColor?
@@ -46,6 +46,15 @@ struct WidgetStyle: Decodable, Sendable {
     var width: Double?
     var shadowRadius: Double?
     var shadowColor: HexColor?
+    var height: Double?
+    var paddingLeading: Double?
+    var paddingTrailing: Double?
+    var paddingTop: Double?
+    var paddingBottom: Double?
+    var offsetX: Double?
+    var offsetY: Double?
+    var opacity: Double?
+    var hoverForeground: HexColor?
 
     func inheriting(_ defaults: WidgetStyle) -> WidgetStyle {
         WidgetStyle(
@@ -66,13 +75,23 @@ struct WidgetStyle: Decodable, Sendable {
             spacing: spacing ?? defaults.spacing,
             width: width ?? defaults.width,
             shadowRadius: shadowRadius ?? defaults.shadowRadius,
-            shadowColor: shadowColor ?? defaults.shadowColor
+            shadowColor: shadowColor ?? defaults.shadowColor,
+            height: height ?? defaults.height,
+            paddingLeading: paddingLeading ?? defaults.paddingLeading,
+            paddingTrailing: paddingTrailing ?? defaults.paddingTrailing,
+            paddingTop: paddingTop ?? defaults.paddingTop,
+            paddingBottom: paddingBottom ?? defaults.paddingBottom,
+            offsetX: offsetX ?? defaults.offsetX,
+            offsetY: offsetY ?? defaults.offsetY,
+            opacity: opacity ?? defaults.opacity,
+            hoverForeground: hoverForeground ?? defaults.hoverForeground
         )
     }
 }
 
 struct WidgetAppearance {
     let foreground: Color
+    let hoverForeground: Color
     let background: Color
     let hoverBackground: Color
     let borderColor: Color
@@ -91,6 +110,7 @@ struct WidgetAppearance {
 
     init(_ style: WidgetStyle, defaults: WidgetStyle) {
         foreground = (style.foreground ?? defaults.foreground ?? HexColor(0x1d1d1fff)).color
+        hoverForeground = (style.hoverForeground ?? defaults.hoverForeground)?.color ?? foreground
         background = (style.background ?? defaults.background ?? HexColor(0xf8f8faed)).color
         hoverBackground = (style.hoverBackground ?? defaults.hoverBackground ?? HexColor(0xffffffff)).color
         borderColor = (style.borderColor ?? defaults.borderColor ?? HexColor(0xffffffb3)).color
@@ -109,6 +129,9 @@ struct WidgetAppearance {
         let name = style.fontName ?? defaults.fontName ?? "system"
         let weight: Font.Weight
         switch style.fontWeight ?? defaults.fontWeight ?? "medium" {
+        case "ultralight": weight = .ultraLight
+        case "thin": weight = .thin
+        case "light": weight = .light
         case "regular": weight = .regular
         case "semibold": weight = .semibold
         case "bold": weight = .bold
@@ -119,7 +142,7 @@ struct WidgetAppearance {
 }
 
 enum WidgetPosition: String, Decodable, Sendable {
-    case left, center, right
+    case left, notchLeft, center, notchRight, right
 }
 
 enum WidgetContent: Equatable, Sendable {
@@ -138,10 +161,18 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let onClick: String?
     let menu: [WidgetMenuItem]?
     let popup: PopupConfiguration?
+    let popupName: String?
     let style: WidgetStyle
+    let display: DisplaySelection
+    let layout: PopupBlock?
+    let overlay: PopupBlock?
+    let animation: WidgetAnimation?
+    let workspace: WorkspaceConfiguration?
+    let events: [String]
 
     enum CodingKeys: String, CodingKey {
-        case id, position, type, icon, onClick, menu, popup, style, format, text, command, interval
+        case id, position, type, icon, onClick, menu, popup, popupName, style, format, text, command, interval
+        case display, layout, overlay, animation, workspace, events
     }
 
     init(from decoder: Decoder) throws {
@@ -152,7 +183,14 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
         onClick = try values.decodeIfPresent(String.self, forKey: .onClick)
         menu = try values.decodeIfPresent([WidgetMenuItem].self, forKey: .menu)
         popup = try values.decodeIfPresent(PopupConfiguration.self, forKey: .popup)
+        popupName = try values.decodeIfPresent(String.self, forKey: .popupName)
         style = try values.decodeIfPresent(WidgetStyle.self, forKey: .style) ?? WidgetStyle()
+        display = try values.decodeIfPresent(DisplaySelection.self, forKey: .display) ?? .all
+        layout = try values.decodeIfPresent(PopupBlock.self, forKey: .layout)
+        overlay = try values.decodeIfPresent(PopupBlock.self, forKey: .overlay)
+        animation = try values.decodeIfPresent(WidgetAnimation.self, forKey: .animation)
+        workspace = try values.decodeIfPresent(WorkspaceConfiguration.self, forKey: .workspace)
+        events = try values.decodeIfPresent([String].self, forKey: .events) ?? []
         switch try values.decode(String.self, forKey: .type) {
         case "aerospace": content = .workspaces
         case "activeApp": content = .activeApp
@@ -177,9 +215,12 @@ struct BarSettings: Decodable, Sendable {
     var spacing = 8.0
     var background = HexColor(0x00000000)
     var animationDuration = 0.22
+    var notchWidth: Double?
+    var notchSpacing = 16.0
+    var style = WidgetStyle()
 
     enum CodingKeys: String, CodingKey {
-        case height, offset, inset, spacing, background, animationDuration
+        case height, offset, inset, spacing, background, animationDuration, notchWidth, notchSpacing, style
     }
 
     init() {}
@@ -192,6 +233,9 @@ struct BarSettings: Decodable, Sendable {
         spacing = try values.decodeIfPresent(Double.self, forKey: .spacing) ?? spacing
         background = try values.decodeIfPresent(HexColor.self, forKey: .background) ?? background
         animationDuration = try values.decodeIfPresent(Double.self, forKey: .animationDuration) ?? animationDuration
+        notchWidth = try values.decodeIfPresent(Double.self, forKey: .notchWidth)
+        notchSpacing = try values.decodeIfPresent(Double.self, forKey: .notchSpacing) ?? notchSpacing
+        style = try values.decodeIfPresent(WidgetStyle.self, forKey: .style) ?? style
     }
 }
 
@@ -199,16 +243,21 @@ struct Configuration: Decodable, Sendable {
     let bar: BarSettings
     let defaults: WidgetStyle
     let widgets: [WidgetConfiguration]
+    let popups: [String: PopupConfiguration]
 
-    enum CodingKeys: String, CodingKey { case bar, defaults, widgets }
+    enum CodingKeys: String, CodingKey { case bar, defaults, widgets, popups }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         bar = try values.decodeIfPresent(BarSettings.self, forKey: .bar) ?? BarSettings()
         defaults = try values.decodeIfPresent(WidgetStyle.self, forKey: .defaults) ?? WidgetStyle()
         widgets = try values.decode([WidgetConfiguration].self, forKey: .widgets)
+        popups = try values.decodeIfPresent([String: PopupConfiguration].self, forKey: .popups) ?? [:]
         var ids = Set<String>()
         for widget in widgets {
+            if let name = widget.popupName, popups[name] == nil {
+                throw DecodingError.dataCorruptedError(forKey: .popups, in: values, debugDescription: "Unknown popup: \(name).")
+            }
             guard ids.insert(widget.id).inserted else {
                 throw DecodingError.dataCorruptedError(forKey: .widgets, in: values, debugDescription: "Duplicate widget id: \(widget.id). Each widget needs a stable, unique id.")
             }

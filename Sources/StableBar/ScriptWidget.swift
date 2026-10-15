@@ -17,6 +17,17 @@ struct ScriptOutput: Decodable, Sendable {
     var value: Double?
     var fields: [String: String]?
     var lists: [String: [[String: String]]]?
+    var values: [String: Double]?
+    var targets: [String: Double]?
+    var style: WidgetStyle?
+    var styles: [String: WidgetStyle]?
+    var barStyle: WidgetStyle?
+    var animation: WidgetAnimation?
+    var display: DisplaySelection?
+    var series: [String: [Double]]?
+    var onClick: String?
+    var widgetStyles: [String: WidgetStyle]?
+    var interval: Double?
 
     static func read(_ data: Data) throws -> ScriptOutput {
         let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -40,7 +51,11 @@ final class ScriptWidget {
                 do {
                     let data = try await runCommand("/bin/zsh", arguments: ["-lc", command])
                     try Task.checkCancellation()
-                    output = try ScriptOutput.read(data)
+                    let next = try ScriptOutput.read(data)
+                    if let interval = next.interval, interval <= 0 {
+                        throw CommandFailure(message: "A script interval must be greater than zero.")
+                    }
+                    output = next
                     if let value = output.value {
                         samples.append(value)
                         if samples.count > 60 { samples.removeFirst() }
@@ -51,7 +66,7 @@ final class ScriptWidget {
                     self.error = error.localizedDescription
                 }
                 do {
-                    try await Task.sleep(for: .seconds(interval))
+                    try await Task.sleep(for: .seconds(output.interval ?? interval))
                 } catch { return }
             }
         }

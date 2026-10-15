@@ -1,0 +1,37 @@
+import SwiftUI
+
+struct ScrollingText: View {
+    let text: String
+    let font: Font
+    let fontSize: Double
+    let speed: Double
+    @State private var textWidth = 0.0
+    @State private var start = Date()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        GeometryReader { geometry in
+            TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion || textWidth <= geometry.size.width)) { context in
+                let distance = max(textWidth - geometry.size.width, 0)
+                let travel = distance / speed
+                let elapsed = context.date.timeIntervalSince(start).truncatingRemainder(dividingBy: travel * 2 + 2)
+                let offset = if elapsed <= 1 { 0.0 }
+                    else if elapsed < travel + 1 { (elapsed - 1) * speed }
+                    else if elapsed <= travel + 2 { distance }
+                    else { (travel * 2 + 2 - elapsed) * speed }
+                Text(text)
+                    .font(font)
+                    .fixedSize()
+                    .background {
+                        GeometryReader { textGeometry in
+                            Color.clear.onChange(of: textGeometry.size.width, initial: true) { textWidth = textGeometry.size.width }
+                        }
+                    }
+                    .offset(x: reduceMotion ? 0 : -offset)
+            }
+        }
+        .frame(height: fontSize * 1.3)
+        .clipped()
+        .onChange(of: text) { start = Date() }
+    }
+}

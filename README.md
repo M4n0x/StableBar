@@ -34,7 +34,7 @@ Save the configuration to apply changes. Direct saves and atomic file replacemen
 - `bar`: `height`, `offset`, `inset`, `spacing`, `background`, `animationDuration` (seconds).
 - `defaults`: styles inherited by every widget.
 - `widgets`: ordered widget definitions with unique `id`, `type`, `position` and optional `style`, `icon`, `onClick`, `menu`, `popup`.
-- `position`: `left`, `center` or `right`. The center group stays at the display's center.
+- `position`: `left`, `notchLeft`, `center`, `notchRight` or `right`.
 - Colors: `#RRGGBB` or `#RRGGBBAA` (alpha last).
 - Icons: SF Symbols names.
 - Measurements: points.
@@ -44,6 +44,84 @@ Each widget can override any of these styles:
 `foreground`, `background`, `hoverBackground`, `borderColor`, `borderWidth`, `cornerRadius`, `fontName`, `fontSize`, `fontWeight`, `iconSize`, `paddingHorizontal`, `paddingVertical`, `spacing`, `width`, `accent`, `accentText`, `shadowRadius`, `shadowColor`.
 
 `fontName` is `system` or an installed font name. `fontWeight` is `regular`, `medium`, `semibold` or `bold`. Set `width` on frequently changing widgets to keep their footprint stable. The workspace highlight uses `accent` and `accentText`; its motion respects Reduce Motion. Set `animationDuration` to `0` to remove transition time.
+
+Styles also accept `hoverForeground`, `height`, `paddingLeading`, `paddingTrailing`, `paddingTop`, `paddingBottom`, `offsetX`, `offsetY` and `opacity`. Side-specific padding overrides horizontal/vertical padding. `ultralight`, `thin` and `light` font weights are available too. Offsets move the drawing without moving its neighbours.
+
+### Displays and notch placement
+
+`notchLeft` ends before the notch and `notchRight` starts after it. `bar.notchSpacing` controls the gap on each side (16 by default). The notch comes from the screen's unobscured top areas; `bar.notchWidth` can override its width. On screens without a notch, `notchLeft`, `center` and `notchRight` form one centered group, measured from the visible content. Hidden groups leave no gap. With a notch, `center` remains at the screen's center and should be left empty.
+
+Each widget accepts `display`: `"all"` (default), `"active"`, `"main"`, `"builtIn"`, `"external"`, `"notched"`, `"unnotched"`, or an array of screen numbers, for example `[1, 2]`. Numbers are one-based positions in `NSScreen.screens`, matching AeroSpace and SketchyBar; they can change when displays are rearranged. `active` follows AeroSpace focus. Use `aerospace list-monitors --format '%{monitor-name}|%{monitor-appkit-nsscreen-screens-id}'` to list them.
+
+`bar.style` accepts `background`, `cornerRadius`, `borderColor` and `borderWidth`. The border is drawn along the bottom edge. Scripts can return `barStyle` to change those properties; later widgets override earlier widgets when they set the same property.
+
+### Composing widgets
+
+A widget's `layout` uses the same blocks as a popup. Use rows and columns to style the label, icon and other elements independently. Bar layouts take their content's width; popup layouts fill their available width. Give graphs, progress blocks and images explicit sizes when they should have a fixed footprint.
+
+`overlay` uses the same blocks, aligned to the widget's bottom edge. It occupies no space and does not intercept clicks. This supports an underline, playback progress or a graph underneath the label.
+
+For example, a music script can return:
+
+```json
+{
+  "text": "Track title",
+  "fields": { "artist": "Artist", "artwork": "https://example.com/cover.jpg" },
+  "values": { "playback": 0.25 },
+  "targets": { "playback": 0.30 }
+}
+```
+
+The widget can use:
+
+```json
+{
+  "layout": {
+    "type": "row",
+    "style": { "spacing": 6 },
+    "children": [
+      { "type": "field", "field": "artist", "style": { "fontSize": 11, "foreground": "#8e978f" } },
+      { "type": "field", "field": "text", "style": { "fontSize": 13, "fontWeight": "medium" } }
+    ]
+  },
+  "overlay": {
+    "type": "progress", "source": "playback", "height": 2,
+    "style": { "accent": "#f1efe8", "background": "#f1efe829", "cornerRadius": 0 },
+    "animation": { "curve": "linear", "duration": 15 }
+  }
+}
+```
+
+`text` and `icon` are supplied to bar layouts from the widget's normal content. Other fields come from the script. Active-app layouts receive `text` as the app name. Use the normal clock rendering for native clock widgets.
+
+Script output may include `style` to override the widget style, `display` to change its display filter, and `styles` to supply named element styles. A block with `"styleSource": "countdown"` reads `styles.countdown`, overlaid on its configured style. A list row can use `styleField` to read the style name from a field in that row. Scripts can return `widgetStyles`, keyed by widget ID, to style another widget (for example, change a workspace underline when the window-manager mode changes). Later scripts take precedence; a widget's own `style` output takes precedence over those overrides. Omitted overrides return to the configured style on the next update.
+
+Widgets and blocks accept `animation` with `duration` in seconds and `curve`: `linear`, `easeIn`, `easeOut`, `easeInOut`, `smooth` or `spring`. Widget animation defaults to `bar.animationDuration`. Block style animations are opt-in. Progress values use a 0–1 scale, clipped to that range when drawn. A progress block can also read a numeric string from its current list row when there is no matching entry in `values`. With a matching entry in `targets`, a progress rule starts at `values[source]` and animates toward `targets[source]`; without a target it animates between readings. Reduce Motion disables these animations.
+
+### Workspace appearance
+
+An `aerospace` widget accepts `workspace` with:
+
+- `indicator`: `background` (default), `underline` or `none`.
+- `indicatorStyle`: underline `height`, `width`, `background`, `cornerRadius`, `offsetX`, `offsetY`.
+- `style`, `focusedStyle`, `visibleStyle`, `emptyStyle`: cell typography, foreground, width, height, horizontal/side padding and spacing. The background indicator uses the state's background or border color.
+- `showEmpty` and `showApps`: control empty workspaces and app icons.
+- `appStyle`, `focusedAppStyle`, `visibleAppStyle`: font and foreground for app glyphs, width and height for native app icons.
+- `appGlyphs`: app bundle ID or app name to text glyph. Set `appStyle.fontName` to an installed icon font to use its ligatures. Use `"*"` for the fallback glyph; otherwise unmapped apps retain native icons.
+
+For a sliding underline, set `workspace.indicator` to `underline`, `workspace.style.height` to the bar's height, and `workspace.indicatorStyle` to `{ "height": 2, "background": "#f1efe8" }`. The widget's `animation` controls its motion.
+
+### Script events
+
+Add `events` to a script widget to refresh it on named events, alongside its interval. `frontApp`, `workspace` and `wake` are emitted by StableBar. Other names subscribe to macOS distributed notifications, for example `com.spotify.client.PlaybackStateChanged`.
+
+External hooks can trigger an event without launching another bar:
+
+```sh
+/path/to/StableBar.app/Contents/MacOS/StableBar --trigger aerospace_mode_change
+```
+
+Use that event name in the widget's `events`. Scripts re-read their data source; notification payloads are not passed to the shell. Script output can also set `onClick` for a state-dependent click action; popups and menus still take precedence. Named graph data goes in `series`, a dictionary of arrays with up to 60 samples per graph.
 
 ## Built-in widgets
 
@@ -102,6 +180,7 @@ Return plain text, or one JSON object:
 `text` is required; the other output fields are optional:
 
 - `hidden`: removes the widget when true (unless it has an error).
+- `interval`: overrides the next polling delay in seconds; must be greater than zero. Omit it to use the configured interval.
 - `menu`: an array of `{ "title": "Issue", "detail": "In progress", "onClick": "open …" }`, displayed in a themed popup. Rows without `onClick` show information. A menu takes precedence over the widget's click command. Static widgets can also define `menu` in their configuration.
 - `value`: a graph sample, displayed on a 0–1 scale with the last 60 samples.
 - `fields`: named display strings for popup field blocks.
@@ -111,7 +190,7 @@ A nonzero exit or invalid JSON preserves the previous output and adds a warning 
 
 ## Custom popups
 
-Add `popup` to any widget. It takes precedence over `menu` and `onClick`. Its layout is independent of the script, so you can change the layout without changing the data source or rebuilding the app. The example below uses fields from [cpu.sh](Resources/widgets/cpu.sh).
+Add `popup` to any widget. For a popup shared by multiple widgets, define it once in the top-level `popups` object and set each widget's `popupName` to its key. Each anchor uses its own script data. An inline `popup` takes precedence over `popupName`. It takes precedence over `menu` and `onClick`. Its layout is independent of the script, so you can change the layout without changing the data source or rebuilding the app. The example below uses fields from [cpu.sh](Resources/widgets/cpu.sh).
 
 Widgets with `menu` entries already open a shared popup without additional configuration. To customize that popup, add `popup` with your preferred height and style and `"layout": { "type": "menu" }`. You can also place a `menu` block alongside other blocks in a custom layout. Entries retain their titles, details and click commands, and refresh while the popup is open.
 
@@ -151,13 +230,20 @@ Layout blocks:
 | `column` | `children` | Blocks arranged vertically |
 | `text` | `text` | Static text |
 | `field` | `field` | A string from the script's `fields` object, or the current list row |
-| `graph` | `height` | The widget's existing 60 samples on the 0–1 scale |
+| `graph` | `height` | The widget's existing 60 samples on the 0–1 scale; optional `source` reads `series[source]` instead and `lineWidth` sets stroke width |
 | `list` | `source`, `row` | Repeat the `row` block for each object in `lists[source]` |
 | `button` | `title`, `onClick` | Run a command and close the popup |
 | `menu` | — | The widget's script or configured menu entries, with their existing actions |
 | `divider` | — | A horizontal rule |
+| `image` | `path` or `source` | Local path, `file://`, or HTTP(S) image; `source` reads a path from `fields`. `fit` is `fit` or `fill`; size defaults to 52 × 52. |
+| `symbol` | `name` or `source` | SF Symbol; `source` reads its name from `fields`. `style.iconSize` sets its size. |
+| `progress` | `source`, `height` | A rule using `values[source]`, optionally moving toward `targets[source]`. `style.accent` is the fill and `style.background` the track. |
 
 Every block accepts `style` and `alignment` (`leading`, `center`, `trailing`). Fonts, text color, accent and spacing inherit from the containing block. Width, padding, background, hover background and border apply only when set on that block. Set a width on numeric fields and their headings to align columns. Blocks without a width use the available space.
+
+Text and field blocks can set `scrollSpeed` in points per second with a fixed `style.width`. Overflow scrolls back and forth with a pause at each end; fitting text and Reduce Motion do not scroll. `hideWhenEmpty` names a field: the block occupies no space when that field is absent or empty, which is useful for optional list-row headings and pipeline details.
+
+Any block can also have `onClick`, or `onClickField` to read a command from the current fields/list row. This allows a symbol button or a clickable agenda row. A popup accepts `alignment` (`leading`, `center`, `trailing`) and `offset` for placement relative to its widget. A popup's optional `animation` controls its opening/closing fold and fade. Reduce Motion keeps only the fade. Native panel animation maps `smooth` and `spring` to ease-in-out; other curves retain their names. `dismissOnAction` defaults to `true`; set it to `false` for player controls that should keep the popup open. Images load asynchronously and update when their source path changes. Use a different local filename for each cover, or supply its URL.
 
 For example, a script can return:
 

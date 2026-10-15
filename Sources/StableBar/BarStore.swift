@@ -7,6 +7,7 @@ final class BarStore: NSObject {
     var configurationError: String?
     var actionError: String?
     var activeApp = NSWorkspace.shared.frontmostApplication
+    var activeDisplayID = 1
     var scripts: [String: ScriptWidget] = [:]
     let aerospace = AeroSpace()
     let popup = WidgetPopup()
@@ -16,8 +17,13 @@ final class BarStore: NSObject {
     private var directoryWatch: DispatchSourceFileSystemObject?
     private var fileWatch: DispatchSourceFileSystemObject?
     private var reloadTask: Task<Void, Never>?
+    private var eventObservers: [NSObjectProtocol] = []
 
     func start() {
+        aerospace.onWorkspaceChange = { [weak self] in
+            self?.popup.close()
+            self?.refreshScripts(for: "workspace")
+        }
         do {
             let directory = configurationURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -36,6 +42,9 @@ final class BarStore: NSObject {
 
     @objc private func updateActiveApp() {
         activeApp = NSWorkspace.shared.frontmostApplication
+        if let screen = NSScreen.main { activeDisplayID = BarDisplay(screen: screen).id }
+        popup.close()
+        refreshScripts(for: "frontApp")
     }
 
     private func watch(_ url: URL) -> DispatchSourceFileSystemObject? {
@@ -84,15 +93,31 @@ final class BarStore: NSObject {
                     script.start(command: command, interval: interval)
                 }
             }
-            let needsAeroSpace = next.widgets.contains { $0.content == .workspaces }
-            let hadAeroSpace = previous.contains { $0.content == .workspaces }
+            let needsAeroSpace = next.widgets.contains { $0.content == .workspaces || $0.display == .active }
+            let hadAeroSpace = previous.contains { $0.content == .workspaces || $0.display == .active }
             if needsAeroSpace && !hadAeroSpace { aerospace.start() }
             if !needsAeroSpace && hadAeroSpace { aerospace.stop() }
             configuration = next
             configurationError = nil
+            let center = DistributedNotificationCenter.default()
+            for observer in eventObservers { center.removeObserver(observer) }
+            eventObservers = Set(next.widgets.flatMap(\.events)).map { event in
+                center.addObserver(forName: Notification.Name(event), object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.refreshScripts(for: event) }
+                }
+            }
             onConfigurationChange?()
         } catch {
             configurationError = String(describing: error)
+        }
+    }
+
+    func refreshScripts(for event: String) {
+        for widget in configuration?.widgets ?? [] where widget.events.contains(event) {
+            if case let .script(command, interval) = widget.content, let script = scripts[widget.id] {
+                script.stop()
+                script.start(command: command, interval: interval)
+            }
         }
     }
 
@@ -122,6 +147,8 @@ final class BarStore: NSObject {
         directoryWatch?.cancel()
         aerospace.stop()
         for script in scripts.values { script.stop() }
+        for observer in eventObservers { DistributedNotificationCenter.default().removeObserver(observer) }
+        eventObservers.removeAll()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 }

@@ -106,6 +106,39 @@ import Testing
     #expect(snapshot[2].apps.isEmpty)
 }
 
+@Test func notchGroupsStayOutsideAnOffCenterNotch() {
+    let layout = BarLayout(inset: 12, spacing: 8, notchSpacing: 16, notch: 720...940)
+    let x = layout.origins(width: 1728, sizes: [180, 260, 0, 200, 340])
+    #expect(x[0] == 12)
+    #expect(x[1] + 260 == 704)
+    #expect(x[3] == 956)
+    #expect(x[4] + 340 == 1716)
+}
+
+@Test func externalDisplayCentersTheCombinedGroupWithoutPhantomGaps() {
+    let layout = BarLayout(inset: 12, spacing: 8, notchSpacing: 16, notch: nil)
+    let x = layout.origins(width: 1920, sizes: [180, 260, 0, 100, 340])
+    #expect(x[1] == 776)
+    #expect(x[3] == 1044)
+    #expect(x[1] == 1920 - (x[3] + 100))
+    let musicOnly = layout.origins(width: 1920, sizes: [180, 260, 0, 0, 340])
+    #expect(musicOnly[1] == 830)
+    let center = layout.origins(width: 1920, sizes: [180, 0, 100, 0, 340])
+    #expect(center[2] == 910)
+}
+
+@Test func displayFilteringTracksFocusAndScreenSelectors() {
+    let laptop = BarDisplay(id: 2, isBuiltIn: true, isMain: false, notch: 650...870)
+    let monitor = BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil)
+    #expect(DisplaySelection.active.includes(laptop, activeID: 2))
+    #expect(!DisplaySelection.active.includes(laptop, activeID: 1))
+    #expect(DisplaySelection.ids([1]).includes(monitor, activeID: 2))
+    #expect(!DisplaySelection.ids([2]).includes(monitor, activeID: 2))
+    #expect(DisplaySelection.notched.includes(laptop, activeID: 1))
+    #expect(DisplaySelection.unnotched.includes(monitor, activeID: 1))
+    #expect(DisplaySelection.external.includes(monitor, activeID: 2))
+}
+
 @Test @MainActor func scriptRecoversAfterACommandFailure() async throws {
     let marker = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     let script = ScriptWidget()
@@ -120,4 +153,17 @@ import Testing
     }
     #expect(script.output.text == "Ready")
     #expect(script.error == nil)
+}
+
+@Test @MainActor func invalidRuntimeIntervalKeepsTheLastGoodOutput() async throws {
+    let script = ScriptWidget()
+    script.output = ScriptOutput(text: "Ready")
+    defer { script.stop() }
+    script.start(command: "echo '{\"text\":\"Broken\",\"interval\":0}'", interval: 30)
+    for _ in 0..<100 {
+        if script.error != nil { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(script.output.text == "Ready")
+    #expect(script.error == "A script interval must be greater than zero.")
 }

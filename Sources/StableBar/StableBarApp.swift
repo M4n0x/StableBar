@@ -4,6 +4,11 @@ import SwiftUI
 @main
 struct StableBarApp {
     @MainActor static func main() {
+        if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--trigger" {
+            DistributedNotificationCenter.default().postNotificationName(
+                Notification.Name(CommandLine.arguments[2]), object: nil, userInfo: nil, deliverImmediately: true)
+            return
+        }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -45,13 +50,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func screensChanged() {
         store.popup.close()
         updatePanels()
-        if store.configuration?.widgets.contains(where: { $0.content == .workspaces }) == true {
+        if store.configuration?.widgets.contains(where: { $0.content == .workspaces || $0.display == .active }) == true {
             store.aerospace.start()
         }
     }
 
     @objc private func woke() {
         screensChanged()
+        store.refreshScripts(for: "wake")
     }
 
     private func updatePanels() {
@@ -79,11 +85,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 panel.animationBehavior = .none
                 panel.level = .floating
                 panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
-                panel.contentView = NSHostingView(rootView: BarView(store: store, monitor: index + 1))
+                panel.contentView = NSHostingView(rootView: BarView(store: store, display: BarDisplay(screen: screen)))
                 panels[id] = panel
             }
             let host = panel.contentView as! NSHostingView<BarView>
-            host.rootView = BarView(store: store, monitor: index + 1)
+            host.rootView = BarView(store: store, display: BarDisplay(screen: screen))
             let top = screen.frame.maxY
             panel.setFrame(NSRect(x: screen.frame.minX, y: top - config.bar.offset - config.bar.height,
                                   width: screen.frame.width, height: config.bar.height), display: true)
