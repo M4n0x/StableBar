@@ -1,0 +1,217 @@
+import AppKit
+import SwiftUI
+
+struct HexColor: Decodable, Equatable, Sendable {
+    let rgba: UInt32
+
+    init(_ rgba: UInt32) {
+        self.rgba = rgba
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let string = try container.decode(String.self)
+        let hex = string.dropFirst()
+        guard string.hasPrefix("#"), [6, 8].contains(hex.count),
+              let value = UInt32(hex, radix: 16) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Use #RRGGBB or #RRGGBBAA for colors.")
+        }
+        rgba = hex.count == 6 ? (value << 8) | 0xff : value
+    }
+
+    var color: Color {
+        Color(.sRGB, red: Double(rgba >> 24) / 255,
+              green: Double((rgba >> 16) & 0xff) / 255,
+              blue: Double((rgba >> 8) & 0xff) / 255,
+              opacity: Double(rgba & 0xff) / 255)
+    }
+}
+
+struct WidgetStyle: Decodable, Sendable {
+    var foreground: HexColor?
+    var background: HexColor?
+    var hoverBackground: HexColor?
+    var borderColor: HexColor?
+    var accent: HexColor?
+    var accentText: HexColor?
+    var borderWidth: Double?
+    var cornerRadius: Double?
+    var fontName: String?
+    var fontSize: Double?
+    var fontWeight: String?
+    var iconSize: Double?
+    var paddingHorizontal: Double?
+    var paddingVertical: Double?
+    var spacing: Double?
+    var width: Double?
+    var shadowRadius: Double?
+    var shadowColor: HexColor?
+
+    func inheriting(_ defaults: WidgetStyle) -> WidgetStyle {
+        WidgetStyle(
+            foreground: foreground ?? defaults.foreground,
+            background: background ?? defaults.background,
+            hoverBackground: hoverBackground ?? defaults.hoverBackground,
+            borderColor: borderColor ?? defaults.borderColor,
+            accent: accent ?? defaults.accent,
+            accentText: accentText ?? defaults.accentText,
+            borderWidth: borderWidth ?? defaults.borderWidth,
+            cornerRadius: cornerRadius ?? defaults.cornerRadius,
+            fontName: fontName ?? defaults.fontName,
+            fontSize: fontSize ?? defaults.fontSize,
+            fontWeight: fontWeight ?? defaults.fontWeight,
+            iconSize: iconSize ?? defaults.iconSize,
+            paddingHorizontal: paddingHorizontal ?? defaults.paddingHorizontal,
+            paddingVertical: paddingVertical ?? defaults.paddingVertical,
+            spacing: spacing ?? defaults.spacing,
+            width: width ?? defaults.width,
+            shadowRadius: shadowRadius ?? defaults.shadowRadius,
+            shadowColor: shadowColor ?? defaults.shadowColor
+        )
+    }
+}
+
+struct WidgetAppearance {
+    let foreground: Color
+    let background: Color
+    let hoverBackground: Color
+    let borderColor: Color
+    let accent: Color
+    let accentText: Color
+    let borderWidth: Double
+    let cornerRadius: Double
+    let font: Font
+    let iconSize: Double
+    let paddingHorizontal: Double
+    let paddingVertical: Double
+    let spacing: Double
+    let width: CGFloat?
+    let shadowRadius: Double
+    let shadowColor: Color
+
+    init(_ style: WidgetStyle, defaults: WidgetStyle) {
+        foreground = (style.foreground ?? defaults.foreground ?? HexColor(0x1d1d1fff)).color
+        background = (style.background ?? defaults.background ?? HexColor(0xf8f8faed)).color
+        hoverBackground = (style.hoverBackground ?? defaults.hoverBackground ?? HexColor(0xffffffff)).color
+        borderColor = (style.borderColor ?? defaults.borderColor ?? HexColor(0xffffffb3)).color
+        accent = (style.accent ?? defaults.accent ?? HexColor(0xf7821bff)).color
+        accentText = (style.accentText ?? defaults.accentText ?? HexColor(0xffffffff)).color
+        borderWidth = style.borderWidth ?? defaults.borderWidth ?? 1
+        cornerRadius = style.cornerRadius ?? defaults.cornerRadius ?? 14
+        iconSize = style.iconSize ?? defaults.iconSize ?? 13
+        paddingHorizontal = style.paddingHorizontal ?? defaults.paddingHorizontal ?? 10
+        paddingVertical = style.paddingVertical ?? defaults.paddingVertical ?? 6
+        spacing = style.spacing ?? defaults.spacing ?? 6
+        width = (style.width ?? defaults.width).map { CGFloat($0) }
+        shadowRadius = style.shadowRadius ?? defaults.shadowRadius ?? 2
+        shadowColor = (style.shadowColor ?? defaults.shadowColor ?? HexColor(0x00000014)).color
+        let size = style.fontSize ?? defaults.fontSize ?? 12
+        let name = style.fontName ?? defaults.fontName ?? "system"
+        let weight: Font.Weight
+        switch style.fontWeight ?? defaults.fontWeight ?? "medium" {
+        case "regular": weight = .regular
+        case "semibold": weight = .semibold
+        case "bold": weight = .bold
+        default: weight = .medium
+        }
+        font = name == "system" ? .system(size: size, weight: weight) : .custom(name, size: size).weight(weight)
+    }
+}
+
+enum WidgetPosition: String, Decodable, Sendable {
+    case left, center, right
+}
+
+enum WidgetContent: Equatable, Sendable {
+    case workspaces
+    case activeApp
+    case clock(format: String)
+    case text(String)
+    case script(command: String, interval: Double)
+}
+
+struct WidgetConfiguration: Decodable, Identifiable, Sendable {
+    let id: String
+    let position: WidgetPosition
+    let content: WidgetContent
+    let icon: String?
+    let onClick: String?
+    let menu: [WidgetMenuItem]?
+    let popup: PopupConfiguration?
+    let style: WidgetStyle
+
+    enum CodingKeys: String, CodingKey {
+        case id, position, type, icon, onClick, menu, popup, style, format, text, command, interval
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        position = try values.decode(WidgetPosition.self, forKey: .position)
+        icon = try values.decodeIfPresent(String.self, forKey: .icon)
+        onClick = try values.decodeIfPresent(String.self, forKey: .onClick)
+        menu = try values.decodeIfPresent([WidgetMenuItem].self, forKey: .menu)
+        popup = try values.decodeIfPresent(PopupConfiguration.self, forKey: .popup)
+        style = try values.decodeIfPresent(WidgetStyle.self, forKey: .style) ?? WidgetStyle()
+        switch try values.decode(String.self, forKey: .type) {
+        case "aerospace": content = .workspaces
+        case "activeApp": content = .activeApp
+        case "clock": content = .clock(format: try values.decodeIfPresent(String.self, forKey: .format) ?? "EEE d MMM  HH:mm")
+        case "text": content = .text(try values.decode(String.self, forKey: .text))
+        case "script":
+            let interval = try values.decodeIfPresent(Double.self, forKey: .interval) ?? 30
+            guard interval > 0 else {
+                throw DecodingError.dataCorruptedError(forKey: .interval, in: values, debugDescription: "A script interval must be greater than zero.")
+            }
+            content = .script(command: try values.decode(String.self, forKey: .command), interval: interval)
+        default:
+            throw DecodingError.dataCorruptedError(forKey: .type, in: values, debugDescription: "Unknown widget type.")
+        }
+    }
+}
+
+struct BarSettings: Decodable, Sendable {
+    var height = 40.0
+    var offset = 0.0
+    var inset = 12.0
+    var spacing = 8.0
+    var background = HexColor(0x00000000)
+    var animationDuration = 0.22
+
+    enum CodingKeys: String, CodingKey {
+        case height, offset, inset, spacing, background, animationDuration
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        height = try values.decodeIfPresent(Double.self, forKey: .height) ?? height
+        offset = try values.decodeIfPresent(Double.self, forKey: .offset) ?? offset
+        inset = try values.decodeIfPresent(Double.self, forKey: .inset) ?? inset
+        spacing = try values.decodeIfPresent(Double.self, forKey: .spacing) ?? spacing
+        background = try values.decodeIfPresent(HexColor.self, forKey: .background) ?? background
+        animationDuration = try values.decodeIfPresent(Double.self, forKey: .animationDuration) ?? animationDuration
+    }
+}
+
+struct Configuration: Decodable, Sendable {
+    let bar: BarSettings
+    let defaults: WidgetStyle
+    let widgets: [WidgetConfiguration]
+
+    enum CodingKeys: String, CodingKey { case bar, defaults, widgets }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        bar = try values.decodeIfPresent(BarSettings.self, forKey: .bar) ?? BarSettings()
+        defaults = try values.decodeIfPresent(WidgetStyle.self, forKey: .defaults) ?? WidgetStyle()
+        widgets = try values.decode([WidgetConfiguration].self, forKey: .widgets)
+        var ids = Set<String>()
+        for widget in widgets {
+            guard ids.insert(widget.id).inserted else {
+                throw DecodingError.dataCorruptedError(forKey: .widgets, in: values, debugDescription: "Duplicate widget id: \(widget.id). Each widget needs a stable, unique id.")
+            }
+        }
+    }
+}
