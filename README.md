@@ -2,7 +2,7 @@
 
 A native, configurable macOS bar built with Swift, AppKit and SwiftUI. One persistent panel per display holds the widgets; workspace changes update their contents without recreating windows.
 
-The default configuration includes a System Settings shortcut, the active app and a clock. It needs no accounts, network services or third-party tools. Optional shell widgets use a plain-text or JSON output protocol.
+The default configuration includes a System Settings shortcut, the active app and a clock. It needs no accounts, network services or third-party tools, though windows can extend under the bar without a tiling window manager (see [Keeping windows clear of the bar](#keeping-windows-clear-of-the-bar)). Optional shell widgets use a plain-text or JSON output protocol.
 
 ## Install and set up
 
@@ -51,6 +51,10 @@ The script signs with the hardened runtime, submits the DMG to Apple, then stapl
 Keep personal settings in `~/.config/stablebar/config.json` and personal scripts in `~/.config/stablebar/widgets/`, outside the repository. Point commands directly at those scripts. `Resources/config.json` is the shared starter configuration; rebuilding the app does not overwrite your personal file. Local scripts should load any supporting files from their own directory.
 
 StableBar sits at the top edge of each display. `bar.offset` moves it down from that edge. It hides on native fullscreen Spaces. AeroSpace gaps and macOS menu-bar settings are managed separately; this app does not change them. Keep the center clear on a notched display. The default configuration uses only the left and right groups.
+
+### Keeping windows clear of the bar
+
+macOS gives apps no way to reserve screen space, so windows can extend under the bar, as they do with SketchyBar. With AeroSpace, set `gaps.outer.top` in `~/.aerospace.toml` to the bar's height (40 by default), plus any `bar.offset` beyond the menu bar; AeroSpace accepts per-monitor values. yabai users can set `external_bar`. Without a tiling window manager, windows placed at the top of the screen sit partly under the bar.
 
 ## Layout and style
 

@@ -166,7 +166,7 @@ struct SetupView: View {
             .formStyle(.columns)
             .pickerStyle(.segmented)
             .controlSize(.large)
-            Text("Below menu bar keeps macOS controls visible. Top edge works best with an automatically hidden menu bar.")
+            Text("Below menu bar keeps the macOS menu bar visible. Top edge works best with an automatically hidden menu bar. Either way, windows can extend under the bar unless a window manager such as AeroSpace leaves room for it.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -193,7 +193,7 @@ struct SetupView: View {
                     Image(systemName: "rectangle.3.group").font(.title2).frame(width: 28)
                     VStack(alignment: .leading, spacing: 5) {
                         Text("AeroSpace · Optional").font(.headline)
-                        Text("Workspace widgets use AeroSpace. Grant Accessibility access to AeroSpace in its own setup, not to StableBar.")
+                        Text("Workspace widgets use AeroSpace. Grant Accessibility access to AeroSpace in its own setup, not to StableBar. To keep windows clear of the bar, set \(Text("gaps.outer.top = \(String(format: "%g", store.configuration?.bar.height ?? 40))").monospaced()) in AeroSpace's configuration.")
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
