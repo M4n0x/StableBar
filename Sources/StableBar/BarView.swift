@@ -325,7 +325,7 @@ struct WidgetView: View {
                     Text(store.activeApp?.localizedName ?? "Desktop").lineLimit(1)
                 }
             case let .clock(format):
-                TimelineView(.periodic(from: .now, by: 1)) { context in
+                TimelineView(.periodic(from: Calendar.current.startOfDay(for: .now), by: format.contains("s") ? 1 : 60)) { context in
                     let formatter = DateFormatter()
                     let _ = formatter.dateFormat = format
                     label(formatter.string(from: context.date), icon: widget.icon, appearance: appearance)
