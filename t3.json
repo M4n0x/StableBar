@@ -1,0 +1,20 @@
+{
+  "scripts": [
+    {
+      "name": "Setup worktree",
+      "command": "swift build --build-tests",
+      "icon": "configure",
+      "runOnWorktreeCreate": true
+    },
+    {
+      "name": "Test",
+      "command": "swift test",
+      "icon": "test"
+    },
+    {
+      "name": "Build app",
+      "command": "./scripts/build.sh",
+      "icon": "build"
+    }
+  ]
+}
