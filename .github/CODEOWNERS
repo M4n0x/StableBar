@@ -1,0 +1,18 @@
+# Reviews are requested from these people automatically; none are required.
+# The last matching pattern takes precedence.
+
+*                        @Seb-GRAF
+
+# CI, releases and agent tooling
+/.github/                @M4n0x @Seb-GRAF
+/.agents/                @M4n0x @Seb-GRAF
+/.claude/                @M4n0x @Seb-GRAF
+/.releaserc.json         @M4n0x @Seb-GRAF
+/commitlint.config.mjs   @M4n0x @Seb-GRAF
+/package.json            @M4n0x @Seb-GRAF
+/package-lock.json       @M4n0x @Seb-GRAF
+/scripts/set-version.sh  @M4n0x @Seb-GRAF
+/AGENTS.md               @M4n0x @Seb-GRAF
+/CLAUDE.md               @M4n0x @Seb-GRAF
+/CONTRIBUTING.md         @M4n0x @Seb-GRAF
+/t3.json                 @M4n0x @Seb-GRAF
