@@ -46,7 +46,7 @@ body:
         StableBar:
         macOS:
         Displays (how many, which have a notch):
-        AeroSpace version, if you use it:
+        AeroSpace or yabai version, if you use one:
     validations:
       required: true
 
