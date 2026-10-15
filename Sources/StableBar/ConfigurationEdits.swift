@@ -26,51 +26,44 @@ struct ConfigurationEdit: Codable, Sendable {
 
     func applying(to document: [String: ConfigurationValue], widgetIDs: inout [String]) throws -> [String: ConfigurationValue] {
         var root = document
-        var customization = try root["customization"]?.decoded([String: ConfigurationValue].self) ?? [:]
+        var overrides = try root["widgetOverrides"]?.decoded([String: ConfigurationValue].self) ?? [:]
         switch action {
         case .set:
             let id = id!
             let properties = try requiredProperties()
             guard properties["id"] == nil else { throw CommandFailure(message: "Set cannot change a widget id.") }
-            var overrides = try customization["widgetOverrides"]?.decoded([String: ConfigurationValue].self) ?? [:]
-            overrides[id] = .object(properties).overriding(overrides[id] ?? .object([:]))
-            customization["widgetOverrides"] = .object(overrides)
+            if try !changeDefinition(id, in: &root, { widgets, index in widgets[index].merge(properties) { $1.overriding($0) } }) {
+                overrides[id] = .object(properties).overriding(overrides[id] ?? .object([:]))
+                root["widgetOverrides"] = .object(overrides)
+            }
         case .add:
             let widget = try requiredProperties()
-            let id = try widget["id"]!.decoded(String.self)
-            let removed = try root["removedWidgets"]?.decoded([String].self) ?? []
-            if removed.contains(id) {
-                var overrides = try customization["widgetOverrides"]?.decoded([String: ConfigurationValue].self) ?? [:]
-                var properties = widget
-                properties.removeValue(forKey: "id")
-                overrides[id] = .object(properties)
-                customization["widgetOverrides"] = .object(overrides)
-                root["removedWidgets"] = .array(removed.filter { $0 != id }.map(ConfigurationValue.string))
-            } else {
-                var widgets = try root["widgets"]?.decoded([[String: ConfigurationValue]].self) ?? []
-                widgets.append(widget)
-                root["widgets"] = .array(widgets.map(ConfigurationValue.object))
-            }
-            widgetIDs.append(id)
+            var widgets = try root["widgets"]?.decoded([[String: ConfigurationValue]].self) ?? []
+            widgets.append(widget)
+            root["widgets"] = .array(widgets.map(ConfigurationValue.object))
+            widgetIDs.append(try widget["id"]!.decoded(String.self))
         case .remove:
             let id = id!
-            var removed = try root["removedWidgets"]?.decoded([String].self) ?? []
-            if !removed.contains(id) { removed.append(id) }
-            root["removedWidgets"] = .array(removed.map(ConfigurationValue.string))
-            var overrides = try customization["widgetOverrides"]?.decoded([String: ConfigurationValue].self) ?? [:]
-            overrides.removeValue(forKey: id)
-            customization["widgetOverrides"] = .object(overrides)
-            if let order = try customization["widgetOrder"]?.decoded([String].self) {
-                customization["widgetOrder"] = .array(order.filter { $0 != id }.map(ConfigurationValue.string))
+            if try changeDefinition(id, in: &root, { widgets, index in widgets.remove(at: index) }) {
+                root = try removingReferences(to: id, in: root)
+                widgetIDs.removeAll { $0 == id }
+            } else {
+                overrides[id] = .object(["enabled": .bool(false)]).overriding(overrides[id] ?? .object([:]))
+                root["widgetOverrides"] = .object(overrides)
             }
-            widgetIDs.removeAll { $0 == id }
         case .reorder:
-            let ids = ids!
-            customization["widgetOrder"] = .array(ids.map(ConfigurationValue.string))
-            widgetIDs = ids + widgetIDs.filter { !ids.contains($0) }
+            let order = ids! + widgetIDs.filter { !ids!.contains($0) }
+            let widgets = try root["widgets"]?.decoded([[String: ConfigurationValue]].self) ?? []
+            if widgets.count == order.count, order.allSatisfy({ id in widgets.contains { $0["id"] == .string(id) } }) {
+                root["widgets"] = .array(order.map { id in .object(widgets.first { $0["id"] == .string(id) }!) })
+                root["widgetOrder"] = nil
+            } else {
+                root["widgetOrder"] = .array(ids!.map(ConfigurationValue.string))
+            }
+            widgetIDs = order
         case .bar, .defaults:
             let key = action.rawValue
-            customization[key] = .object(try requiredProperties()).overriding(customization[key] ?? .object([:]))
+            root[key] = .object(try requiredProperties()).overriding(root[key] ?? .object([:]))
         case .profile:
             root["profile"] = name.map(ConfigurationValue.string) ?? .null
         case .package:
@@ -83,7 +76,6 @@ struct ConfigurationEdit: Codable, Sendable {
             else { packages.append(package) }
             root["packages"] = .array(packages.map(ConfigurationValue.object))
         }
-        if !customization.isEmpty { root["customization"] = .object(customization) }
         return root
     }
 
@@ -96,6 +88,66 @@ struct ConfigurationEdit: Codable, Sendable {
         guard let properties else { throw CommandFailure(message: "\(action.rawValue) requires properties.") }
         return properties
     }
+}
+
+private func changeDefinition(_ id: String, in document: inout [String: ConfigurationValue], searchingProfiles: Bool = true,
+                              _ change: (inout [[String: ConfigurationValue]], Int) -> Void) throws -> Bool {
+    if var widgets = try document["widgets"]?.decoded([[String: ConfigurationValue]].self),
+       let index = widgets.firstIndex(where: { $0["id"] == .string(id) }) {
+        change(&widgets, index)
+        document["widgets"] = .array(widgets.map(ConfigurationValue.object))
+        return true
+    }
+    guard searchingProfiles, var profiles = try document["profiles"]?.decoded([[String: ConfigurationValue]].self) else { return false }
+    for index in profiles.indices {
+        var configuration = try (profiles[index]["configuration"] ?? .object([:])).decoded([String: ConfigurationValue].self)
+        if try changeDefinition(id, in: &configuration, searchingProfiles: false, change) {
+            profiles[index]["configuration"] = .object(configuration)
+            document["profiles"] = .array(profiles.map(ConfigurationValue.object))
+            return true
+        }
+    }
+    return false
+}
+
+private func removingReferences(to id: String, in document: [String: ConfigurationValue]) throws -> [String: ConfigurationValue] {
+    var document = document
+    var overrides = try document["widgetOverrides"]?.decoded([String: ConfigurationValue].self) ?? [:]
+    overrides.removeValue(forKey: id)
+    document["widgetOverrides"] = overrides.isEmpty ? nil : .object(overrides)
+    if let order = try document["widgetOrder"]?.decoded([String].self) {
+        document["widgetOrder"] = .array(order.filter { $0 != id }.map(ConfigurationValue.string))
+    }
+    if let profiles = try document["profiles"]?.decoded([[String: ConfigurationValue]].self) {
+        document["profiles"] = .array(try profiles.map { profile in
+            var profile = profile
+            profile["configuration"] = .object(try removingReferences(to: id, in: (profile["configuration"] ?? .object([:])).decoded([String: ConfigurationValue].self)))
+            return .object(profile)
+        })
+    }
+    return document
+}
+
+func migrateConfigurationFile(_ url: URL) throws {
+    let original = try Data(contentsOf: url)
+    var root = try JSONDecoder().decode([String: ConfigurationValue].self, from: original)
+    guard root["customization"] != nil || root["removedWidgets"] != nil else { return }
+    let customization = try root.removeValue(forKey: "customization")?.decoded([String: ConfigurationValue].self) ?? [:]
+    var edits = try ["bar", "defaults"].compactMap { key in
+        try customization[key].map { ConfigurationEdit(action: ConfigurationEdit.Action(rawValue: key)!, properties: try $0.decoded([String: ConfigurationValue].self)) }
+    }
+    for (id, properties) in try customization["widgetOverrides"]?.decoded([String: [String: ConfigurationValue]].self) ?? [:] {
+        edits.append(ConfigurationEdit(action: .set, id: id, properties: properties))
+    }
+    for id in try root.removeValue(forKey: "removedWidgets")?.decoded([String].self) ?? [] {
+        edits.append(ConfigurationEdit(action: .remove, id: id))
+    }
+    if let order = try customization["widgetOrder"]?.decoded([String].self) {
+        edits.append(ConfigurationEdit(action: .reorder, ids: order))
+    }
+    var ids: [String] = []
+    for edit in edits { root = try edit.applying(to: root, widgetIDs: &ids) }
+    try configurationData(root, editing: original).write(to: url, options: .atomic)
 }
 
 func configurationData(_ document: [String: ConfigurationValue]) throws -> Data {

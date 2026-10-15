@@ -64,6 +64,7 @@ final class BarStore: NSObject {
                     menuBarHeight: max(NSStatusBar.system.thickness, NSScreen.main?.safeAreaInsets.top ?? 0))
                 try data.write(to: configurationURL, options: .atomic)
             }
+            try migrateConfigurationFile(configurationURL)
             reloadConfiguration()
         } catch {
             configurationError = error.localizedDescription

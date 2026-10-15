@@ -103,7 +103,7 @@ Define reusable widget properties in `templates`, then select one with `template
 
 Widget properties override their template recursively. `widgetOverrides` applies last, by widget ID, so you can customize imported widgets without editing shared files. Set `enabled` to `false` to hide a widget and stop its script and event subscriptions. Set it back to `true` to restore it. Use `null` to clear an inherited optional property, such as `popup` or `interval`. Overrides must not contain an `id` field. Duplicate widget IDs, unknown override targets, include cycles, and missing or cyclic templates referenced by widgets reject the whole edit.
 
-Included files are watched even outside the main directory. A missing module or directory is watched for repair; the last working bar remains visible meanwhile. Setup writes clock choices into the main file's overrides, preserving imported files.
+Included files are watched even outside the main directory. A missing module or directory is watched for repair; the last working bar remains visible meanwhile.
 
 [examples/modular](examples/modular/config.json) is a complete, dependency-free starter with a theme, template, event-only status, and an optional volume widget. Try it without replacing your personal configuration:
 
@@ -150,7 +150,11 @@ Profiles match `appearance` (`light` or `dark`), `onBattery`, `displayCount`, `e
 
 Set `"profile": "laptop"` to apply only that profile, regardless of its conditions. Remove `profile` to resume automatic matching, or set it to `null` to override a manual profile inherited from a module. The inspector reports active profiles and the file, template, override and token sources behind effective widget properties.
 
-The editor saves widget, bar and default-style overrides inside the root file’s `customization` object. This final layer applies after profiles, so explicit changes stay in effect when automatic profiles switch. The editor also writes `removedWidgets` into the root file and `widgetOrder` into `customization`, keeping imported modules editable independently. `removedWidgets` hides named definitions and their overrides. `widgetOrder` lists surviving widget IDs first; unlisted widgets keep their original relative order. Saved customization overrides and ordering for widgets in an inactive profile stay dormant until those widgets return. Ordinary `widgetOverrides` still reject unknown IDs.
+Setup, the editor and the command line save changes into the main file's ordinary keys and never edit imported files. A widget defined in the main file, including inside one of its profiles, is changed, removed or reordered where it is defined. A widget from an include or package gets an entry in the main file's `widgetOverrides`; removing it sets `enabled` to `false`. Bar and default-style changes merge into `bar` and `defaults`. Untouched parts of the file keep their formatting and key order. An active profile still applies on top of these changes.
+
+When every widget comes from the main file's `widgets` array, reordering changes that array. Otherwise the order is saved in `widgetOrder`: listed IDs come first, unlisted widgets keep their relative order, and IDs that are not currently present, such as widgets of an inactive profile, are skipped.
+
+Earlier versions saved changes in `customization` and `removedWidgets`. StableBar converts those keys into the ordinary ones the next time it starts.
 
 ### Local widget packages
 

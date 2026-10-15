@@ -28,16 +28,18 @@ import Testing
     try store.applyEdits([ConfigurationEdit(action: .add, properties: ["id": .string("c"), "type": .string("text"),
         "position": .string("left"), "text": .string("C")]), ConfigurationEdit(action: .remove, id: "b"),
         ConfigurationEdit(action: .reorder, ids: ["c", "a"])], persist: true)
-    #expect(store.configuration?.widgets.map(\.id) == ["c", "a"])
+    #expect(store.configuration?.widgets.map(\.id) == ["c", "a", "b"])
+    #expect(store.configuration?.widgets[2].enabled == false)
     #expect(store.sessionEdits.isEmpty)
     #expect(try Data(contentsOf: module) == moduleData)
     let saved = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: root))
     #expect(saved["includes"] == .array([.string("module.json")]))
     var loader = ConfigurationLoader()
     #expect(try loader.load(root).widgets[1].content == .text("Live"))
-    try store.applyEdits([ConfigurationEdit(action: .remove, id: "a"),
-                         ConfigurationEdit(action: .add, properties: ["id": .string("a"), "type": .string("clock"), "position": .string("right")])], persist: false)
-    #expect(store.configuration?.widgets.first(where: { $0.id == "a" })?.content == .clock(format: "EEE d MMM  HH:mm"))
+    #expect(saved["widgets"] == .array([.object(["id": .string("c"), "type": .string("text"), "position": .string("left"), "text": .string("C")])]))
+    try store.applyEdits([ConfigurationEdit(action: .remove, id: "c"),
+                         ConfigurationEdit(action: .add, properties: ["id": .string("c"), "type": .string("clock"), "position": .string("right")])], persist: false)
+    #expect(store.configuration?.widgets.first(where: { $0.id == "c" })?.content == .clock(format: "EEE d MMM  HH:mm"))
 }
 
 @Test @MainActor func editorUndoRedoAndSessionReloadKeepExternalEdits() throws {

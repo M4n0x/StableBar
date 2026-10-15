@@ -48,7 +48,6 @@ enum ConfigurationCompositionError: LocalizedError {
     case templateCycle([String])
     case unknownWidgetOverride(String)
     case widgetOverrideID(String)
-    case unknownWidgetOrder(String)
     case duplicateWidgetOrder(String)
 
     var errorDescription: String? {
@@ -58,7 +57,6 @@ enum ConfigurationCompositionError: LocalizedError {
         case let .templateCycle(names): "Widget template cycle: \(names.joined(separator: " → "))."
         case let .unknownWidgetOverride(id): "Unknown widget override target: \(id)."
         case let .widgetOverrideID(id): "Widget override \(id) cannot contain an id field."
-        case let .unknownWidgetOrder(id): "Unknown widget order target: \(id)."
         case let .duplicateWidgetOrder(id): "Duplicate widget order target: \(id)."
         }
     }
@@ -193,15 +191,7 @@ struct ConfigurationLoader {
                 activeProfiles.append(profile.name)
             }
         }
-        let strictOverrides = layer.values["widgetOverrides"] ?? .object([:])
-        let customization = try input.values["customization"]?.decoded([String: ConfigurationValue].self) ?? [:]
-        if !customization.isEmpty {
-            let origins = Dictionary(uniqueKeysWithValues: input.origins.compactMap { path, source in
-                path.hasPrefix("customization.") ? (String(path.dropFirst(14)), source.appending("(customization)")) : nil
-            })
-            try layer.merge(ConfigurationLayer(values: customization, origins: origins))
-        }
-        for key in ["profiles", "profile", "customization"] { layer.values.removeValue(forKey: key) }
+        for key in ["profiles", "profile"] { layer.values.removeValue(forKey: key) }
         let tokens = try layer.values["tokens"]?.decoded([String: ConfigurationValue].self) ?? [:]
         let beforeTokens = layer.values
         layer.values = try substituteConfigurationReferences(.object(layer.values), prefix: "@token.", values: tokens)
@@ -209,13 +199,11 @@ struct ConfigurationLoader {
         layer.origins.merge(try tokenOrigins(.object(beforeTokens), origins: layer.origins, tokens: tokens)) { $1 }
         templates = try layer.values["templates"]?.decoded([String: [String: ConfigurationValue]].self) ?? [:]
         let overrides = try layer.values["widgetOverrides"]?.decoded([String: [String: ConfigurationValue]].self) ?? [:]
-        let removed = Set(try layer.values["removedWidgets"]?.decoded([String].self) ?? [])
         let definitions = try layer.values["widgets"]!.decoded([[String: ConfigurationValue]].self)
         var widgets: [[String: ConfigurationValue]] = []
         for definition in definitions {
             var expanded = try expandWidgetTemplate(definition, templates: templates)
             let id = try (expanded["id"] ?? .null).decoded(String.self)
-            if removed.contains(id) { continue }
             if let properties = overrides[id] {
                 guard properties["id"] == nil else { throw ConfigurationCompositionError.widgetOverrideID(id) }
                 expanded.merge(properties) { $1.overriding($0) }
@@ -238,22 +226,18 @@ struct ConfigurationLoader {
         for id in ids where !uniqueIDs.insert(id).inserted {
             throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Duplicate widget id: \(id). Each widget needs a stable, unique id."))
         }
-        let requiredOverrides = try substituteConfigurationReferences(strictOverrides, prefix: "@token.", values: tokens)
-            .decoded([String: ConfigurationValue].self)
-        for id in requiredOverrides.keys where !ids.contains(id) && !removed.contains(id) {
+        for id in overrides.keys where !ids.contains(id) {
             throw ConfigurationCompositionError.unknownWidgetOverride(id)
         }
-        var order = try layer.values["widgetOrder"]?.decoded([String].self) ?? []
-        if customization["widgetOrder"] != nil { order = order.filter(ids.contains) }
+        let order = try (layer.values["widgetOrder"]?.decoded([String].self) ?? []).filter(ids.contains)
         var orderedIDs = Set<String>()
-        for id in order {
-            guard orderedIDs.insert(id).inserted else { throw ConfigurationCompositionError.duplicateWidgetOrder(id) }
-            guard ids.contains(id) else { throw ConfigurationCompositionError.unknownWidgetOrder(id) }
+        for id in order where !orderedIDs.insert(id).inserted {
+            throw ConfigurationCompositionError.duplicateWidgetOrder(id)
         }
         let ordered = order.compactMap { id in widgets.first { $0["id"] == .string(id) } }
             + zip(ids, widgets).filter { !orderedIDs.contains($0.0) }.map(\.1)
         layer.values["widgets"] = .array(ordered.map { .object($0) })
-        for key in ["templates", "widgetOverrides", "includes", "removedWidgets", "widgetOrder"] {
+        for key in ["templates", "widgetOverrides", "includes", "widgetOrder"] {
             layer.values.removeValue(forKey: key)
         }
         document = try preparePackageAssets(.object(layer.values), origins: layer.origins, sources: packageSources)
