@@ -155,8 +155,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let host = panel.contentView as! NSHostingView<BarView>
             host.rootView = BarView(store: store, display: BarDisplay(screen: screen))
             let top = screen.frame.maxY
-            panel.setFrame(NSRect(x: screen.frame.minX, y: top - config.bar.offset - config.bar.height,
-                                  width: screen.frame.width, height: config.bar.height), display: true)
+            let height = config.bar.height * config.bar.scale(for: BarDisplay(screen: screen))
+            panel.setFrame(NSRect(x: screen.frame.minX, y: top - config.bar.offset - height,
+                                  width: screen.frame.width, height: height), display: true)
             panel.orderFrontRegardless()
         }
     }

@@ -10,11 +10,13 @@ struct BarView: View {
     var body: some View {
         Group {
             if let config = store.configuration {
+                let scale = CGFloat(config.bar.scale(for: display))
                 let style = config.widgets.reduce(config.bar.style) { style, widget in
                     store.scripts[widget.id]?.output.barStyle?.inheriting(style) ?? style
                 }
                 let notch = display.notch.map { range in
-                    config.bar.notchWidth.map { width in
+                    let range = (range.lowerBound / scale)...(range.upperBound / scale)
+                    return config.bar.notchWidth.map { width in
                         let center = (range.lowerBound + range.upperBound) / 2
                         return (center - width / 2)...(center + width / 2)
                     } ?? range
@@ -37,20 +39,20 @@ struct BarView: View {
                     }
                     let plan = AdaptiveBarPlanner(inset: config.bar.inset, spacing: config.bar.spacing,
                                                   notchSpacing: config.bar.notchSpacing, notch: notch)
-                        .plan(width: geometry.size.width, items: items)
+                        .plan(width: geometry.size.width / scale, items: items)
                     let visible = Set(units.filter { plan.placements[$0.id] != nil }.flatMap { $0.widgets.map(\.id) })
                     ZStack(alignment: .topLeading) {
                         (style.background ?? config.bar.background).color
                         ForEach(units) { unit in
                             if let placement = plan.placements[unit.id] {
                                 unitView(unit, config: config, width: placement.width)
-                                    .frame(width: placement.width, height: geometry.size.height)
+                                    .frame(width: placement.width, height: geometry.size.height / scale)
                                     .offset(x: placement.x)
                             }
                         }
                         if let x = plan.overflowX {
                             overflowMenu(units.filter { plan.overflow.contains($0.id) }, config: config)
-                                .frame(width: 30, height: geometry.size.height)
+                                .frame(width: 30, height: geometry.size.height / scale)
                                 .background(PopupAnchor(view: overflowAnchor, popup: store.popup))
                                 .offset(x: x)
                         }
@@ -74,6 +76,8 @@ struct BarView: View {
                     }
                     .onPreferenceChange(BarWidthPreference.self) { measuredWidths = $0 }
                     .onChange(of: visible, initial: true) { _, ids in store.setVisibleWidgets(ids: ids, displayID: display.id) }
+                    .frame(width: geometry.size.width / scale, height: geometry.size.height / scale)
+                    .scaleEffect(scale, anchor: .topLeading)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius ?? 0))
                 .overlay(alignment: .bottom) {

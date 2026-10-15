@@ -296,6 +296,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
 
 struct BarSettings: Decodable, Sendable {
     var height = 40.0
+    var displayScale: [String: Double] = [:]
     var offset = 0.0
     var inset = 12.0
     var spacing = 8.0
@@ -306,7 +307,7 @@ struct BarSettings: Decodable, Sendable {
     var style = WidgetStyle()
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case height, offset, inset, spacing, background, animationDuration, notchWidth, notchSpacing, style
+        case height, displayScale, offset, inset, spacing, background, animationDuration, notchWidth, notchSpacing, style
     }
 
     init() {}
@@ -315,6 +316,7 @@ struct BarSettings: Decodable, Sendable {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         height = try values.decodeIfPresent(Double.self, forKey: .height) ?? height
+        displayScale = try values.decodeIfPresent([String: Double].self, forKey: .displayScale) ?? displayScale
         offset = try values.decodeIfPresent(Double.self, forKey: .offset) ?? offset
         inset = try values.decodeIfPresent(Double.self, forKey: .inset) ?? inset
         spacing = try values.decodeIfPresent(Double.self, forKey: .spacing) ?? spacing
@@ -323,6 +325,10 @@ struct BarSettings: Decodable, Sendable {
         notchWidth = try values.decodeIfPresent(Double.self, forKey: .notchWidth)
         notchSpacing = try values.decodeIfPresent(Double.self, forKey: .notchSpacing) ?? notchSpacing
         style = try values.decodeIfPresent(WidgetStyle.self, forKey: .style) ?? style
+    }
+
+    func scale(for display: BarDisplay) -> Double {
+        displayScale[display.isBuiltIn ? "builtIn" : "external"] ?? 1
     }
 }
 
