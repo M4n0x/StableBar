@@ -82,10 +82,11 @@ final class BarStore: NSObject {
 
     func refreshContext() {
         let next = SystemContext.current()
-        if context != next {
-            context = next
-            reloadConfiguration()
-        }
+        var nextWithSameApp = next
+        nextWithSameApp.app = context.app
+        let reload = nextWithSameApp != context || (next.app != context.app && configurationLoader.matchesApps)
+        context = next
+        if reload { reloadConfiguration() }
     }
 
     private func scheduleReload() {

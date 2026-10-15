@@ -131,6 +131,7 @@ struct ConfigurationLoader {
     private(set) var document: [String: ConfigurationValue] = [:]
     private(set) var origins: [String: String] = [:]
     private(set) var activeProfiles: [String] = []
+    private(set) var matchesApps = false
     private(set) var templates: [String: [String: ConfigurationValue]] = [:]
     private var packageSources: [String: URL] = [:]
 
@@ -165,6 +166,7 @@ struct ConfigurationLoader {
         var layer = input
         activeProfiles = []
         let profiles = try layer.values["profiles"]?.decoded([ConfigurationProfile].self) ?? []
+        matchesApps = profiles.contains { $0.when?.app != nil }
         let selected = try layer.values["profile"].flatMap { try $0.decoded(String?.self) }
         var names = Set<String>()
         for profile in profiles {
