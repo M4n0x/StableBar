@@ -146,6 +146,13 @@ final class BarStore: NSObject {
         configurationWatcher.watch(loader.dependencies)
     }
 
+    func setSessionEdits(_ edits: [ConfigurationEdit]) throws {
+        let previous = sessionEdits
+        sessionEdits = edits
+        do { try applyEdits([], persist: false) }
+        catch { sessionEdits = previous; throw error }
+    }
+
     private func apply(_ next: Configuration) {
         if effectiveDocument == configurationLoader.document {
             origins = configurationLoader.origins
@@ -275,11 +282,7 @@ final class BarStore: NSObject {
         case .customize: onCustomize?()
         case .reload: try applyEdits([], persist: false)
         case .batch: try applyEdits(request.edits ?? [], persist: request.persist)
-        case .reset:
-            let edits = sessionEdits
-            sessionEdits = []
-            do { try applyEdits([], persist: false) }
-            catch { sessionEdits = edits; throw error }
+        case .reset: try setSessionEdits([])
         case .refresh:
             guard let id = request.id, let script = scripts[id] else { throw CommandFailure(message: "Refresh requires a running widget id.") }
             guard !script.diagnostics.suspended else {

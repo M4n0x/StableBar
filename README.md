@@ -324,7 +324,7 @@ StableBar --reset
 StableBar --customize
 ```
 
-Changes are live for the current session. Add `--persist` to save the session changes into the root file. `--reset` discards unsaved session changes and reloads the files. Session edits reapply over external file changes. Imports and package source files are preserved.
+Changes are live for the current session and appear as unsaved changes in the editor. Add `--persist` to save the session changes into the root file. `--reset` discards unsaved session changes and reloads the files. Session edits reapply over external file changes. Imports and package source files are preserved.
 
 Use one batch for changes that must appear together:
 
@@ -348,7 +348,7 @@ A batch validates the whole resulting configuration before replacing the running
 
 Open **Customize and inspect…** from the menu-bar icon, reopen the running app, or run `StableBar --customize`.
 
-The **Editor** shows a bar preview and a draggable widget list. Change positions, icons, text, clock formats, colors, font size, padding and corners; use advanced JSON properties for the rest of a widget’s configuration. Add/remove widgets, undo/redo changes, then **Apply and save**. Invalid drafts cannot be applied. Preview does not launch extra scripts or run click actions.
+The **Editor** lists your widgets by position; drag to reorder them. Change positions, icons, text, clock formats, colors, font size, padding and corners, or edit a widget's properties as JSON. **Bar** sets the bar's size and the default text color, background and font size. Changes apply to the bar immediately, like command-line edits without `--persist`. Undo and redo step through them, **Save** writes them to your configuration and **Discard** returns to the saved file. A change that would make the configuration invalid is rejected and its error is shown.
 
 The **Inspector** shows the composed widget configuration, defaults, source paths, provider output, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while that inspector is visible. Closing the window restores its visibility policy.
 
