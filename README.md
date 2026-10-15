@@ -6,11 +6,11 @@ The default configuration includes a System Settings shortcut, the active app an
 
 ## Install and set up
 
-Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, light or dark widgets, placement, clock format, and opening at login. Setup is also available from the menu-bar icon or by right-clicking the bar.
+Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, widget appearance, placement, clock format, and opening at login. Setup is also available from the menu-bar icon or by right-clicking the bar.
 
 The starter bar needs no special permissions. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. AeroSpace manages its own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
 
-Appearance choices update global widget colors; individual widget styles still take precedence. Setup preserves custom widgets, scripts, and other settings. Closing setup leaves it available on the next launch. New configurations place the bar below the macOS menu bar; existing configurations retain their position.
+Widgets follow the system's light or dark mode unless you pick a fixed appearance, which sets the global widget colors; individual widget styles still take precedence. Setup preserves custom widgets, scripts, and other settings. Closing setup leaves it available on the next launch. New configurations place the bar below the macOS menu bar; existing configurations retain their position.
 
 ## Build and run
 

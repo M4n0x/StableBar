@@ -2,7 +2,7 @@ import Foundation
 
 struct SetupPreferences: Equatable {
     enum Appearance: String, CaseIterable {
-        case current = "Keep current", light = "Light", dark = "Dark"
+        case current = "Keep current", automatic = "Automatic", light = "Light", dark = "Dark"
     }
 
     enum Placement: String, CaseIterable {
@@ -29,14 +29,14 @@ struct SetupPreferences: Equatable {
         if self == SetupPreferences() { return data }
         var edits: [ConfigurationEdit] = []
         if appearance != .current {
-            let dark = appearance == .dark
-            edits.append(ConfigurationEdit(action: .defaults, properties: [
-                "foreground": .string(dark ? "#f5f5f7" : "#1d1d1f"),
-                "background": .string(dark ? "#242629ee" : "#f8f8faed"),
-                "hoverBackground": .string(dark ? "#36383c" : "#ffffff"),
-                "borderColor": .string(dark ? "#ffffff1f" : "#ffffffb3"),
-                "shadowColor": .string(dark ? "#00000040" : "#00000014")
-            ]))
+            let style = switch appearance {
+            case .light: WidgetStyle.light
+            case .dark: WidgetStyle.dark
+            default: WidgetStyle()
+            }
+            let colors = ["foreground": style.foreground, "background": style.background, "hoverBackground": style.hoverBackground,
+                          "borderColor": style.borderColor, "shadowColor": style.shadowColor]
+            edits.append(ConfigurationEdit(action: .defaults, properties: colors.mapValues { $0.map { .string($0.hex) } ?? .null }))
         }
         if placement != .current {
             edits.append(ConfigurationEdit(action: .bar, properties: ["offset": .number(placement == .top ? 0 : menuBarHeight)]))

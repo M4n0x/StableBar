@@ -25,6 +25,8 @@ struct HexColor: Decodable, Equatable, Sendable {
               blue: Double((rgba >> 8) & 0xff) / 255,
               opacity: Double(rgba & 0xff) / 255)
     }
+
+    var hex: String { String(format: "#%08x", rgba) }
 }
 
 struct WidgetStyle: Decodable, Equatable, Sendable {
@@ -93,6 +95,20 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
     }
 }
 
+extension WidgetStyle {
+    static let light = WidgetStyle(foreground: HexColor(0x1d1d1fff), background: HexColor(0xf8f8faed), hoverBackground: HexColor(0xffffffff),
+                                   borderColor: HexColor(0xffffffb3), shadowColor: HexColor(0x00000014))
+    static let dark = WidgetStyle(foreground: HexColor(0xf5f5f7ff), background: HexColor(0x242629ee), hoverBackground: HexColor(0x36383cff),
+                                  borderColor: HexColor(0xffffff1f), shadowColor: HexColor(0x00000040))
+}
+
+private func systemColor(_ color: KeyPath<WidgetStyle, HexColor?>) -> Color {
+    Color(nsColor: NSColor(name: nil) { appearance in
+        let style = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? WidgetStyle.dark : WidgetStyle.light
+        return NSColor(style[keyPath: color]!.color)
+    })
+}
+
 struct WidgetAppearance {
     let foreground: Color
     let hoverForeground: Color
@@ -113,11 +129,11 @@ struct WidgetAppearance {
     let shadowColor: Color
 
     init(_ style: WidgetStyle, defaults: WidgetStyle) {
-        foreground = (style.foreground ?? defaults.foreground ?? HexColor(0x1d1d1fff)).color
+        foreground = (style.foreground ?? defaults.foreground)?.color ?? systemColor(\.foreground)
         hoverForeground = (style.hoverForeground ?? defaults.hoverForeground)?.color ?? foreground
-        background = (style.background ?? defaults.background ?? HexColor(0xf8f8faed)).color
-        hoverBackground = (style.hoverBackground ?? defaults.hoverBackground ?? HexColor(0xffffffff)).color
-        borderColor = (style.borderColor ?? defaults.borderColor ?? HexColor(0xffffffb3)).color
+        background = (style.background ?? defaults.background)?.color ?? systemColor(\.background)
+        hoverBackground = (style.hoverBackground ?? defaults.hoverBackground)?.color ?? systemColor(\.hoverBackground)
+        borderColor = (style.borderColor ?? defaults.borderColor)?.color ?? systemColor(\.borderColor)
         accent = (style.accent ?? defaults.accent ?? HexColor(0xf7821bff)).color
         accentText = (style.accentText ?? defaults.accentText ?? HexColor(0xffffffff)).color
         borderWidth = style.borderWidth ?? defaults.borderWidth ?? 1
@@ -128,7 +144,7 @@ struct WidgetAppearance {
         spacing = style.spacing ?? defaults.spacing ?? 6
         width = (style.width ?? defaults.width).map { CGFloat($0) }
         shadowRadius = style.shadowRadius ?? defaults.shadowRadius ?? 2
-        shadowColor = (style.shadowColor ?? defaults.shadowColor ?? HexColor(0x00000014)).color
+        shadowColor = (style.shadowColor ?? defaults.shadowColor)?.color ?? systemColor(\.shadowColor)
         let size = style.fontSize ?? defaults.fontSize ?? 12
         let name = style.fontName ?? defaults.fontName ?? "system"
         let weight: Font.Weight

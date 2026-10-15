@@ -102,6 +102,7 @@ private struct ConfigurationEditorView: View {
     @State private var editor: ConfigurationEditor
     @State private var advanced = "{}"
     @State private var showsBar = false
+    @Environment(\.colorScheme) private var colorScheme
 
     init(store: BarStore) {
         self.store = store
@@ -254,10 +255,10 @@ private struct ConfigurationEditorView: View {
                 }
             }
             Section("Appearance") {
-                colorPicker("Text color", value: editor.selectedStyle["foreground"], fallback: "#1d1d1fff") {
+                colorPicker("Text color", value: editor.selectedStyle["foreground"], fallback: builtInStyle.foreground!) {
                     editor.set(["style": .object(["foreground": .string($0)])])
                 }
-                colorPicker("Background", value: editor.selectedStyle["background"], fallback: "#f8f8faed") {
+                colorPicker("Background", value: editor.selectedStyle["background"], fallback: builtInStyle.background!) {
                     editor.set(["style": .object(["background": .string($0)])])
                 }
                 ForEach([("Font size", "fontSize", 12.0), ("Horizontal padding", "paddingHorizontal", 10), ("Corner radius", "cornerRadius", 14)],
@@ -310,10 +311,10 @@ private struct ConfigurationEditorView: View {
                 }
             }
             Section("All widgets") {
-                colorPicker("Text color", value: defaults["foreground"], fallback: "#1d1d1fff") {
+                colorPicker("Text color", value: defaults["foreground"], fallback: builtInStyle.foreground!) {
                     editor.change(ConfigurationEdit(action: .defaults, properties: ["foreground": .string($0)]))
                 }
-                colorPicker("Background", value: defaults["background"], fallback: "#f8f8faed") {
+                colorPicker("Background", value: defaults["background"], fallback: builtInStyle.background!) {
                     editor.change(ConfigurationEdit(action: .defaults, properties: ["background": .string($0)]))
                 }
                 numberField("Font size", value: defaults["fontSize"], fallback: 12) {
@@ -378,9 +379,11 @@ private struct ConfigurationEditorView: View {
         }
     }
 
-    private func colorPicker(_ title: String, value: ConfigurationValue?, fallback: String, set: @escaping (String) -> Void) -> some View {
+    private var builtInStyle: WidgetStyle { colorScheme == .dark ? .dark : .light }
+
+    private func colorPicker(_ title: String, value: ConfigurationValue?, fallback: HexColor, set: @escaping (String) -> Void) -> some View {
         ColorPicker(title, selection: Binding(get: {
-            (try? (value ?? .string(fallback)).decoded(HexColor.self))?.color ?? .clear
+            ((try? value?.decoded(HexColor.self)) ?? fallback).color
         }, set: {
             let color = NSColor($0).usingColorSpace(.sRGB)!
             set(String(format: "#%02x%02x%02x%02x", Int((color.redComponent * 255).rounded()),
