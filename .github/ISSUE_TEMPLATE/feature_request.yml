@@ -1,0 +1,38 @@
+name: Feature or documentation request
+description: A capability StableBar lacks, or documentation that is missing or wrong.
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Much of StableBar is configuration, so check the [README](https://github.com/Seb-GRAF/StableBar#readme) and the [examples](https://github.com/Seb-GRAF/StableBar/tree/main/examples) first. Search [open and closed issues](https://github.com/Seb-GRAF/StableBar/issues?q=is%3Aissue) too: closed ones include declined requests and their reasons.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What you are trying to do, and what gets in the way.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What StableBar could do, or what the documentation should say.
+    validations:
+      required: true
+
+  - type: textarea
+    id: possible-today
+    attributes:
+      label: Possible today
+      description: What you tried with the current configuration or scripts, and where it falls short.
+
+  - type: textarea
+    id: related
+    attributes:
+      label: Related
+      description: Similar issues or pull requests you found, and how this differs.
