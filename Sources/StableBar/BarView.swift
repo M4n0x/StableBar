@@ -12,9 +12,7 @@ struct BarView: View {
         Group {
             if let config = store.configuration {
                 let scale = CGFloat(config.bar.scale(for: display))
-                let style = config.widgets.reduce(config.bar.style) { style, widget in
-                    store.scripts[widget.id]?.output.barStyle?.inheriting(style) ?? style
-                }
+                let style = resolveStyle(barStyleLayers(config.bar.style, widgets: config.widgets, output: { store.scripts[$0]?.output }))
                 let notch = display.notch.map { range in
                     let range: ClosedRange<CGFloat> = ((range.lowerBound - config.bar.margin) / scale)...((range.upperBound - config.bar.margin) / scale)
                     return config.bar.notchWidth.map { width in
@@ -251,24 +249,18 @@ struct WidgetView: View {
     @State private var popupAnchor = NSView()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var style: WidgetStyle {
-        let output = store.scripts[widget.id]?.output
-        var style = widget.style.inheriting(defaults)
-        for source in store.configuration?.widgets ?? [] {
-            if let override = store.scripts[source.id]?.output.widgetStyles?[widget.id] {
-                style = override.inheriting(style)
-            }
-        }
-        style = (output?.style ?? WidgetStyle()).inheriting(style)
-        if let color = output?.color { style.foreground = color }
-        return style
+    private var resolution: ResolvedWidgetStyle {
+        ResolvedWidgetStyle(base: resolveStyle(widgetStyleLayers(widget, defaults: defaults, widgets: store.configuration?.widgets ?? [],
+                                                                 output: { store.scripts[$0]?.output })))
     }
 
     var body: some View {
         let output = store.scripts[widget.id]?.output
+        let resolution = self.resolution
+        let style = resolution.style(hovered: hovered)
         let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let animation = output?.animation ?? widget.animation ?? WidgetAnimation(duration: animationDuration)
-        let tile = content(appearance)
+        let tile = content(appearance, resolution: resolution)
             .padding(.leading, style.paddingLeading ?? appearance.paddingHorizontal)
             .padding(.trailing, style.paddingTrailing ?? appearance.paddingHorizontal)
             .padding(.top, style.paddingTop ?? appearance.paddingVertical)
@@ -293,9 +285,8 @@ struct WidgetView: View {
             }
         }
         .font(appearance.font)
-        .foregroundStyle(hovered ? appearance.hoverForeground : appearance.foreground)
-        .background(hovered ? appearance.hoverBackground : appearance.background,
-                    in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
+        .foregroundStyle(appearance.foreground)
+        .background(appearance.background, in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
         .overlay {
             RoundedRectangle(cornerRadius: appearance.cornerRadius)
                 .strokeBorder(appearance.borderColor, lineWidth: appearance.borderWidth)
@@ -308,7 +299,7 @@ struct WidgetView: View {
         .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
         .overlay(alignment: .bottom) {
             if let overlay = widget.overlay {
-                block(overlay, style: style, fillsWidth: true).allowsHitTesting(false)
+                block(overlay, style: resolution.base, fillsWidth: true).allowsHitTesting(false)
             }
         }
         .overlay {
@@ -340,15 +331,16 @@ struct WidgetView: View {
     }
 
     @ViewBuilder
-    private func content(_ appearance: WidgetAppearance) -> some View {
+    private func content(_ appearance: WidgetAppearance, resolution: ResolvedWidgetStyle) -> some View {
         if let layout = widget.layout {
-            block(layout, style: style, fillsWidth: false)
+            block(layout, style: resolution.base, fillsWidth: false)
                 .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
         } else {
             switch widget.content {
             case .workspaces:
                 WorkspaceView(workspaceStore: store.workspaceStore, monitor: monitor,
-                              appearance: appearance, animationDuration: animationDuration,
+                              appearance: WidgetAppearance(resolution.style(hovered: false), defaults: WidgetStyle()),
+                              animationDuration: animationDuration,
                               configuration: widget.workspace, animation: widget.animation, defaults: widget.style.inheriting(defaults))
             case .activeApp:
                 HStack(spacing: appearance.spacing) {
@@ -367,7 +359,7 @@ struct WidgetView: View {
             case let .text(text):
                 label(text, icon: widget.icon, appearance: appearance)
             case .spacer:
-                Spacer(minLength: style.minWidth ?? 0)
+                Spacer(minLength: resolution.base.minWidth ?? 0)
             case .script, .provider:
                 if let script = store.scripts[widget.id] {
                     HStack(spacing: appearance.spacing) {
@@ -378,7 +370,7 @@ struct WidgetView: View {
                         }
                         label(script.output.text, icon: script.output.icon ?? widget.icon, appearance: appearance)
                     }
-                        .foregroundStyle(hovered ? appearance.hoverForeground : appearance.foreground)
+                        .foregroundStyle(appearance.foreground)
                         .help(script.error ?? script.output.tooltip ?? "")
                 }
             }

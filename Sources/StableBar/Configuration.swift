@@ -61,7 +61,6 @@ struct HexColor: Decodable, Equatable, Sendable {
 struct WidgetStyle: Decodable, Equatable, Sendable {
     var foreground: HexColor?
     var background: HexColor?
-    var hoverBackground: HexColor?
     var borderColor: HexColor?
     var accent: HexColor?
     var accentText: HexColor?
@@ -87,7 +86,8 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
     var offsetX: Double?
     var offsetY: Double?
     var opacity: Double?
-    var hoverForeground: HexColor?
+    /// Styles that apply over this one while a state is active, keyed by state name.
+    var states: [String: WidgetStyle]?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case foreground, background, hoverBackground, borderColor, accent, accentText, borderWidth, cornerRadius
@@ -96,11 +96,13 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
         case paddingBottom, offsetX, offsetY, opacity, hoverForeground
     }
 
+    var hoverBackground: HexColor? { states?["hover"]?.background }
+    var hoverForeground: HexColor? { states?["hover"]?.foreground }
+
     func inheriting(_ defaults: WidgetStyle) -> WidgetStyle {
         WidgetStyle(
             foreground: foreground ?? defaults.foreground,
             background: background ?? defaults.background,
-            hoverBackground: hoverBackground ?? defaults.hoverBackground,
             borderColor: borderColor ?? defaults.borderColor,
             accent: accent ?? defaults.accent,
             accentText: accentText ?? defaults.accentText,
@@ -126,8 +128,17 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
             offsetX: offsetX ?? defaults.offsetX,
             offsetY: offsetY ?? defaults.offsetY,
             opacity: opacity ?? defaults.opacity,
-            hoverForeground: hoverForeground ?? defaults.hoverForeground
+            states: states.map { own in own.merging(defaults.states ?? [:]) { $0.inheriting($1) } } ?? defaults.states
         )
+    }
+
+    /// This style with each of `aliases`, such as `focusedStyle`, merged into the state of the same
+    /// name. Properties already set in `states` win.
+    func addingStates(_ aliases: [String: WidgetStyle]) -> WidgetStyle {
+        guard !aliases.isEmpty else { return self }
+        var style = self
+        style.states = (states ?? [:]).merging(aliases) { own, alias in own.inheriting(alias) }
+        return style
     }
 }
 
@@ -137,7 +148,6 @@ extension WidgetStyle {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         foreground = try values.decodeIfPresent(HexColor.self, forKey: .foreground)
         background = try values.decodeIfPresent(HexColor.self, forKey: .background)
-        hoverBackground = try values.decodeIfPresent(HexColor.self, forKey: .hoverBackground)
         borderColor = try values.decodeIfPresent(HexColor.self, forKey: .borderColor)
         accent = try values.decodeIfPresent(HexColor.self, forKey: .accent)
         accentText = try values.decodeIfPresent(HexColor.self, forKey: .accentText)
@@ -163,7 +173,12 @@ extension WidgetStyle {
         offsetX = try values.decodeIfPresent(Double.self, forKey: .offsetX)
         offsetY = try values.decodeIfPresent(Double.self, forKey: .offsetY)
         opacity = try values.decodeIfPresent(Double.self, forKey: .opacity)
-        hoverForeground = try values.decodeIfPresent(HexColor.self, forKey: .hoverForeground)
+        let hoverForeground = try values.decodeIfPresent(HexColor.self, forKey: .hoverForeground)
+        let hoverBackground = try values.decodeIfPresent(HexColor.self, forKey: .hoverBackground)
+        states = nil
+        if hoverForeground != nil || hoverBackground != nil {
+            self = addingStates(["hover": WidgetStyle(foreground: hoverForeground, background: hoverBackground)])
+        }
     }
 }
 
