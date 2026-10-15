@@ -138,7 +138,7 @@ final class BarStore: NSObject {
         let data = try configurationData(root)
         var loader = ConfigurationLoader()
         let next = try loader.load(configurationURL, data: data, context: context)
-        if persist { try data.write(to: configurationURL, options: .atomic) }
+        if persist { try configurationData(root, editing: Data(contentsOf: configurationURL)).write(to: configurationURL, options: .atomic) }
         sessionEdits = persist ? [] : allEdits
         configurationLoader = loader
         apply(next)

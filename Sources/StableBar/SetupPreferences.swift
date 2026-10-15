@@ -55,6 +55,7 @@ struct SetupPreferences: Equatable {
         }
         if configurationURL == nil { document = settings }
         else { document["customization"] = settings }
-        return try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        let edited = try JSONDecoder().decode([String: ConfigurationValue].self, from: JSONSerialization.data(withJSONObject: document))
+        return try configurationData(edited, editing: data)
     }
 }

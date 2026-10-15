@@ -183,3 +183,56 @@ import Testing
     #expect(editor.edits.count == 1)
     #expect(editor.preview.configuration?.widgets[0].style.fontSize == 12)
 }
+
+@Test func savedEditsKeepTheLayoutOfUntouchedValues() throws {
+    let original = Data("""
+    {
+        "bar": { "height": 40, "offset": 0 },
+        "widgets": [
+            {"id": "a", "type": "text", "position": "left", "text": "A"},
+            {
+                "id": "b",
+                "type": "clock",
+                "position": "right"
+            }
+        ],
+        "defaults": {}
+    }
+
+    """.utf8)
+    var document = try JSONDecoder().decode([String: ConfigurationValue].self, from: original)
+    #expect(try configurationData(document, editing: original) == original)
+    document["bar"] = .object(["height": .number(44), "offset": .number(0)])
+    document["widgets"] = .array([
+        .object(["id": .string("b"), "type": .string("clock"), "position": .string("right"), "format": .string("HH:mm")]),
+        .object(["id": .string("a"), "type": .string("text"), "position": .string("left"), "text": .string("A")]),
+        .object(["id": .string("c"), "type": .string("text"), "position": .string("left"), "text": .string("C")])
+    ])
+    document["defaults"] = .object(["fontSize": .number(12)])
+    document["profile"] = .string("dark")
+    #expect(String(decoding: try configurationData(document, editing: original), as: UTF8.self) == """
+    {
+        "bar": { "height": 44, "offset": 0 },
+        "widgets": [
+            {
+                "id": "b",
+                "type": "clock",
+                "position": "right",
+                "format": "HH:mm"
+            },
+            {"id": "a", "type": "text", "position": "left", "text": "A"},
+            {
+                "id": "c",
+                "position": "left",
+                "text": "C",
+                "type": "text"
+            }
+        ],
+        "defaults": {
+            "fontSize": 12
+        },
+        "profile": "dark"
+    }
+
+    """)
+}
