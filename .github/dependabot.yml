@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # npm holds only the release tooling, which pull requests never run, so a breaking update
+  # would pass CI and fail the next release. Update it by hand after a release rehearsal.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: ci
