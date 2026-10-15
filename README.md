@@ -654,30 +654,9 @@ For new native widget types, add a case to `WidgetContent`, decode its settings 
 
 There is no web view, custom drawing loop or private window-server API. Styling and data updates are separate from window placement. Performance and long-term stability still need measurement with your actual widgets and displays.
 
-## Releases
+## Contributing
 
-Pull requests run `swift test` on macOS and check that every commit message, and the pull request title, follows [Conventional Commits](https://www.conventionalcommits.org). Squash merges use the title as the commit message.
-
-After the tests pass on `main`, [semantic-release](https://github.com/semantic-release/semantic-release) reads the commits since the last tag and decides the next version:
-
-| Commit | Release |
-| --- | --- |
-| `fix:`, `perf:` | Patch: 0.1.0 → 0.1.1 |
-| `feat:` | Minor: 0.1.0 → 0.2.0 |
-| `feat!:`, or a `BREAKING CHANGE:` footer | Major: 0.1.0 → 1.0.0 |
-| `build:`, `chore:`, `ci:`, `docs:`, `refactor:`, `style:`, `test:` | None |
-
-A release sets `CFBundleShortVersionString` and `CFBundleVersion` in [Resources/Info.plist](Resources/Info.plist) with `scripts/set-version.sh`, adds its notes to `CHANGELOG.md`, commits both as `chore(release): <version>`, tags `v<version>` and publishes the notes as a GitHub release.
-
-## Agent skills
-
-Skills for coding agents live in [.agents/skills](.agents/skills), one folder per skill with a `SKILL.md`. Codex reads that directory, and `.claude/skills` links to it for Claude Code. Invoke a skill by name (`/triage` in Claude Code, `$triage` in Codex) or describe the task and let the agent choose it.
-
-| Skill | Use |
-| --- | --- |
-| [triage](.agents/skills/triage/SKILL.md) | Checks a bug report or feature request against issues, pull requests, `main` and releases, and drafts a GitHub issue when nothing covers it. It posts only what you asked it to file or approved. |
-
-To add a skill, create `.agents/skills/<name>/SKILL.md` with `name` and `description` front matter.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers development setup, pull requests, commit messages, releases and the skills for coding agents. Report security issues privately, as described in [SECURITY.md](.github/SECURITY.md).
 
 ## License
 
