@@ -67,7 +67,9 @@ private extension WidgetContent {
     var symbol: String {
         switch self {
         case .spacer: "arrow.left.and.right"
-        case .provider: "gauge.with.dots.needle.33percent"
+        case let .provider(name):
+            ["battery": "battery.100percent", "system": "cpu", "network": "network", "audio": "speaker.wave.2"][name]
+                ?? "gauge.with.dots.needle.33percent"
         case .workspaces: "rectangle.3.group"
         case .activeApp: "macwindow"
         case .clock: "clock"
@@ -90,7 +92,9 @@ private extension WidgetContent {
 }
 
 private let newWidgets: [WidgetContent] = [
-    .text("New widget"), .clock(format: "EEE d MMM  HH:mm"), .activeApp, .workspaces, .script(command: "date +%H:%M", interval: 30), .spacer
+    .text("New widget"), .clock(format: "EEE d MMM  HH:mm"), .activeApp, .workspaces,
+    .provider("battery"), .provider("system"), .provider("network"), .provider("audio"),
+    .script(command: "date +%H:%M", interval: 30), .spacer
 ]
 
 private struct ConfigurationEditorView: View {

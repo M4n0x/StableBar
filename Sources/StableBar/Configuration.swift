@@ -227,8 +227,11 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
                 throw DecodingError.dataCorruptedError(forKey: .interval, in: values, debugDescription: "A script interval must be greater than zero.")
             }
             content = .script(command: try values.decode(String.self, forKey: .command), interval: interval)
-        default:
-            throw DecodingError.dataCorruptedError(forKey: .type, in: values, debugDescription: "Unknown widget type.")
+        case let type:
+            guard ProviderType(rawValue: type)?.isNative == true else {
+                throw DecodingError.dataCorruptedError(forKey: .type, in: values, debugDescription: "Unknown widget type.")
+            }
+            content = .provider(type)
         }
     }
 }
@@ -295,7 +298,14 @@ struct Configuration: Decodable, Sendable {
         }
         environment = try values.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
         popups = try values.decodeIfPresent([String: PopupConfiguration].self, forKey: .popups) ?? [:]
-        providers = try values.decodeIfPresent([String: ProviderConfiguration].self, forKey: .providers) ?? [:]
+        var providers = try values.decodeIfPresent([String: ProviderConfiguration].self, forKey: .providers) ?? [:]
+        for widget in widgets {
+            if case let .provider(name) = widget.content, providers[name] == nil {
+                guard let type = ProviderType(rawValue: name), type.isNative else { throw CommandFailure(message: "Unknown provider: \(name).") }
+                providers[name] = ProviderConfiguration(type: type)
+            }
+        }
+        self.providers = providers
         groups = try values.decodeIfPresent([String: WidgetGroupConfiguration].self, forKey: .groups) ?? [:]
         var groupPositions: [String: WidgetPosition] = [:]
         var ids = Set<String>()
@@ -305,9 +315,6 @@ struct Configuration: Decodable, Sendable {
             if let max = style.maxWidth, max < 0 { throw CommandFailure(message: "maxWidth must be nonnegative.") }
             if let min = style.minWidth, let max = style.maxWidth, min > max {
                 throw CommandFailure(message: "minWidth must not exceed maxWidth.")
-            }
-            if case let .provider(name) = widget.content, providers[name] == nil {
-                throw CommandFailure(message: "Unknown provider: \(name).")
             }
             if let group = widget.group {
                 guard groups[group] != nil else { throw CommandFailure(message: "Unknown group: \(group).") }
