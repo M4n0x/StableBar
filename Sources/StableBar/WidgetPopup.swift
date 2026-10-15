@@ -31,7 +31,12 @@ final class WidgetPopup {
         let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let shadowInset = CGFloat(appearance.shadowRadius * 2 + 2)
         let width = min(CGFloat(popup.style.width ?? 360), screen.visibleFrame.width - shadowInset * 2 - 16)
-        let height = min(popup.height, frame.minY - screen.visibleFrame.minY - shadowInset * 2 - 8)
+        let host = NSHostingView(rootView: PopupView(popup: popup, style: style, store: store, widget: widget)
+            .frame(width: width)
+            .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
+            .padding(shadowInset))
+        let height = min(popup.height.map { CGFloat($0) } ?? host.fittingSize.height - shadowInset * 2,
+                         frame.minY - screen.visibleFrame.minY - shadowInset * 2 - 8)
         let alignedX: CGFloat = switch popup.alignment {
         case .leading: frame.minX
         case .center: frame.midX - width / 2
@@ -50,9 +55,7 @@ final class WidgetPopup {
         panel.autorecalculatesKeyViewLoop = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
-        panel.contentView = NSHostingView(rootView: PopupView(popup: popup, style: style, store: store, widget: widget)
-            .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
-            .padding(shadowInset))
+        panel.contentView = host
         self.panel = panel
         widgetID = widget.id
         self.store = store

@@ -518,7 +518,7 @@ The [interactive example](examples/interactive/config.json) combines groups, an 
 
 Add `popup` to any widget. For a popup shared by multiple widgets, define it once in the top-level `popups` object and set each widget's `popupName` to its key. Each anchor uses its own script data. An inline `popup` takes precedence over `popupName`. It takes precedence over `menu` and `onClick`. Its layout is independent of the script, so you can change the layout without changing the data source or rebuilding the app. The example below uses the fields returned by the script output that follows it.
 
-Widgets with `menu` entries already open a shared popup without additional configuration. To customize that popup, add `popup` with your preferred height and style and `"layout": { "type": "menu" }`. You can also place a `menu` block alongside other blocks in a custom layout. Entries retain their titles, details and click commands, and refresh while the popup is open.
+Widgets with `menu` entries already open a shared popup without additional configuration. To customize that popup, add `popup` with your preferred style and `"layout": { "type": "menu" }`. You can also place a `menu` block alongside other blocks in a custom layout. Entries retain their titles, details and click commands, and refresh while the popup is open.
 
 ```json
 "popup": {
@@ -546,7 +546,7 @@ Widgets with `menu` entries already open a shared popup without additional confi
 }
 ```
 
-`height`, `style` and `layout` are required. Use `"style": {}` to inherit the widget's theme. Popup colors, typography, borders, corners and shadow inherit widget styles and then global defaults. Popup width defaults to 360 points independently of the bar widget width; set it with `popup.style.width`. Padding and spacing can be overridden separately. Height is capped to the space below the bar; long content scrolls.
+`style` and `layout` are required. Use `"style": {}` to inherit the widget's theme. Without `height`, a popup fits its content when it opens; set `height` for a fixed size. Popup colors, typography, borders, corners and shadow inherit widget styles and then global defaults. Popup width defaults to 360 points independently of the bar widget width; set it with `popup.style.width`. Padding and spacing can be overridden separately. Height is capped to the space below the bar; long content scrolls.
 
 Layout blocks:
 

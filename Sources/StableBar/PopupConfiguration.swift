@@ -1,7 +1,7 @@
 import Foundation
 
 struct PopupConfiguration: Decodable, Sendable {
-    let height: Double
+    let height: Double?
     let style: WidgetStyle
     let layout: PopupBlock
     var alignment: PopupAlignment = .center
@@ -12,8 +12,8 @@ struct PopupConfiguration: Decodable, Sendable {
 
     enum CodingKeys: String, CodingKey, CaseIterable { case height, style, layout, alignment, offset, dismissOnAction, dismissOnControl, animation }
 
-    init(height: Double, style: WidgetStyle, layout: PopupBlock) {
-        self.height = height
+    init(style: WidgetStyle, layout: PopupBlock) {
+        height = nil
         self.style = style
         self.layout = layout
     }
@@ -21,7 +21,7 @@ struct PopupConfiguration: Decodable, Sendable {
     init(from decoder: Decoder) throws {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        height = try values.decode(Double.self, forKey: .height)
+        height = try values.decodeIfPresent(Double.self, forKey: .height)
         style = try values.decode(WidgetStyle.self, forKey: .style)
         layout = try values.decode(PopupBlock.self, forKey: .layout)
         alignment = try values.decodeIfPresent(PopupAlignment.self, forKey: .alignment) ?? alignment
