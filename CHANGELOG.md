@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.0](https://github.com/Seb-GRAF/StableBar/compare/v0.3.0...v0.4.0) (2026-10-15)
+
+### Features
+
+* add yabai workspaces and profile editing ([5c30c63](https://github.com/Seb-GRAF/StableBar/commit/5c30c63df6d7924156005931030f079668ca0396))
+
 ## [0.3.0](https://github.com/Seb-GRAF/StableBar/compare/v0.2.0...v0.3.0) (2026-10-15)
 
 ### Features
