@@ -63,6 +63,18 @@ jobs:
       issues: write
       pull-requests: write
     steps:
+      # GITHUB_TOKEN can't bypass branch rules on main; the release app can. Configure it with
+      # the RELEASE_APP_CLIENT_ID variable and the RELEASE_APP_PRIVATE_KEY secret.
+      - name: Create release app token
+        id: app-token
+        if: vars.RELEASE_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -74,5 +86,5 @@ jobs:
       - run: npm audit signatures
       - name: Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
         run: npx semantic-release
