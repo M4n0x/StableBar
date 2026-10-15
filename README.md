@@ -270,7 +270,7 @@ External hooks can trigger an event without launching another bar:
 
 Use that event name in the widget's `events`. Extra `KEY=VALUE` arguments become environment variables, preserving spaces, quotes and equals signs as data. Events finish the currently running update and coalesce pending refreshes to the latest event and payload. A widget never runs overlapping update commands. This queue is intended for refreshing current state, not recording every event.
 
-Commands inherit the app's environment, then top-level `environment`, then the widget's `environment`, then event data. Values must be strings. StableBar supplies these variables:
+Commands inherit your login shell's environment, then top-level `environment`, then the widget's `environment`, then event data. Values must be strings. StableBar supplies these variables:
 
 | Variable | Value |
 | --- | --- |
@@ -397,7 +397,7 @@ Add an entry to `widgets`:
 }
 ```
 
-Commands run through `/bin/zsh -lc`. Use absolute paths or `~` for your own scripts, and make them executable. Widgets can be written in shell, Python, Swift, Rust or anything that prints to stdout.
+Commands run through `/bin/zsh -c` with your login shell's environment, which StableBar reads once at launch. Restart StableBar after changing `PATH` or other exported variables in your shell profile. Use absolute paths or `~` for your own scripts, and make them executable. Widgets can be written in shell, Python, Swift, Rust or anything that prints to stdout.
 
 Return plain text, or one JSON object:
 

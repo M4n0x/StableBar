@@ -1,5 +1,16 @@
 import Darwin
 import Foundation
+import os
+
+let shellEnvironment = OSAllocatedUnfairLock(initialState: ProcessInfo.processInfo.environment)
+
+func loadLoginShellEnvironment() async throws {
+    let output = try await runCommand("/bin/zsh", arguments: ["-lc", "/usr/bin/env -0"])
+    let variables = output.split(separator: 0).map { $0.split(separator: UInt8(ascii: "="), maxSplits: 1, omittingEmptySubsequences: false) }
+    shellEnvironment.withLock {
+        $0 = Dictionary(uniqueKeysWithValues: variables.map { (String(decoding: $0[0], as: UTF8.self), String(decoding: $0[1], as: UTF8.self)) })
+    }
+}
 
 struct CommandFailure: LocalizedError {
     let message: String
@@ -105,7 +116,7 @@ private final class CommandProcess: @unchecked Sendable {
             posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
             posix_spawn_file_actions_adddup2(&actions, output.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
             posix_spawn_file_actions_adddup2(&actions, errors.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
-            var variables = ProcessInfo.processInfo.environment
+            var variables = shellEnvironment.withLock { $0 }
             variables["STABLEBAR_SCRIPTS"] = Bundle.main.resourceURL!.appending(path: "widgets").path
             variables.merge(environment) { _, value in value }
             var argv = ([executable] + arguments).map { strdup($0) } + [nil]

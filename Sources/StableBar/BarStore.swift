@@ -353,7 +353,7 @@ final class BarStore: NSObject {
             }
             do {
                 try Task.checkCancellation()
-                _ = try await runCommand("/bin/zsh", arguments: ["-lc", command],
+                _ = try await runCommand("/bin/zsh", arguments: ["-c", command],
                                          timeout: widget.timeout, environment: environment)
                 if let script, scripts[widget.id] === script {
                     script.refresh(ScriptEvent(sender: "action", environment: event.environment))

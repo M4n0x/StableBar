@@ -121,7 +121,7 @@ final class ScriptWidget {
                 do {
                     switch source {
                     case let .command(command, _, timeout):
-                        let result = try await runCommandResult("/bin/zsh", arguments: ["-lc", command], timeout: timeout,
+                        let result = try await runCommandResult("/bin/zsh", arguments: ["-c", command], timeout: timeout,
                                                                 environment: event.commandEnvironment(environment))
                         try Task.checkCancellation()
                         record(result)
@@ -129,13 +129,13 @@ final class ScriptWidget {
                     case let .provider(provider):
                         switch provider.type {
                         case .command:
-                            let result = try await runCommandResult("/bin/zsh", arguments: ["-lc", provider.command!], timeout: provider.timeout,
+                            let result = try await runCommandResult("/bin/zsh", arguments: ["-c", provider.command!], timeout: provider.timeout,
                                                                     environment: event.commandEnvironment(environment))
                             try Task.checkCancellation()
                             record(result)
                             try accept(ScriptOutput.read(result.stdout))
                         case .stream:
-                            for try await result in commandLines("/bin/zsh", arguments: ["-lc", provider.command!],
+                            for try await result in commandLines("/bin/zsh", arguments: ["-c", provider.command!],
                                                                 environment: event.commandEnvironment(environment)) {
                                 try Task.checkCancellation()
                                 record(result)

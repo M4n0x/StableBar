@@ -92,10 +92,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.terminate(nil)
             return
         }
-        store.start()
-        systemContext = SystemContext { [store] in store.refreshContext() }
-        systemContext!.start()
-        if !UserDefaults.standard.bool(forKey: "setupCompleted") { showSetup() }
+        Task {
+            try? await loadLoginShellEnvironment()
+            store.start()
+            systemContext = SystemContext { [store] in store.refreshContext() }
+            systemContext!.start()
+            if !UserDefaults.standard.bool(forKey: "setupCompleted") { showSetup() }
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(sleeping),
