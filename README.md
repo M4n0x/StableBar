@@ -66,7 +66,7 @@ Unknown properties are errors, so a misspelled key cannot be silently ignored. T
 "$schema": "https://raw.githubusercontent.com/Seb-GRAF/StableBar/main/stablebar.schema.json"
 ```
 
-- `bar`: `height`, `offset`, `inset`, `spacing`, `background`, `animationDuration` (seconds).
+- `bar`: `height`, `offset`, `inset`, `spacing`, `background`, `animationDuration` (seconds), `displayScale`.
 - `defaults`: styles inherited by every widget.
 - `widgets`: ordered widget definitions with unique `id`, `type`, `position` and optional `style`, `icon`, `onClick`, `menu`, `popup`.
 - `position`: `left`, `notchLeft`, `center`, `notchRight` or `right`.
@@ -213,6 +213,8 @@ Package selections in modules merge by package ID, with later modules and the ro
 
 Each widget accepts `display`: `"all"` (default), `"active"`, `"main"`, `"builtIn"`, `"external"`, `"notched"`, `"unnotched"`, or an array of screen numbers, for example `[1, 2]`. Numbers are one-based positions in `NSScreen.screens`, matching AeroSpace and SketchyBar; they can change when displays are rearranged. `active` follows AeroSpace focus. Use `aerospace list-monitors --format '%{monitor-name}|%{monitor-appkit-nsscreen-screens-id}'` to list them.
 
+Set `bar.displayScale` to `{ "builtIn": 0.85, "external": 1 }` to shrink the laptop bar while keeping external displays at their original size. Each factor scales the bar height, widgets, text and spacing; omitted display types use `1`. Factors must be positive, and other keys are rejected. The bar offset and popup sizes stay in screen points. This setting also works inside automatic profiles.
+
 `bar.style` accepts `background`, `cornerRadius`, `borderColor` and `borderWidth`. The border is drawn along the bottom edge. Scripts can return `barStyle` to change those properties; later widgets override earlier widgets when they set the same property.
 
 ### Composing widgets
@@ -355,7 +357,7 @@ A batch validates the whole resulting configuration before replacing the running
 
 ### Editor and inspector
 
-Open **Customize and inspect…** from the menu-bar icon, reopen the running app, or run `StableBar --customize`.
+Open **Customize StableBar…** from the menu-bar icon or by right-clicking the bar, reopen the running app, or run `StableBar --customize`.
 
 The **Editor** lists your widgets by position; drag to reorder them. Change positions, icons, text, clock formats, colors, font size, padding and corners, or edit a widget's properties as JSON. **Bar** sets the bar's size and the default text color, background and font size. Changes apply to the bar immediately, like command-line edits without `--persist`. Undo and redo step through them, **Save** writes them to your configuration and **Discard** returns to the saved file. A change that would make the configuration invalid is rejected and its error is shown.
 

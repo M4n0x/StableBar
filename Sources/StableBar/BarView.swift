@@ -10,11 +10,13 @@ struct BarView: View {
     var body: some View {
         Group {
             if let config = store.configuration {
+                let scale = CGFloat(config.bar.scale(for: display))
                 let style = config.widgets.reduce(config.bar.style) { style, widget in
                     store.scripts[widget.id]?.output.barStyle?.inheriting(style) ?? style
                 }
                 let notch = display.notch.map { range in
-                    config.bar.notchWidth.map { width in
+                    let range = (range.lowerBound / scale)...(range.upperBound / scale)
+                    return config.bar.notchWidth.map { width in
                         let center = (range.lowerBound + range.upperBound) / 2
                         return (center - width / 2)...(center + width / 2)
                     } ?? range
@@ -22,6 +24,10 @@ struct BarView: View {
                 let activeID = store.aerospace.workspaces.first(where: \.isFocused)?.monitor ?? store.activeDisplayID
                 let widgets = config.widgets.filter { widget in
                     let output = store.scripts[widget.id]?.output
+                    if widget.content == .workspaces && widget.layout == nil && store.aerospace.error == nil
+                        && store.aerospace.workspaces(on: display.id, showEmpty: widget.workspace?.showEmpty == true).isEmpty {
+                        return false
+                    }
                     return widget.enabled && (output?.display ?? widget.display).includes(display, activeID: activeID)
                         && (output?.hidden != true || store.scripts[widget.id]?.error != nil)
                 }
@@ -33,20 +39,20 @@ struct BarView: View {
                     }
                     let plan = AdaptiveBarPlanner(inset: config.bar.inset, spacing: config.bar.spacing,
                                                   notchSpacing: config.bar.notchSpacing, notch: notch)
-                        .plan(width: geometry.size.width, items: items)
+                        .plan(width: geometry.size.width / scale, items: items)
                     let visible = Set(units.filter { plan.placements[$0.id] != nil }.flatMap { $0.widgets.map(\.id) })
                     ZStack(alignment: .topLeading) {
                         (style.background ?? config.bar.background).color
                         ForEach(units) { unit in
                             if let placement = plan.placements[unit.id] {
                                 unitView(unit, config: config, width: placement.width)
-                                    .frame(width: placement.width, height: geometry.size.height)
+                                    .frame(width: placement.width, height: geometry.size.height / scale)
                                     .offset(x: placement.x)
                             }
                         }
                         if let x = plan.overflowX {
                             overflowMenu(units.filter { plan.overflow.contains($0.id) }, config: config)
-                                .frame(width: 30, height: geometry.size.height)
+                                .frame(width: 30, height: geometry.size.height / scale)
                                 .background(PopupAnchor(view: overflowAnchor, popup: store.popup))
                                 .offset(x: x)
                         }
@@ -70,6 +76,8 @@ struct BarView: View {
                     }
                     .onPreferenceChange(BarWidthPreference.self) { measuredWidths = $0 }
                     .onChange(of: visible, initial: true) { _, ids in store.setVisibleWidgets(ids: ids, displayID: display.id) }
+                    .frame(width: geometry.size.width / scale, height: geometry.size.height / scale)
+                    .scaleEffect(scale, anchor: .topLeading)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius ?? 0))
                 .overlay(alignment: .bottom) {
@@ -90,8 +98,9 @@ struct BarView: View {
         .onDisappear { store.setVisibleWidgets(ids: [], displayID: display.id) }
         .contextMenu {
             Text("StableBar")
+            Button("Customize StableBar…") { store.onCustomize?() }
             Button("Set up StableBar…") { NSApp.sendAction(#selector(AppDelegate.showSetup), to: NSApp.delegate, from: nil) }
-            Button("Open configuration…") { store.openConfiguration() }
+            Button("Open configuration file…") { store.openConfiguration() }
             Button("Reload configuration") { store.reloadConfiguration() }
             Button("Reconnect AeroSpace") { store.aerospace.start() }
             if let error = store.configurationError ?? store.aerospace.error {
@@ -415,9 +424,7 @@ struct WorkspaceView: View {
     @State private var hoveredWorkspace: String?
 
     var body: some View {
-        let workspaces = aerospace.workspaces.filter {
-            $0.monitor == monitor && (configuration?.showEmpty == true || $0.isVisible || !$0.apps.isEmpty)
-        }
+        let workspaces = aerospace.workspaces(on: monitor, showEmpty: configuration?.showEmpty == true)
         let indicator = configuration?.indicator ?? .background
         let indicatorStyle = configuration?.indicatorStyle ?? WidgetStyle()
         HStack(spacing: appearance.spacing) {
@@ -486,6 +493,7 @@ struct WorkspaceView: View {
                 Image(systemName: "exclamationmark.triangle").help(error)
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
         .animation(reduceMotion ? nil : (animation?.value ?? .smooth(duration: animationDuration)), value: workspaces)
     }
 }

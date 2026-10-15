@@ -309,6 +309,8 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     for (json, message) in [
         (#"{"widgets":[{"id":"clock","type":"clock","position":"right","style":{"fontsize":14}}]}"#, "widgets.clock: style.fontsize: Unknown property."),
         (#"{"widgets":[],"bar":{"heigth":30}}"#, "bar.heigth: Unknown property."),
+        (#"{"widgets":[],"bar":{"displayScale":{"buildIn":0.8}}}"#, "bar.displayScale: Use builtIn or external with a positive number."),
+        (#"{"widgets":[],"bar":{"displayScale":{"external":0}}}"#, "bar.displayScale: Use builtIn or external with a positive number."),
         (#"{"widgets":[],"profiles":[{"name":"dark","when":{"apperance":"dark"},"configuration":{}}]}"#, "profiles.0.when.apperance: Unknown property."),
         (#"{"widgets":[}"#, "The given data was not valid JSON. Unexpected character '}' around line 1, column 13.")
     ] {

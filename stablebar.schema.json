@@ -977,6 +977,19 @@
         "height": {
           "$ref": "#/definitions/number"
         },
+        "displayScale": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Scale factors for the bar on each display type.",
+          "properties": {
+            "builtIn": {
+              "$ref": "#/definitions/number"
+            },
+            "external": {
+              "$ref": "#/definitions/number"
+            }
+          }
+        },
         "offset": {
           "$ref": "#/definitions/number"
         },

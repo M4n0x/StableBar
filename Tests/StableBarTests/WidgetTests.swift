@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 import Testing
 @testable import StableBar
 
@@ -132,6 +133,45 @@ import Testing
     #expect(snapshot[0].apps.count == 1)
     #expect(snapshot[1].apps.count == 1)
     #expect(snapshot[2].apps.isEmpty)
+}
+
+@Test @MainActor func displayedWorkspacesKeepEmptyVisibleSpacesOnTheirMonitor() {
+    let aerospace = AeroSpace()
+    aerospace.workspaces = [
+        Workspace(name: "1", isFocused: false, isVisible: false, monitor: 1,
+                  apps: [WorkspaceApp(workspace: "1", name: "Finder", bundleID: "com.apple.finder")]),
+        Workspace(name: "2", isFocused: false, isVisible: false, monitor: 1),
+        Workspace(name: "3", isFocused: true, isVisible: true, monitor: 1),
+        Workspace(name: "4", isFocused: false, isVisible: true, monitor: 2)
+    ]
+    #expect(aerospace.workspaces(on: 1, showEmpty: false).map(\.name) == ["1", "3"])
+    #expect(aerospace.workspaces(on: 1, showEmpty: true).map(\.name) == ["1", "2", "3"])
+    #expect(aerospace.workspaces(on: 2, showEmpty: false).map(\.name) == ["4"])
+    #expect(aerospace.workspaces(on: 3, showEmpty: false).isEmpty)
+
+    aerospace.workspaces[2] = Workspace(name: "3", isFocused: false, isVisible: false, monitor: 1)
+    #expect(aerospace.workspaces(on: 1, showEmpty: false).map(\.name) == ["1"])
+}
+
+@Test @MainActor func workspaceRowGrowsWhenAnEmptyWorkspaceAppears() throws {
+    let aerospace = AeroSpace()
+    aerospace.workspaces = [
+        Workspace(name: "1", isFocused: false, isVisible: false, monitor: 1,
+                  apps: [WorkspaceApp(workspace: "1", name: "Finder", bundleID: "com.apple.finder")]),
+        Workspace(name: "2", isFocused: true, isVisible: true, monitor: 1,
+                  apps: [WorkspaceApp(workspace: "2", name: "Finder", bundleID: "com.apple.finder")])
+    ]
+    let view = WorkspaceView(aerospace: aerospace, monitor: 1,
+                             appearance: WidgetAppearance(WidgetStyle(), defaults: WidgetStyle()), animationDuration: 0)
+    let initialWidth = try #require(ImageRenderer(content: view).nsImage).size.width
+    aerospace.workspaces[1] = Workspace(name: "2", isFocused: false, isVisible: false, monitor: 1,
+                                       apps: aerospace.workspaces[1].apps)
+    aerospace.workspaces.append(Workspace(name: "3", isFocused: true, isVisible: true, monitor: 1))
+    let expandedWidth = try #require(ImageRenderer(content: view).nsImage).size.width
+    let renderer = ImageRenderer(content: view)
+    renderer.proposedSize = ProposedViewSize(width: initialWidth, height: nil)
+    #expect(expandedWidth > initialWidth)
+    #expect(try #require(renderer.nsImage).size.width == expandedWidth)
 }
 
 @Test func notchGroupsStayOutsideAnOffCenterNotch() {

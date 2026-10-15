@@ -155,8 +155,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let host = panel.contentView as! NSHostingView<BarView>
             host.rootView = BarView(store: store, display: BarDisplay(screen: screen))
             let top = screen.frame.maxY
-            panel.setFrame(NSRect(x: screen.frame.minX, y: top - config.bar.offset - config.bar.height,
-                                  width: screen.frame.width, height: config.bar.height), display: true)
+            let height = config.bar.height * config.bar.scale(for: BarDisplay(screen: screen))
+            panel.setFrame(NSRect(x: screen.frame.minX, y: top - config.bar.offset - height,
+                                  width: screen.frame.width, height: height), display: true)
             panel.orderFrontRegardless()
         }
     }
@@ -165,9 +166,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         menu.addItem(withTitle: "StableBar", action: nil, keyEquivalent: "")
         menu.addItem(.separator())
+        addItem("Customize StableBar…", action: #selector(showCustomization), to: menu)
         addItem("Set up StableBar…", action: #selector(showSetup), to: menu)
-        addItem("Customize and inspect…", action: #selector(showCustomization), to: menu)
-        addItem("Open configuration…", action: #selector(openConfiguration), to: menu)
+        addItem("Open configuration file…", action: #selector(openConfiguration), to: menu)
         addItem("Reload configuration", action: #selector(reloadConfiguration), to: menu)
         addItem("Reconnect AeroSpace", action: #selector(reconnect), to: menu)
         if let error = store.configurationError ?? store.aerospace.error {
