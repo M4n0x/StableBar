@@ -219,7 +219,7 @@ final class BarStore: NSObject {
         let events = Set(next.widgets.filter(\.enabled).flatMap(\.events) + usedProviders.flatMap { next.providers[$0]!.events })
         eventObservers = events.map { event in
             center.addObserver(forName: Notification.Name(event), object: nil, queue: .main) { [weak self] notification in
-                var environment = notification.userInfo as? [String: String] ?? [:]
+                var environment = withoutShellVariables(notification.userInfo as? [String: String] ?? [:])
                 if environment["INFO"] == nil, let info = notification.userInfo,
                    let data = try? JSONSerialization.data(withJSONObject: info, options: [.sortedKeys]) {
                     environment["INFO"] = String(decoding: data, as: UTF8.self)
@@ -291,7 +291,7 @@ final class BarStore: NSObject {
             script.refresh(ScriptEvent(sender: "manual"))
         case .trigger:
             guard let event = request.id else { throw CommandFailure(message: "Trigger requires an event name.") }
-            refreshScripts(for: event, environment: request.environment ?? [:])
+            refreshScripts(for: event, environment: withoutShellVariables(request.environment ?? [:]))
         case .query: break
         }
         return try snapshot(id: request.action == .query ? request.id : nil)
@@ -398,4 +398,9 @@ final class BarStore: NSObject {
         eventObservers.removeAll()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
+}
+
+private func withoutShellVariables(_ environment: [String: String]) -> [String: String] {
+    let shell = shellEnvironment.withLock { $0 }
+    return environment.filter { shell[$0.key] == nil }
 }

@@ -282,7 +282,7 @@ External hooks can trigger an event without launching another bar:
 /path/to/StableBar.app/Contents/MacOS/StableBar --trigger build_finished 'INFO=Build passed' STATUS=success
 ```
 
-Use that event name in the widget's `events`. Extra `KEY=VALUE` arguments become environment variables, preserving spaces, quotes and equals signs as data. Events finish the currently running update and coalesce pending refreshes to the latest event and payload. A widget never runs overlapping update commands. This queue is intended for refreshing current state, not recording every event.
+Use that event name in the widget's `events`. Extra `KEY=VALUE` arguments become environment variables, preserving spaces, quotes and equals signs as data. Trigger arguments and distributed-notification data cannot replace variables exported by your login shell, such as `PATH` or `HOME`. Events finish the currently running update and coalesce pending refreshes to the latest event and payload. A widget never runs overlapping update commands. This queue is intended for refreshing current state, not recording every event.
 
 Commands inherit your login shell's environment, then top-level `environment`, then the widget's `environment`, then event data. Values must be strings. StableBar supplies these variables:
 
