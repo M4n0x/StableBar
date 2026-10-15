@@ -15,7 +15,7 @@ final class BarStore: NSObject {
     var onConfigurationChange: (() -> Void)?
     var onCustomize: (() -> Void)?
     var effectiveDocument: [String: ConfigurationValue] = [:]
-    var origins: [String: String] = [:]
+    var origins: [String: ConfigurationOrigin] = [:]
     var activeProfiles: [String] = []
     var sessionEdits: [ConfigurationEdit] = []
     var context = ConfigurationContext()
@@ -301,7 +301,7 @@ final class BarStore: NSObject {
             }
             var result: [String: ConfigurationValue] = ["configuration": .object(definition),
                 "defaults": effectiveDocument["defaults"] ?? .object([:]),
-                "origins": .object(origins.filter { $0.key.hasPrefix("widgets.\(id).") }.mapValues(ConfigurationValue.string))]
+                "origins": .object(origins.filter { $0.key.hasPrefix("widgets.\(id).") }.mapValues { .string($0.description) })]
             if let script = scripts[id] {
                 let encoder = JSONEncoder()
                 encoder.dateEncodingStrategy = .iso8601

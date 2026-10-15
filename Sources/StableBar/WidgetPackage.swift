@@ -223,7 +223,7 @@ private func packageEnvironment(_ definition: [String: ConfigurationValue], dire
     return result
 }
 
-func preparePackageAssets(_ value: ConfigurationValue, path: String = "", origins: [String: String],
+func preparePackageAssets(_ value: ConfigurationValue, path: String = "", origins: [String: ConfigurationOrigin],
                           sources: [String: URL]) throws -> ConfigurationValue {
     switch value {
     case let .object(object):
@@ -233,8 +233,7 @@ func preparePackageAssets(_ value: ConfigurationValue, path: String = "", origin
                                                   origins: origins, sources: sources)
         }
         if object["type"] == .string("image"), case let .string(file) = object["path"],
-           let source = origins["\(path).path"],
-           let directory = sources.first(where: { source == $0.key || source.hasPrefix($0.key + " (") || source.hasPrefix($0.key + " →") })?.value {
+           let source = origins["\(path).path"]?.file, let directory = sources[source] {
             result["path"] = .string(try packageFile(file, inside: directory).path)
         }
         return .object(result)

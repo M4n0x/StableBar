@@ -35,9 +35,9 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     #expect(dark.defaults.foreground == HexColor(0xeeeeeeff))
     #expect(dark.widgets[0].style.background == HexColor(0xeeeeeeff))
     #expect(dark.bar.height == 32)
-    #expect(loader.origins["widgets.status.main.style.fontSize"]?.contains("template base") == true)
-    #expect(loader.origins["widgets.status.main.style.background"]?.contains("widget override") == true)
-    #expect(loader.origins["widgets.status.main.style.background"]?.contains("token foreground") == true)
+    #expect(loader.origins["widgets.status.main.style.fontSize"]?.description.contains("template base") == true)
+    #expect(loader.origins["widgets.status.main.style.background"]?.description.contains("widget override") == true)
+    #expect(loader.origins["widgets.status.main.style.background"]?.description.contains("token foreground") == true)
     #expect(loader.document["templates"] == nil)
     #expect(loader.document["widgetOverrides"] == nil)
 }
@@ -87,8 +87,8 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     #expect(configuration.defaults.fontSize == 16)
     #expect(configuration.widgets[0].position == .center)
     #expect(loader.document["customization"] == nil)
-    #expect(loader.origins["widgets.clock.position"]?.contains("customization") == true)
-    #expect(loader.origins["bar.height"]?.contains("customization") == true)
+    #expect(loader.origins["widgets.clock.position"]?.description.contains("customization") == true)
+    #expect(loader.origins["bar.height"]?.description.contains("customization") == true)
 }
 
 @Test func customizationForInactiveProfileWidgetsStaysDormant() throws {
@@ -128,7 +128,7 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     """#.utf8))
     #expect(configuration.widgets[0].content == .script(command: "printf '@token.word'", interval: 30))
     #expect(configuration.widgets[0].style.fontSize == 17)
-    #expect(loader.origins["widgets.script.style.fontSize"]?.contains("token style") == true)
+    #expect(loader.origins["widgets.script.style.fontSize"]?.description.contains("token style") == true)
 }
 
 @Test func removalsAndOrderingPreserveImportedDefinitions() throws {
