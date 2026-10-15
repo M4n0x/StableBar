@@ -632,3 +632,13 @@ After the tests pass on `main`, [semantic-release](https://github.com/semantic-r
 | `build:`, `chore:`, `ci:`, `docs:`, `refactor:`, `style:`, `test:` | None |
 
 A release sets `CFBundleShortVersionString` and `CFBundleVersion` in [Resources/Info.plist](Resources/Info.plist) with `scripts/set-version.sh`, adds its notes to `CHANGELOG.md`, commits both as `chore(release): <version>`, tags `v<version>` and publishes the notes as a GitHub release.
+
+## Agent skills
+
+Skills for coding agents live in [.agents/skills](.agents/skills), one folder per skill with a `SKILL.md`. Codex reads that directory, and `.claude/skills` links to it for Claude Code. Invoke a skill by name (`/triage` in Claude Code, `$triage` in Codex) or describe the task and let the agent choose it.
+
+| Skill | Use |
+| --- | --- |
+| [triage](.agents/skills/triage/SKILL.md) | Checks a bug report or feature request against issues, pull requests, `main` and releases, and drafts a GitHub issue when nothing covers it. It posts only what you asked it to file or approved. |
+
+To add a skill, create `.agents/skills/<name>/SKILL.md` with `name` and `description` front matter.
