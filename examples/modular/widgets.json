@@ -1,0 +1,32 @@
+{
+  "widgets": [
+    {
+      "id": "status",
+      "template": "metric",
+      "position": "left",
+      "interval": null,
+      "events": ["demo"],
+      "icon": "bolt.circle",
+      "command": "printf '%s' \"${INFO:-$STATUS_TEXT}\"",
+      "onClick": "open \"$CONFIG_DIR/config.json\""
+    },
+    {
+      "id": "volume",
+      "template": "metric",
+      "icon": "speaker.wave.2",
+      "command": "osascript -e 'output volume of (get volume settings)'",
+      "onClick": "osascript -e 'set volume output muted not (output muted of (get volume settings))'",
+      "actions": {
+        "scrollUp": "osascript -e 'set volume output volume ((output volume of (get volume settings)) + 2)'",
+        "scrollDown": "osascript -e 'set volume output volume ((output volume of (get volume settings)) - 2)'"
+      }
+    },
+    {
+      "id": "clock",
+      "type": "clock",
+      "position": "right",
+      "format": "EEE HH:mm",
+      "onClick": "open -a Calendar"
+    }
+  ]
+}

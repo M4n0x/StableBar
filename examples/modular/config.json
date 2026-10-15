@@ -1,0 +1,14 @@
+{
+  "includes": ["theme.json", "widgets.json"],
+  "environment": {
+    "STATUS_TEXT": "Ready for events"
+  },
+  "widgetOverrides": {
+    "status": {
+      "style": { "width": 220 }
+    },
+    "volume": {
+      "enabled": false
+    }
+  }
+}

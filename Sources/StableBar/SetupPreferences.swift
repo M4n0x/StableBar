@@ -17,8 +17,14 @@ struct SetupPreferences: Equatable {
     var placement = Placement.current
     var clock = Clock.current
 
-    func applying(to data: Data, menuBarHeight: Double) throws -> Data {
-        _ = try JSONDecoder().decode(Configuration.self, from: data)
+    func applying(to data: Data, menuBarHeight: Double, configurationURL: URL? = nil) throws -> Data {
+        let configuration: Configuration
+        if let configurationURL {
+            var loader = ConfigurationLoader()
+            configuration = try loader.load(configurationURL, data: data)
+        } else {
+            configuration = try JSONDecoder().decode(Configuration.self, from: data)
+        }
         if self == SetupPreferences() { return data }
         var document = try JSONSerialization.jsonObject(with: data) as! [String: Any]
         if appearance != .current {
@@ -37,11 +43,13 @@ struct SetupPreferences: Equatable {
             document["bar"] = bar
         }
         if clock != .current {
-            var widgets = document["widgets"] as! [[String: Any]]
-            for index in widgets.indices where widgets[index]["type"] as? String == "clock" {
-                widgets[index]["format"] = clock == .twentyFourHour ? "EEE d MMM  HH:mm" : "EEE d MMM  h:mm a"
+            var overrides = document["widgetOverrides"] as? [String: [String: Any]] ?? [:]
+            for widget in configuration.widgets {
+                if case .clock = widget.content {
+                    overrides[widget.id, default: [:]]["format"] = clock == .twentyFourHour ? "EEE d MMM  HH:mm" : "EEE d MMM  h:mm a"
+                }
             }
-            document["widgets"] = widgets
+            document["widgetOverrides"] = overrides
         }
         return try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     }

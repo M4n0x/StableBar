@@ -150,7 +150,7 @@ enum WidgetContent: Equatable, Sendable {
     case activeApp
     case clock(format: String)
     case text(String)
-    case script(command: String, interval: Double)
+    case script(command: String, interval: Double?)
 }
 
 struct WidgetConfiguration: Decodable, Identifiable, Sendable {
@@ -169,10 +169,14 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let animation: WidgetAnimation?
     let workspace: WorkspaceConfiguration?
     let events: [String]
+    let environment: [String: String]
+    let timeout: Double
+    let actions: WidgetActions?
+    let enabled: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, position, type, icon, onClick, menu, popup, popupName, style, format, text, command, interval
-        case display, layout, overlay, animation, workspace, events
+        case display, layout, overlay, animation, workspace, events, environment, timeout, actions, enabled
     }
 
     init(from decoder: Decoder) throws {
@@ -191,14 +195,21 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
         animation = try values.decodeIfPresent(WidgetAnimation.self, forKey: .animation)
         workspace = try values.decodeIfPresent(WorkspaceConfiguration.self, forKey: .workspace)
         events = try values.decodeIfPresent([String].self, forKey: .events) ?? []
+        environment = try values.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
+        timeout = try values.decodeIfPresent(Double.self, forKey: .timeout) ?? 10
+        guard timeout > 0, timeout.isFinite else {
+            throw DecodingError.dataCorruptedError(forKey: .timeout, in: values, debugDescription: "A command timeout must be greater than zero and finite.")
+        }
+        actions = try values.decodeIfPresent(WidgetActions.self, forKey: .actions)
+        enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         switch try values.decode(String.self, forKey: .type) {
         case "aerospace": content = .workspaces
         case "activeApp": content = .activeApp
         case "clock": content = .clock(format: try values.decodeIfPresent(String.self, forKey: .format) ?? "EEE d MMM  HH:mm")
         case "text": content = .text(try values.decode(String.self, forKey: .text))
         case "script":
-            let interval = try values.decodeIfPresent(Double.self, forKey: .interval) ?? 30
-            guard interval > 0 else {
+            let interval = try values.contains(.interval) ? values.decodeIfPresent(Double.self, forKey: .interval) : 30
+            if let interval, interval <= 0 {
                 throw DecodingError.dataCorruptedError(forKey: .interval, in: values, debugDescription: "A script interval must be greater than zero.")
             }
             content = .script(command: try values.decode(String.self, forKey: .command), interval: interval)
@@ -244,14 +255,28 @@ struct Configuration: Decodable, Sendable {
     let defaults: WidgetStyle
     let widgets: [WidgetConfiguration]
     let popups: [String: PopupConfiguration]
+    let environment: [String: String]
 
-    enum CodingKeys: String, CodingKey { case bar, defaults, widgets, popups }
+    enum CodingKeys: String, CodingKey { case bar, defaults, widgets, popups, templates, widgetOverrides, environment }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         bar = try values.decodeIfPresent(BarSettings.self, forKey: .bar) ?? BarSettings()
         defaults = try values.decodeIfPresent(WidgetStyle.self, forKey: .defaults) ?? WidgetStyle()
-        widgets = try values.decode([WidgetConfiguration].self, forKey: .widgets)
+        let templates = try values.decodeIfPresent([String: [String: ConfigurationValue]].self, forKey: .templates) ?? [:]
+        let overrides = try values.decodeIfPresent([String: [String: ConfigurationValue]].self, forKey: .widgetOverrides) ?? [:]
+        for (id, properties) in overrides where properties["id"] != nil {
+            throw ConfigurationCompositionError.widgetOverrideID(id)
+        }
+        let definitions = try values.decode([[String: ConfigurationValue]].self, forKey: .widgets)
+        widgets = try definitions.map { definition in
+            var expanded = try expandWidgetTemplate(definition, templates: templates)
+            if let id = expanded["id"], let properties = overrides[try id.decoded(String.self)] {
+                expanded.merge(properties) { $1.overriding($0) }
+            }
+            return try JSONDecoder().decode(WidgetConfiguration.self, from: JSONEncoder().encode(expanded))
+        }
+        environment = try values.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
         popups = try values.decodeIfPresent([String: PopupConfiguration].self, forKey: .popups) ?? [:]
         var ids = Set<String>()
         for widget in widgets {
@@ -261,6 +286,9 @@ struct Configuration: Decodable, Sendable {
             guard ids.insert(widget.id).inserted else {
                 throw DecodingError.dataCorruptedError(forKey: .widgets, in: values, debugDescription: "Duplicate widget id: \(widget.id). Each widget needs a stable, unique id.")
             }
+        }
+        for id in overrides.keys where !ids.contains(id) {
+            throw ConfigurationCompositionError.unknownWidgetOverride(id)
         }
     }
 }

@@ -26,6 +26,34 @@ import Testing
     }
 }
 
+@Test func namedGraphsKeepOnlyTheLatestSixtySamples() throws {
+    let values = (0..<80).map { Double($0) / 100 }
+    let data = try JSONSerialization.data(withJSONObject: ["text": "History", "series": ["cpu": values]])
+    let output = try ScriptOutput.read(data)
+    #expect(output.series?["cpu"] == Array(values.suffix(60)))
+}
+
+@Test func progressClipsNumbersBeforeDrawingAndConvertingToPercent() {
+    #expect(progressFraction(0.4) == 0.4)
+    #expect(progressFraction(-10) == 0)
+    #expect(progressFraction(1e300) == 1)
+    #expect(progressFraction(.infinity) == 0)
+    #expect(progressFraction(.nan) == 0)
+}
+
+@Test func triggerArgumentsPreserveLiteralValuesWithoutShellExpansion() throws {
+    let command = try LaunchCommand(arguments: ["--trigger", "build", "INFO=hello = 'world' $(date)", "EMPTY="])
+    guard case let .trigger(name, environment) = command else {
+        Issue.record("Expected an event command.")
+        return
+    }
+    #expect(name == "build")
+    #expect(environment == ["INFO": "hello = 'world' $(date)", "EMPTY": ""])
+    for arguments in [["--trigger"], ["--trigger", "build", "INFO"], ["--trigger", "build", "=value"], ["--unknown"]] {
+        #expect(throws: CommandFailure.self) { try LaunchCommand(arguments: arguments) }
+    }
+}
+
 @Test func popupStylesInheritWidgetOverridesAndGlobalTheme() {
     let defaults = WidgetStyle(foreground: HexColor(0xeeeeeeff), background: HexColor(0x222222ff),
                                fontName: "Helvetica", fontSize: 12, paddingHorizontal: 7, width: 80)
@@ -213,4 +241,31 @@ import Testing
             to: Data(#"{"widgets":[{"id":"custom","type":"script","position":"left","command":"date","interval":0}]}"#.utf8),
             menuBarHeight: 24)
     }
+}
+
+@Test func setupOverridesImportedAndTemplatedClocksWithoutChangingModules() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let module = directory.appending(path: "clocks.json")
+    let moduleData = Data(#"{"widgets":[{"id":"imported","type":"clock","position":"right","format":"HH.mm"}],"widgetOverrides":{"local":{"format":"ss"}}}"#.utf8)
+    try moduleData.write(to: module)
+    let root = directory.appending(path: "config.json")
+    let data = Data(#"""
+    {
+      "includes": ["clocks.json"],
+      "templates": {"clock": {"type":"clock", "position":"left"}},
+      "widgets": [{"id":"local", "template":"clock"}],
+      "widgetOverrides": {"imported": {"style": {"fontSize": 15}}}
+    }
+    """#.utf8)
+    let updated = try SetupPreferences(clock: .twelveHour).applying(to: data, menuBarHeight: 24, configurationURL: root)
+    var loader = ConfigurationLoader()
+    let configuration = try loader.load(root, data: updated)
+    #expect(configuration.widgets.map(\.content) == [.clock(format: "EEE d MMM  h:mm a"), .clock(format: "EEE d MMM  h:mm a")])
+    #expect(configuration.widgets[0].style.fontSize == 15)
+    #expect(try Data(contentsOf: module) == moduleData)
+    let document = try JSONSerialization.jsonObject(with: updated) as! [String: Any]
+    #expect(document["includes"] as? [String] == ["clocks.json"])
+    #expect((document["widgets"] as! [[String: Any]]).count == 1)
 }

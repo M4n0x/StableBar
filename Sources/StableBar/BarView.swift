@@ -59,7 +59,7 @@ struct BarView: View {
 
     @ViewBuilder
     private func widgets(at position: WidgetPosition, in config: Configuration) -> some View {
-        ForEach(config.widgets.filter { $0.position == position }) { widget in
+        ForEach(config.widgets.filter { $0.enabled && $0.position == position }) { widget in
             let output = store.scripts[widget.id]?.output
             let activeID = store.aerospace.workspaces.first(where: \.isFocused)?.monitor ?? store.activeDisplayID
             if (output?.display ?? widget.display).includes(display, activeID: activeID) {
@@ -119,7 +119,7 @@ struct WidgetView: View {
                 } label: { content(appearance) }
                 .buttonStyle(.plain)
             } else if let command = output?.onClick ?? widget.onClick {
-                Button { store.runAction(command, widget: widget) } label: { content(appearance) }
+                Button { runAction(command, sender: "mouse.clicked", button: "left") } label: { content(appearance) }
                     .buttonStyle(.plain)
             } else {
                 content(appearance)
@@ -144,13 +144,31 @@ struct WidgetView: View {
                 block(overlay, style: style, fillsWidth: true).allowsHitTesting(false)
             }
         }
+        .overlay {
+            if let actions = widget.actions {
+                WidgetActionCapture(actions: actions, display: monitor) { command, context in
+                    store.runAction(command, widget: widget,
+                                    event: ScriptEvent(sender: context.sender, environment: context.environment))
+                }
+            }
+        }
         .offset(x: style.offsetX ?? 0, y: style.offsetY ?? 0)
         .opacity(style.opacity ?? 1)
         .background(PopupAnchor(view: popupAnchor, popup: store.popup))
-        .onHover { hovered = $0 }
+        .onHover { inside in
+            hovered = inside
+            if let command = inside ? widget.actions?.mouseEntered : widget.actions?.mouseExited {
+                runAction(command, sender: inside ? "mouse.entered" : "mouse.exited")
+            }
+        }
         .animation(reduceMotion ? nil : animation.value, value: hovered)
         .animation(reduceMotion ? nil : animation.value, value: style)
         .accessibilityIdentifier(widget.id)
+    }
+
+    private func runAction(_ command: String, sender: String, button: String? = nil) {
+        let context = WidgetActionContext(sender: sender, button: button, modifiers: NSEvent.modifierFlags, display: monitor)
+        store.runAction(command, widget: widget, event: ScriptEvent(sender: sender, environment: context.environment))
     }
 
     @ViewBuilder
@@ -223,7 +241,7 @@ struct WidgetView: View {
                               menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
                               targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
                               series: script?.output.series ?? [:],
-                              fillsWidth: fillsWidth) { store.runAction($0, widget: widget) }
+                              fillsWidth: fillsWidth) { runAction($0, sender: "mouse.clicked", button: "left") }
     }
 
     private func label(_ text: String, icon: String?, appearance: WidgetAppearance) -> some View {

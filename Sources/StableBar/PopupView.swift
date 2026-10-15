@@ -200,16 +200,20 @@ struct ProgressRule: View {
         }
         .task(id: ProgressUpdate(value: value, target: target, animation: animation, reduceMotion: reduceMotion)) {
             if let target, !reduceMotion {
-                withAnimation(nil) { fraction = value }
+                withAnimation(nil) { fraction = progressFraction(value) }
                 await Task.yield()
-                if !Task.isCancelled { withAnimation(animation.value) { fraction = target } }
+                if !Task.isCancelled { withAnimation(animation.value) { fraction = progressFraction(target) } }
             } else {
-                withAnimation(reduceMotion ? nil : animation.value) { fraction = value }
+                withAnimation(reduceMotion ? nil : animation.value) { fraction = progressFraction(value) }
             }
         }
         .accessibilityLabel("Progress")
-        .accessibilityValue("\(Int(value * 100)) percent")
+        .accessibilityValue("\(Int(progressFraction(value) * 100)) percent")
     }
+}
+
+func progressFraction(_ value: Double) -> Double {
+    value.isFinite ? min(max(value, 0), 1) : 0
 }
 
 private struct ProgressUpdate: Equatable {
@@ -239,12 +243,18 @@ struct WidgetImage: View {
             error = ""
             if path.isEmpty { return }
             do {
-                let data: Data
-                if path.hasPrefix("https://") || path.hasPrefix("http://") {
-                    data = try await URLSession.shared.data(from: URL(string: path)!).0
+                let url: URL
+                if path.hasPrefix("https://") || path.hasPrefix("http://") || path.hasPrefix("file://") {
+                    guard let source = URL(string: path) else { throw URLError(.badURL) }
+                    url = source
                 } else {
-                    let url = path.hasPrefix("file://") ? URL(string: path)! : URL(filePath: NSString(string: path).expandingTildeInPath)
+                    url = URL(filePath: NSString(string: path).expandingTildeInPath)
+                }
+                let data: Data
+                if url.isFileURL {
                     data = try await Task.detached { try Data(contentsOf: url) }.value
+                } else {
+                    data = try await URLSession.shared.data(from: url).0
                 }
                 try Task.checkCancellation()
                 image = NSImage(data: data)

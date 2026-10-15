@@ -54,7 +54,7 @@ StableBar sits at the top edge of each display. `bar.offset` moves it down from 
 
 ## Layout and style
 
-Save the configuration to apply changes. Direct saves and atomic file replacements are watched. Invalid edits retain the last working configuration and show an error indicator. Script instances survive style-only changes.
+Save the configuration to apply changes. Direct saves and atomic file replacements are watched, including files imported with `includes`. Invalid edits retain the last working configuration and show an error indicator. Script instances, their last output, and graph history survive style-only changes, including when a script has an error.
 
 - `bar`: `height`, `offset`, `inset`, `spacing`, `background`, `animationDuration` (seconds).
 - `defaults`: styles inherited by every widget.
@@ -63,6 +63,56 @@ Save the configuration to apply changes. Direct saves and atomic file replacemen
 - Colors: `#RRGGBB` or `#RRGGBBAA` (alpha last).
 - Icons: SF Symbols names.
 - Measurements: points.
+
+### Modules, templates and overrides
+
+Split a setup into JSON files and load them from the main configuration:
+
+```json
+{
+  "includes": ["theme.json", "widgets/system.json", "widgets/music.json"],
+  "environment": { "PLAYER": "Spotify" },
+  "widgetOverrides": {
+    "clock": { "format": "EEE HH:mm", "style": { "fontSize": 14 } },
+    "music": { "enabled": false }
+  }
+}
+```
+
+Include paths are relative to the file that names them; absolute paths and `~` also work. Includes can have their own includes. Files apply in listed order, followed by the containing file. Objects merge recursively, with later values winning. Arrays replace earlier arrays, except the top-level `widgets` arrays, which concatenate in order. Modules can contain only a theme, templates, popups, environment variables, or overrides; they do not need widgets.
+
+Define reusable widget properties in `templates`, then select one with `template`:
+
+```json
+{
+  "templates": {
+    "metric": {
+      "type": "script", "position": "right", "interval": 30, "timeout": 5,
+      "style": { "fontSize": 12, "paddingHorizontal": 10 }
+    },
+    "eventMetric": { "template": "metric", "interval": null }
+  },
+  "widgets": [
+    {
+      "id": "build", "template": "eventMetric", "events": ["build_finished"],
+      "command": "printf '%s' \"${INFO:-Waiting for a build}\""
+    }
+  ]
+}
+```
+
+Widget properties override their template recursively. `widgetOverrides` applies last, by widget ID, so you can customize imported widgets without editing shared files. Set `enabled` to `false` to hide a widget and stop its script and event subscriptions. Set it back to `true` to restore it. Use `null` to clear an inherited optional property, such as `popup` or `interval`. Overrides must not contain an `id` field. Duplicate widget IDs, unknown override targets, include cycles, and missing or cyclic templates referenced by widgets reject the whole edit.
+
+Included files are watched even outside the main directory. A missing module or directory is watched for repair; the last working bar remains visible meanwhile. Setup writes clock choices into the main file's overrides, preserving imported files.
+
+[examples/modular](examples/modular/config.json) is a complete, dependency-free starter with a theme, template, event-only status, and an optional volume widget. Try it without replacing your personal configuration:
+
+```sh
+./dist/StableBar.app/Contents/MacOS/StableBar --validate examples/modular/config.json
+./dist/StableBar.app/Contents/MacOS/StableBar --config examples/modular/config.json
+```
+
+From another terminal, run `./dist/StableBar.app/Contents/MacOS/StableBar --trigger demo 'INFO=Build finished'`. The status changes to the supplied text. Enable the sample volume widget through its override to use click-to-mute and scroll-to-adjust.
 
 Each widget can override any of these styles:
 
@@ -138,15 +188,57 @@ For a sliding underline, set `workspace.indicator` to `underline`, `workspace.st
 
 ### Script events
 
-Add `events` to a script widget to refresh it on named events, alongside its interval. `frontApp`, `workspace` and `wake` are emitted by StableBar. Other names subscribe to macOS distributed notifications, for example `com.spotify.client.PlaybackStateChanged`.
+Add `events` to a script widget to refresh it on named events, alongside its interval. Set `"interval": null` to run once at startup and then only on events or after a click action. Omitting the interval keeps the default 30-second polling. Numeric intervals must be greater than zero. `frontApp`, `workspace` and `wake` are emitted by StableBar. Other names subscribe to macOS distributed notifications, for example `com.spotify.client.PlaybackStateChanged`.
 
 External hooks can trigger an event without launching another bar:
 
 ```sh
 /path/to/StableBar.app/Contents/MacOS/StableBar --trigger aerospace_mode_change
+/path/to/StableBar.app/Contents/MacOS/StableBar --trigger build_finished 'INFO=Build passed' STATUS=success
 ```
 
-Use that event name in the widget's `events`. Scripts re-read their data source; notification payloads are not passed to the shell. Script output can also set `onClick` for a state-dependent click action; popups and menus still take precedence. Named graph data goes in `series`, a dictionary of arrays with up to 60 samples per graph.
+Use that event name in the widget's `events`. Extra `KEY=VALUE` arguments become environment variables, preserving spaces, quotes and equals signs as data. Events finish the currently running update and coalesce pending refreshes to the latest event and payload. A widget never runs overlapping update commands. This queue is intended for refreshing current state, not recording every event.
+
+Commands inherit the app's environment, then top-level `environment`, then the widget's `environment`, then event data. Values must be strings. StableBar supplies these variables:
+
+| Variable | Value |
+| --- | --- |
+| `NAME` | Widget ID; event data cannot replace it |
+| `CONFIG_DIR` | Directory containing the main configuration; event data cannot replace it |
+| `STABLEBAR_SCRIPTS` | Bundled widget script directory |
+| `SENDER` | `startup`, `routine`, the subscribed event name, `action` after an action completes, or a mouse event below |
+| `INFO` | Explicit trigger value; front-app name for `frontApp`; focused workspace name for `workspace`; otherwise the distributed notification's JSON payload when available |
+| `SID` | Display number for pointer actions and workspace events |
+| `BUTTON` | `left`, `right` or `middle` for widget mouse clicks |
+| `MODIFIER` | Space-separated `shift`, `ctrl`, `alt`, `cmd`, `fn` for pointer actions |
+| `SCROLL_DELTA` | Signed vertical scroll delta for scroll actions |
+
+Script output can also set `onClick` for a state-dependent click action; popups and menus still take precedence. Named graph data goes in `series`, a dictionary of arrays; only the latest 60 samples of each graph are retained.
+
+### Mouse actions
+
+Keep `onClick` for the primary action. Add `actions` to any widget for additional controls:
+
+```json
+"actions": {
+  "rightClick": "open -a 'System Settings'",
+  "middleClick": "open -a 'Activity Monitor'",
+  "scrollUp": "\"$CONFIG_DIR/volume.sh\" up",
+  "scrollDown": "\"$CONFIG_DIR/volume.sh\" down",
+  "mouseEntered": "\"$CONFIG_DIR/hover.sh\" enter",
+  "mouseExited": "\"$CONFIG_DIR/hover.sh\" exit"
+}
+```
+
+These commands receive `SENDER=mouse.clicked`, `mouse.scrolled`, `mouse.entered` or `mouse.exited`. Scroll direction follows the signed native vertical delta. Only configured mouse actions intercept input; an unconfigured right click opens the bar's management menu. Actions run in order per widget, while other widgets remain independent. Successful actions refresh the same script instance with `SENDER=action`. Quitting cancels running and queued actions.
+
+### Command-line controls
+
+- `--config PATH`: launch with a separate configuration, including its modules.
+- `--validate [PATH]`: load and validate without opening a bar or executing scripts; exits nonzero on errors. Defaults to your personal config.
+- `--trigger EVENT [KEY=VALUE ...]`: notify running bars subscribed to that event.
+- `--reload`: ask running bars to reload their configuration.
+- `--help`: print usage. Invalid arguments exit with an error instead of launching another bar.
 
 ## Built-in widgets
 
@@ -156,7 +248,7 @@ Use that event name in the widget's `events`. Scripts re-read their data source;
 | `activeApp` | Frontmost app name and icon | — |
 | `clock` | Local date/time, updated each minute | `format`: DateFormatter format |
 | `text` | Static text and optional icon | `text` |
-| `script` | Output of a shell command | `command`, `interval` in seconds, greater than zero |
+| `script` | Output of a shell command | `command`, `interval` in seconds or `null` for event-only updates |
 
 The AeroSpace connection subscribes to workspace, monitor, window and focus events. It loads an initial snapshot, coalesces pending events and reconnects after a disconnect. The accent color marks the focused workspace; an outline marks a workspace visible on another monitor. Empty, inactive workspaces are hidden. App icons are deduplicated per workspace. Active-app updates come from NSWorkspace notifications. The clock updates once a minute.
 
@@ -211,7 +303,11 @@ Return plain text, or one JSON object:
 - `fields`: named display strings for popup field blocks.
 - `lists`: named arrays of objects containing display strings for popup list blocks.
 
-A nonzero exit or invalid JSON preserves the previous output and adds a warning with the error in its tooltip. Scripts retry at their configured interval. A completed click action refreshes its script immediately. Commands must finish; do not start background daemons from widget scripts. `onClick` runs only when clicked.
+A nonzero exit, timeout, excessive output or invalid JSON preserves the previous output and adds a warning with the error in its tooltip. Polling scripts retry at their configured interval; event-only scripts retry on their next event or action. A completed click action requests an immediate refresh. `onClick` runs only when clicked.
+
+Commands have a 10-second timeout by default. Set a widget's `timeout` to another positive number of seconds; it applies to both updates and actions. Stdout and stderr are each limited to 1 MiB. Successful stderr logging does not corrupt the widget's stdout JSON. Failures display stderr, stdout, or the exit status when neither contains a message.
+
+Commands must finish; do not start background daemons from widget scripts. Timeout, cancellation, and shutdown kill the command's process group and direct process. A descendant that deliberately starts another session or process group can outlive it, but cannot hold the widget's output pipe open past its timeout.
 
 ## Custom popups
 

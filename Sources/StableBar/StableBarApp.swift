@@ -4,16 +4,32 @@ import SwiftUI
 @main
 struct StableBarApp {
     @MainActor static func main() {
-        if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--trigger" {
-            DistributedNotificationCenter.default().postNotificationName(
-                Notification.Name(CommandLine.arguments[2]), object: nil, userInfo: nil, deliverImmediately: true)
-            return
+        do {
+            switch try LaunchCommand(arguments: Array(CommandLine.arguments.dropFirst())) {
+            case let .trigger(event, environment):
+                DistributedNotificationCenter.default().postNotificationName(
+                    Notification.Name(event), object: nil, userInfo: environment, deliverImmediately: true)
+            case .reload:
+                DistributedNotificationCenter.default().postNotificationName(
+                    LaunchCommand.reloadNotification, object: nil, userInfo: nil, deliverImmediately: true)
+            case let .validate(url):
+                var loader = ConfigurationLoader()
+                let configuration = try loader.load(url)
+                print("Valid configuration: \(configuration.widgets.count) widgets in \(loader.dependencies.count) files.")
+            case .help:
+                print(LaunchCommand.usage)
+            case let .run(url):
+                let app = NSApplication.shared
+                let delegate = AppDelegate(configurationURL: url)
+                app.delegate = delegate
+                app.setActivationPolicy(.accessory)
+                withExtendedLifetime(delegate) { app.run() }
+            }
+        } catch {
+            let message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+            FileHandle.standardError.write(Data("\(message)\n".utf8))
+            exit(1)
         }
-        let app = NSApplication.shared
-        let delegate = AppDelegate()
-        app.delegate = delegate
-        app.setActivationPolicy(.accessory)
-        withExtendedLifetime(delegate) { app.run() }
     }
 }
 
@@ -29,10 +45,15 @@ final class BarPanel: NSPanel {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private let store = BarStore()
+    private let store: BarStore
     private let setup = SetupWindow()
     private var panels: [CGDirectDisplayID: BarPanel] = [:]
     private var statusItem: NSStatusItem!
+
+    init(configurationURL: URL) {
+        store = BarStore(configurationURL: configurationURL)
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -52,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func screensChanged() {
         store.popup.close()
         updatePanels()
-        if store.configuration?.widgets.contains(where: { $0.content == .workspaces || $0.display == .active }) == true {
+        if store.configuration?.widgets.contains(where: { $0.enabled && ($0.content == .workspaces || $0.display == .active) }) == true {
             store.aerospace.start()
         }
     }

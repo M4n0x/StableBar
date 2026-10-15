@@ -1,0 +1,27 @@
+{
+  "bar": {
+    "height": 36,
+    "offset": 32,
+    "spacing": 6
+  },
+  "defaults": {
+    "background": "#18212ded",
+    "foreground": "#e4edf7",
+    "accent": "#8bd5ca",
+    "hoverBackground": "#29384b",
+    "cornerRadius": 6,
+    "fontSize": 12
+  },
+  "templates": {
+    "metric": {
+      "type": "script",
+      "position": "right",
+      "interval": 30,
+      "timeout": 5,
+      "style": {
+        "fontWeight": "medium",
+        "paddingHorizontal": 10
+      }
+    }
+  }
+}
