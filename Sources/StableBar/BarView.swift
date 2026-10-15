@@ -22,6 +22,10 @@ struct BarView: View {
                 let activeID = store.aerospace.workspaces.first(where: \.isFocused)?.monitor ?? store.activeDisplayID
                 let widgets = config.widgets.filter { widget in
                     let output = store.scripts[widget.id]?.output
+                    if widget.content == .workspaces && widget.layout == nil && store.aerospace.error == nil
+                        && store.aerospace.workspaces(on: display.id, showEmpty: widget.workspace?.showEmpty == true).isEmpty {
+                        return false
+                    }
                     return widget.enabled && (output?.display ?? widget.display).includes(display, activeID: activeID)
                         && (output?.hidden != true || store.scripts[widget.id]?.error != nil)
                 }
@@ -416,9 +420,7 @@ struct WorkspaceView: View {
     @State private var hoveredWorkspace: String?
 
     var body: some View {
-        let workspaces = aerospace.workspaces.filter {
-            $0.monitor == monitor && (configuration?.showEmpty == true || $0.isVisible || !$0.apps.isEmpty)
-        }
+        let workspaces = aerospace.workspaces(on: monitor, showEmpty: configuration?.showEmpty == true)
         let indicator = configuration?.indicator ?? .background
         let indicatorStyle = configuration?.indicatorStyle ?? WidgetStyle()
         HStack(spacing: appearance.spacing) {
@@ -487,6 +489,7 @@ struct WorkspaceView: View {
                 Image(systemName: "exclamationmark.triangle").help(error)
             }
         }
+        .fixedSize(horizontal: true, vertical: false)
         .animation(reduceMotion ? nil : (animation?.value ?? .smooth(duration: animationDuration)), value: workspaces)
     }
 }

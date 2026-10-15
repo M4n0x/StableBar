@@ -58,6 +58,12 @@ final class AeroSpace {
     private var task: Task<Void, Never>?
     private var process: Process?
 
+    func workspaces(on monitor: Int, showEmpty: Bool) -> [Workspace] {
+        workspaces.filter {
+            $0.monitor == monitor && (showEmpty || $0.isVisible || !$0.apps.isEmpty)
+        }
+    }
+
     func start() {
         stop()
         task = Task {
