@@ -30,6 +30,7 @@ final class BarPanel: NSPanel {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let store = BarStore()
+    private let setup = SetupWindow()
     private var panels: [CGDirectDisplayID: BarPanel] = [:]
     private var statusItem: NSStatusItem!
 
@@ -41,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
         store.onConfigurationChange = { [weak self] in self?.updatePanels() }
         store.start()
+        if !UserDefaults.standard.bool(forKey: "setupCompleted") { showSetup() }
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(woke),
@@ -101,6 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         menu.addItem(withTitle: "StableBar", action: nil, keyEquivalent: "")
         menu.addItem(.separator())
+        addItem("Set up StableBar…", action: #selector(showSetup), to: menu)
         addItem("Open configuration…", action: #selector(openConfiguration), to: menu)
         addItem("Reload configuration", action: #selector(reloadConfiguration), to: menu)
         addItem("Reconnect AeroSpace", action: #selector(reconnect), to: menu)
@@ -117,10 +120,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.target = self
     }
 
+    @objc func showSetup() { setup.show(store: store) }
     @objc private func openConfiguration() { store.openConfiguration() }
     @objc private func reloadConfiguration() { store.reloadConfiguration() }
     @objc private func reconnect() { store.aerospace.start() }
     @objc private func quit() { NSApp.terminate(nil) }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showSetup()
+        return false
+    }
 
     func applicationWillTerminate(_ notification: Notification) {
         store.stop()

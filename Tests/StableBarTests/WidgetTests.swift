@@ -167,3 +167,50 @@ import Testing
     #expect(script.output.text == "Ready")
     #expect(script.error == "A script interval must be greater than zero.")
 }
+
+@Test func setupKeepsUntouchedConfigurationByteForByte() throws {
+    let data = Data(#"{ "widgets": [{"id":"time","type":"clock","position":"right","format":"HH.mm"}], "custom": true }"#.utf8)
+    #expect(try SetupPreferences().applying(to: data, menuBarHeight: 38) == data)
+}
+
+@Test func setupChangesOnlySelectedSettingsAndPreservesCustomWidgets() throws {
+    let data = Data(##"""
+    {
+      "bar": {"height": 48, "offset": 12, "notchSpacing": 20},
+      "defaults": {"fontName": "Helvetica", "accent": "#ff8800", "paddingHorizontal": 15},
+      "widgets": [
+        {"id": "time", "type": "clock", "position": "right", "format": "HH.mm", "style": {"foreground": "#abcdef"}},
+        {"id": "custom", "type": "script", "position": "left", "command": "~/my-widget.sh", "interval": 12,
+         "layout": {"type": "field", "field": "text"}, "events": ["wake"], "futureSetting": true}
+      ],
+      "futureRoot": {"enabled": true}
+    }
+    """##.utf8)
+    let preferences = SetupPreferences(appearance: .dark, placement: .belowMenuBar, clock: .twelveHour)
+    let updated = try preferences.applying(to: data, menuBarHeight: 38)
+    let configuration = try JSONDecoder().decode(Configuration.self, from: updated)
+    #expect(configuration.bar.offset == 38)
+    #expect(configuration.bar.height == 48)
+    #expect(configuration.bar.notchSpacing == 20)
+    #expect(configuration.defaults.foreground == HexColor(0xf5f5f7ff))
+    #expect(configuration.defaults.fontName == "Helvetica")
+    #expect(configuration.defaults.accent == HexColor(0xff8800ff))
+    #expect(configuration.widgets[0].content == .clock(format: "EEE d MMM  h:mm a"))
+    #expect(configuration.widgets[0].style.foreground == HexColor(0xabcdefff))
+    let original = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    let result = try JSONSerialization.jsonObject(with: updated) as! [String: Any]
+    #expect((original["widgets"] as! [NSDictionary])[1] == (result["widgets"] as! [NSDictionary])[1])
+    #expect(original["futureRoot"] as! NSDictionary == result["futureRoot"] as! NSDictionary)
+    let clockOnly = try SetupPreferences(clock: .twentyFourHour).applying(to: updated, menuBarHeight: 24)
+    let clockResult = try JSONSerialization.jsonObject(with: clockOnly) as! [String: Any]
+    #expect(clockResult["defaults"] as! NSDictionary == result["defaults"] as! NSDictionary)
+    #expect(clockResult["bar"] as! NSDictionary == result["bar"] as! NSDictionary)
+}
+
+@Test func setupRejectsInvalidConfigurationBeforeEditing() {
+    #expect(throws: DecodingError.self) {
+        try SetupPreferences(appearance: .dark).applying(
+            to: Data(#"{"widgets":[{"id":"custom","type":"script","position":"left","command":"date","interval":0}]}"#.utf8),
+            menuBarHeight: 24)
+    }
+}

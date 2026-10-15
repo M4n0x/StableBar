@@ -29,7 +29,10 @@ final class BarStore: NSObject {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             if !FileManager.default.fileExists(atPath: configurationURL.path) {
                 let template = Bundle.main.url(forResource: "config", withExtension: "json")!
-                try FileManager.default.copyItem(at: template, to: configurationURL)
+                let data = try SetupPreferences(placement: .belowMenuBar).applying(
+                    to: Data(contentsOf: template),
+                    menuBarHeight: max(NSStatusBar.system.thickness, NSScreen.main?.safeAreaInsets.top ?? 0))
+                try data.write(to: configurationURL, options: .atomic)
             }
             directoryWatch = watch(directory)
             reloadConfiguration()

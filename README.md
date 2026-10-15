@@ -4,6 +4,14 @@ A native, configurable macOS bar built with Swift, AppKit and SwiftUI. One persi
 
 The default configuration includes a System Settings shortcut, the active app and a clock. It needs no accounts, network services or third-party tools. Optional shell widgets use a plain-text or JSON output protocol.
 
+## Install and set up
+
+Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, light or dark widgets, placement, clock format, and opening at login. Setup is also available from the menu-bar icon or by right-clicking the bar.
+
+The starter bar needs no special permissions. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. AeroSpace manages its own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
+
+Appearance choices update global widget colors; individual widget styles still take precedence. Setup preserves custom widgets, scripts, and other settings. Closing setup leaves it available on the next launch. New configurations place the bar below the macOS menu bar; existing configurations retain their position.
+
 ## Build and run
 
 Requires macOS 14+ and Xcode's Swift 6 toolchain. Optional workspace widgets require AeroSpace 0.21+ at `/opt/homebrew/bin/aerospace`.
@@ -21,7 +29,24 @@ For development checks:
 swift test
 ```
 
-The first launch copies [Resources/config.json](Resources/config.json) to `~/.config/stablebar/config.json`. Subsequent launches keep your file. Right-click the bar or use its macOS menu-bar icon to open the configuration, reload it, reconnect AeroSpace or quit.
+The first launch creates `~/.config/stablebar/config.json` from [Resources/config.json](Resources/config.json), with an offset for your menu bar. Subsequent launches keep your file. Right-click the bar or use its macOS menu-bar icon to open the configuration, reload it, reconnect AeroSpace or quit.
+
+### Build an installer
+
+```sh
+./scripts/package.sh
+```
+
+This creates `dist/StableBar.dmg` with the app and an Applications shortcut. It builds in a temporary directory, leaving a running `dist/StableBar.app` untouched. The app and installer target the build Mac's processor family.
+
+Local builds are ad-hoc signed. For public distribution without an unidentified-developer warning, use a Developer ID Application certificate and a saved `notarytool` keychain profile:
+
+```sh
+SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
+NOTARY_PROFILE='stablebar-notary' ./scripts/package.sh
+```
+
+The script signs with the hardened runtime, submits the DMG to Apple, then staples and validates its notarization ticket. See [Apple's notarization guide](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) for certificate and keychain-profile setup. A local DMG is suitable for development; building it alone does not make it a notarized release.
 
 Keep personal settings in `~/.config/stablebar/config.json` and personal scripts in `~/.config/stablebar/widgets/`, outside the repository. Point commands directly at those scripts. `Resources/config.json` is the shared starter configuration; rebuilding the app does not overwrite your personal file. Local scripts should load any supporting files from their own directory. `$STABLEBAR_SCRIPTS` always refers to the bundled scripts.
 

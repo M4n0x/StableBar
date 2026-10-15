@@ -44,6 +44,7 @@ struct BarView: View {
         }
         .contextMenu {
             Text("StableBar")
+            Button("Set up StableBar…") { NSApp.sendAction(#selector(AppDelegate.showSetup), to: NSApp.delegate, from: nil) }
             Button("Open configuration…") { store.openConfiguration() }
             Button("Reload configuration") { store.reloadConfiguration() }
             Button("Reconnect AeroSpace") { store.aerospace.start() }
