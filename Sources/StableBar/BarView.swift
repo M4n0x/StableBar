@@ -215,7 +215,7 @@ private struct BarUnitView: View {
 @MainActor
 private func widgetPopup(_ widget: WidgetConfiguration, store: BarStore) -> PopupConfiguration? {
     if let popup = widget.popup { return popup }
-    if let name = widget.popupName { return store.configuration!.popups[name]! }
+    if let name = widget.popupName { return store.configuration?.popups[name] }
     if let menu = store.scripts[widget.id]?.output.menu ?? widget.menu, !menu.isEmpty {
         return PopupConfiguration(
             style: WidgetStyle(fontSize: 12, paddingHorizontal: 12, paddingVertical: 12, spacing: 4),
