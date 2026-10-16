@@ -400,7 +400,28 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     #expect(typeNames("provider") == Set(registry.types.map(\.name)))
     #expect(typeNames("widget") == Set(["aerospace", "workspaces", "activeApp", "clock", "text", "script", "provider", "spacer"]
         + registry.types.filter(\.isNative).map(\.name)))
-    #expect(registry.types.allSatisfy { Set($0.settings + $0.optionalSettings).isSubset(of: ProviderConfiguration.CodingKeys.allCases) })
+    // Each optional setting has a value of its type, which sets it, and one of another type, which the decoder rejects.
+    let samples: [ProviderConfiguration.CodingKeys: (valid: String, invalid: String)] = [
+        .calendars: (#"["Work"]"#, #""Work""#), .lookahead: ("12", #""12""#), .soon: ("10", #""10""#), .now: ("2", #""2""#)
+    ]
+    #expect(Set(registry.types.flatMap(\.optionalSettings)) == Set(samples.keys))
+    for type in registry.types {
+        let decoded = try? JSONDecoder().decode(ProviderConfiguration.self, from: Data(#"{"type":"\#(type.name)"}"#.utf8))
+        #expect((decoded != nil) == type.settings.isEmpty, "\(type.name)")
+        if let decoded { #expect(decoded == ProviderConfiguration(type: type.name), "\(type.name)") }
+        for setting in type.optionalSettings {
+            let values = try #require(samples[setting])
+            func provider(_ value: String) throws -> ProviderConfiguration {
+                try JSONDecoder().decode(ProviderConfiguration.self,
+                                         from: Data(#"{"type":"\#(type.name)","\#(setting.stringValue)":\#(value)}"#.utf8))
+            }
+            #expect(try provider(values.valid) != ProviderConfiguration(type: type.name), "\(type.name).\(setting.stringValue)")
+            #expect(throws: (any Error).self, "\(type.name).\(setting.stringValue)") { try provider(values.invalid) }
+        }
+    }
+    // As before the registry, other types accept these settings too; only the type that lists them reads them.
+    #expect(try JSONDecoder().decode(ProviderConfiguration.self, from: Data(#"{"type":"system","calendars":["Work"],"soon":10}"#.utf8))
+        .type == "system")
 }
 
 @Test func unknownSourceTypesNameTheirPath() throws {
