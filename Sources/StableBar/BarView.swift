@@ -16,7 +16,7 @@ struct BarView: View {
                     store.scripts[widget.id]?.output.barStyle?.inheriting(style) ?? style
                 }
                 let notch = display.notch.map { range in
-                    let range = (range.lowerBound / scale)...(range.upperBound / scale)
+                    let range: ClosedRange<CGFloat> = ((range.lowerBound - config.bar.margin) / scale)...((range.upperBound - config.bar.margin) / scale)
                     return config.bar.notchWidth.map { width in
                         let center = (range.lowerBound + range.upperBound) / 2
                         return (center - width / 2)...(center + width / 2)
@@ -107,6 +107,7 @@ struct BarView: View {
                         .help("\(error)\nClick to open Customize StableBar.")
                     }
                 }
+                .padding(config.bar.margin)
                 .animation(reduceMotion ? nil : .easeOut(duration: config.bar.animationDuration), value: style)
             }
         }
@@ -150,7 +151,7 @@ struct BarView: View {
                         } else {
                             Button(overflowTitle(widget)) {
                                 if let popup {
-                                    store.popup.toggle(popup, widget: widget, defaults: config.defaults, store: store, anchor: overflowAnchor)
+                                    store.popup.toggle(popup, widget: widget, defaults: config.popupDefaults.inheriting(config.defaults), store: store, anchor: overflowAnchor)
                                 } else if let command {
                                     store.runAction(command, widget: widget,
                                                     event: ScriptEvent(sender: "mouse.clicked", environment: ["BUTTON": "left", "SID": String(display.id)]))
@@ -209,7 +210,7 @@ private struct BarUnitView: View {
             let style = unit.style ?? WidgetStyle()
             HStack(spacing: style.spacing ?? config.bar.spacing) {
                 ForEach(unit.widgets) { widget in
-                    WidgetView(widget: widget, defaults: config.defaults, store: store,
+                    WidgetView(widget: widget, defaults: config.defaults, popupDefaults: config.popupDefaults, store: store,
                                monitor: display, animationDuration: config.bar.animationDuration)
                 }
             }
@@ -242,6 +243,7 @@ private func widgetPopup(_ widget: WidgetConfiguration, store: BarStore) -> Popu
 struct WidgetView: View {
     let widget: WidgetConfiguration
     let defaults: WidgetStyle
+    let popupDefaults: WidgetStyle
     let store: BarStore
     let monitor: Int
     let animationDuration: Double
@@ -277,7 +279,7 @@ struct WidgetView: View {
         Group {
             if let popup = widgetPopup(widget, store: store) {
                 Button {
-                    store.popup.toggle(popup, widget: widget, defaults: defaults, store: store, anchor: popupAnchor)
+                    store.popup.toggle(popup, widget: widget, defaults: popupDefaults.inheriting(defaults), store: store, anchor: popupAnchor)
                 } label: { tile }
                 .buttonStyle(.plain)
             } else if let command = output?.onClick ?? widget.onClick {

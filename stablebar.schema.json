@@ -31,6 +31,20 @@
         }
       ]
     },
+    "popupDefaults": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/style"
+        },
+        {
+          "$ref": "#/definitions/reference"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Styles every popup inherits. A popup's own style and its widget's style win; defaults fill the rest."
+    },
     "widgets": {
       "type": "array",
       "items": {
@@ -1066,6 +1080,10 @@
         },
         "offset": {
           "$ref": "#/definitions/number"
+        },
+        "margin": {
+          "$ref": "#/definitions/number",
+          "description": "Insets the bar's background and widgets on every side, in points."
         },
         "keepWindowsClear": {
           "$ref": "#/definitions/boolean",

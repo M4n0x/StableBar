@@ -74,8 +74,9 @@ Unknown properties are errors, so a misspelled key cannot be silently ignored. T
 "$schema": "https://raw.githubusercontent.com/Seb-GRAF/StableBar/main/stablebar.schema.json"
 ```
 
-- `bar`: `height`, `offset`, `inset`, `spacing`, `background`, `animationDuration` (seconds), `displayScale`, `appearance` (`light` or `dark` keeps the bar and its popups in that appearance; omit it to follow the system).
+- `bar`: `height`, `offset`, `margin`, `inset`, `spacing`, `background`, `animationDuration` (seconds), `displayScale`, `appearance` (`light` or `dark` keeps the bar and its popups in that appearance; omit it to follow the system).
 - `defaults`: styles inherited by every widget.
+- `popupDefaults`: styles inherited by every popup, over `defaults`.
 - `workspaceSource`: `aerospace` (default) or `yabai`, for workspace widgets and active-display tracking.
 - `widgets`: ordered widget definitions with unique `id`, `type`, `position` and optional `style`, `icon`, `onClick` or `open`, `menu`, `popup`.
 - `position`: `left`, `notchLeft`, `center`, `notchRight` or `right`.
@@ -258,7 +259,18 @@ StableBar shows `requires`, `permissions` and `hosts` but does not enforce them.
 
 ### Themes
 
-StableBar ships with four themes: **Built-in**, **Slate**, **Paper** and **Graphite**. Each has light and dark colors and follows the system's appearance, or the one `bar.appearance` sets. Choose one in setup or in **Customize → Appearance**, or select a theme that ships with StableBar by its ID:
+StableBar ships with eight themes. Each has light and dark colors and follows the system's appearance, or the one `bar.appearance` sets.
+
+| Theme | ID | Look |
+| --- | --- | --- |
+| **Built-in** | none | Each widget is its own floating tile. |
+| **Slate**, **Paper**, **Graphite** | `slate`, `paper`, `graphite` | Tiles in other colors and corners. |
+| **Menu Bar** | `menu-bar` | One full-width strip with plain widgets and a hairline, like the macOS menu bar. |
+| **Island** | `island` | One rounded bar that floats below the top edge and in from the sides, in Catppuccin colors. |
+| **Minimal** | `minimal` | No backgrounds: text with a soft shadow sits on the wallpaper. |
+| **Terminal** | `terminal` | Menlo, square corners and outlined widgets on a solid strip, in Gruvbox colors. |
+
+Choose one in setup or in **Customize → Appearance**, whose cards show each theme's bar, widgets and font, or select a theme that ships with StableBar by its ID:
 
 ```json
 { "theme": { "id": "slate" } }
@@ -266,7 +278,9 @@ StableBar ships with four themes: **Built-in**, **Slate**, **Paper** and **Graph
 
 Without `theme`, StableBar uses Built-in. Built-in also loads under every other theme, so a theme only needs what it changes: one that defines only tokens restyles widgets through Built-in's `defaults`, and anything it leaves out keeps Built-in's value.
 
-A theme is a package whose `package.json` sets `"kind": "theme"`. Its configuration can contain only `tokens`, `defaults`, `bar`, `groups` and `profiles`, plus includes inside the package. Widgets, templates, widget overrides, popups, providers, environment variables and any other key are rejected when the theme is reviewed, installed or loaded, so a theme runs no commands and needs no command review. The themes that ship with StableBar are in [Resources/themes](Resources/themes); [Slate](Resources/themes/slate/config.json) defines every token below. Give each color a light and a dark value, such as `{ "light": "#1f2329", "dark": "#e6e9ef" }`, instead of a dark profile.
+A theme is a package whose `package.json` sets `"kind": "theme"`. Its configuration can contain only `tokens`, `defaults`, `popupDefaults`, `bar`, `groups` and `profiles`, plus includes inside the package. Widgets, templates, widget overrides, popups, providers, environment variables and any other key are rejected when the theme is reviewed, installed or loaded, so a theme runs no commands and needs no command review. The themes that ship with StableBar are in [Resources/themes](Resources/themes); [Slate](Resources/themes/slate/config.json) defines every token below. Give each color a light and a dark value, such as `{ "light": "#1f2329", "dark": "#e6e9ef" }`, instead of a dark profile.
+
+A theme can change the whole look, not only its colors. [Menu Bar](Resources/themes/menu-bar/config.json) draws the strip with `bar.style` and removes the widget tiles by setting `background`, `borderColor` and `shadowColor` to `null` in `defaults`. Popups would lose their background with them, so it gives popups their own in `popupDefaults`. [Island](Resources/themes/island/config.json) adds `bar.margin` and a corner radius so the strip floats.
 
 Install your own theme like any other package, then select it with its version:
 
@@ -276,7 +290,7 @@ Install your own theme like any other package, then select it with its version:
 
 Only one theme is active: `theme` must name a theme, and `packages` cannot list one. An installed theme accepts the same `enabled` and `settings` as a package selection, and you can also enable it in **Customize → Packages**. Widget packages load first, then Built-in, then the selected theme, then includes and the main file. A theme's tokens, `defaults` and `bar` settings override a widget package's, and yours override the theme's. A `profiles` array in a later layer replaces the theme's profiles, like any array. **Built-in** in setup and Customize removes `theme`.
 
-Popups inherit `defaults`, and the workspace highlight uses `defaults.accent`. Every theme defines these tokens, so widgets, widget packages, popups, layouts and workspace styles can use them, for example `"foreground": "@token.textMuted"`:
+Popups inherit `popupDefaults` and then `defaults`, and the workspace highlight uses `defaults.accent`. Every theme defines these tokens, so widgets, widget packages, popups, layouts and workspace styles can use them, for example `"foreground": "@token.textMuted"`:
 
 | Token | Use |
 | --- | --- |
@@ -298,9 +312,9 @@ A reference to a token that no layer defines is an error. Built-in defines all o
 
 Each widget accepts `display`: `"all"` (default), `"active"`, `"main"`, `"builtIn"`, `"external"`, `"notched"`, `"unnotched"`, or an array of screen numbers, for example `[1, 2]`. Numbers are one-based positions in `NSScreen.screens`, matching AeroSpace and SketchyBar; they can change when displays are rearranged. `active` follows the configured workspace source's focus. With AeroSpace, use `aerospace list-monitors --format '%{monitor-name}|%{monitor-appkit-nsscreen-screens-id}'` to list them. yabai display IDs are mapped to these screen numbers, independently of yabai's display ordering.
 
-Set `bar.displayScale` to `{ "builtIn": 0.85, "external": 1 }` to shrink the laptop bar while keeping external displays at their original size. Each factor scales the bar height, widgets, text and spacing; omitted display types use `1`. Factors must be positive, and other keys are rejected. The bar offset and popup sizes stay in screen points. This setting also works inside automatic profiles.
+Set `bar.displayScale` to `{ "builtIn": 0.85, "external": 1 }` to shrink the laptop bar while keeping external displays at their original size. Each factor scales the bar height, widgets, text and spacing; omitted display types use `1`. Factors must be positive, and other keys are rejected. The bar offset, margin and popup sizes stay in screen points. This setting also works inside automatic profiles.
 
-`bar.style` accepts `background`, `cornerRadius`, `borderColor` and `borderWidth`. The border is drawn along the bottom edge. Scripts can return `barStyle` to change those properties; later widgets override earlier widgets when they set the same property.
+`bar.style` accepts `background`, `cornerRadius`, `borderColor` and `borderWidth`. The border is drawn along the bottom edge. `bar.margin` (0 by default) insets the bar's background and widgets from every edge of the bar, so a rounded `bar.style` floats below the top of the screen and in from its sides. The bar keeps its height, so the visible strip is `height` minus twice the margin. Scripts can return `barStyle` to change those properties; later widgets override earlier widgets when they set the same property.
 
 ### Composing widgets
 
@@ -782,7 +796,7 @@ Widgets with `menu` entries already open a shared popup without additional confi
 }
 ```
 
-`style` and `layout` are required. Use `"style": {}` to inherit the widget's theme. Without `height`, a popup fits its content when it opens; set `height` for a fixed size. Popup colors, typography, borders, corners and shadow inherit widget styles and then global defaults. Popup width defaults to 360 points independently of the bar widget width; set it with `popup.style.width`. Padding and spacing can be overridden separately. Height is capped to the space below the bar; long content scrolls.
+`style` and `layout` are required. Use `"style": {}` to inherit the widget's theme. Without `height`, a popup fits its content when it opens; set `height` for a fixed size. Popup colors, typography, borders, corners and shadow inherit widget styles, then `popupDefaults`, then `defaults`. Popup width defaults to 360 points independently of the bar widget width; set it with `popup.style.width`. Padding and spacing can be overridden separately. Height is capped to the space below the bar; long content scrolls.
 
 Layout blocks:
 

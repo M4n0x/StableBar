@@ -325,6 +325,7 @@ struct BarSettings: Decodable, Sendable {
     var height = 40.0
     var displayScale: [String: Double] = [:]
     var offset = 0.0
+    var margin = 0.0
     var keepWindowsClear = false
     var inset = 12.0
     var spacing = 8.0
@@ -336,7 +337,7 @@ struct BarSettings: Decodable, Sendable {
     var appearance: BarAppearance?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case height, displayScale, offset, keepWindowsClear, inset, spacing, background, animationDuration, notchWidth, notchSpacing, style, appearance
+        case height, displayScale, offset, margin, keepWindowsClear, inset, spacing, background, animationDuration, notchWidth, notchSpacing, style, appearance
     }
 
     init() {}
@@ -350,6 +351,7 @@ struct BarSettings: Decodable, Sendable {
             throw DecodingError.dataCorruptedError(forKey: .displayScale, in: values, debugDescription: "Use builtIn or external with a positive number.")
         }
         offset = try values.decodeIfPresent(Double.self, forKey: .offset) ?? offset
+        margin = try values.decodeIfPresent(Double.self, forKey: .margin) ?? margin
         keepWindowsClear = try values.decodeIfPresent(Bool.self, forKey: .keepWindowsClear) ?? keepWindowsClear
         inset = try values.decodeIfPresent(Double.self, forKey: .inset) ?? inset
         spacing = try values.decodeIfPresent(Double.self, forKey: .spacing) ?? spacing
@@ -370,6 +372,7 @@ struct Configuration: Decodable, Sendable {
     let workspaceSource: WorkspaceSource
     let bar: BarSettings
     let defaults: WidgetStyle
+    let popupDefaults: WidgetStyle
     let widgets: [WidgetConfiguration]
     let popups: [String: PopupConfiguration]
     let environment: [String: String]
@@ -377,7 +380,7 @@ struct Configuration: Decodable, Sendable {
     let providers: [String: ProviderConfiguration]
     let groups: [String: WidgetGroupConfiguration]
 
-    enum CodingKeys: String, CodingKey, CaseIterable { case workspaceSource, bar, defaults, widgets, popups, templates, widgetOverrides, environment, providers, groups }
+    enum CodingKeys: String, CodingKey, CaseIterable { case workspaceSource, bar, defaults, popupDefaults, widgets, popups, templates, widgetOverrides, environment, providers, groups }
 
     init(from decoder: Decoder) throws {
         try decoder.rejectUnknownKeys(CodingKeys.self, allowing: ["$schema", "tokens", "packages", "theme"])
@@ -385,6 +388,7 @@ struct Configuration: Decodable, Sendable {
         workspaceSource = try values.decodeIfPresent(WorkspaceSource.self, forKey: .workspaceSource) ?? .aerospace
         bar = try values.decodeIfPresent(BarSettings.self, forKey: .bar) ?? BarSettings()
         defaults = try values.decodeIfPresent(WidgetStyle.self, forKey: .defaults) ?? WidgetStyle()
+        popupDefaults = try values.decodeIfPresent(WidgetStyle.self, forKey: .popupDefaults) ?? WidgetStyle()
         let templates = try values.decodeIfPresent([String: [String: ConfigurationValue]].self, forKey: .templates) ?? [:]
         let overrides = try values.decodeIfPresent([String: [String: ConfigurationValue]].self, forKey: .widgetOverrides) ?? [:]
         for (id, properties) in overrides where properties["id"] != nil {
