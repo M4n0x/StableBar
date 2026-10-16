@@ -28,12 +28,13 @@ final class CustomizationWindow: NSObject, NSWindowDelegate {
 }
 
 private enum CustomizationSection: String, CaseIterable, Identifiable {
-    case appearance = "Appearance", widgets = "Widgets", profiles = "Profiles", packages = "Packages", diagnostics = "Diagnostics"
+    case general = "General", appearance = "Appearance", widgets = "Widgets", profiles = "Profiles", packages = "Packages", diagnostics = "Diagnostics"
 
     var id: Self { self }
 
     var symbol: String {
         switch self {
+        case .general: "gearshape"
         case .appearance: "paintpalette"
         case .widgets: "square.grid.2x2"
         case .profiles: "person.crop.square"
@@ -63,6 +64,7 @@ private struct CustomizationView: View {
             Divider()
             VStack(spacing: 0) {
                 switch section ?? .appearance {
+                case .general: GeneralView(store: store)
                 case .appearance: AppearanceView(editor: editor)
                 case .widgets: WidgetsView(editor: editor)
                 case .profiles: ProfilesView(editor: editor)
@@ -116,6 +118,51 @@ private struct CustomizationView: View {
         .controlSize(.large)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+}
+
+private struct GeneralView: View {
+    let store: BarStore
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("File") {
+                    Text(store.configurationURL.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+                HStack {
+                    Button("Open File", action: store.openConfiguration)
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([store.configurationURL]) }
+                    Spacer()
+                    Button("Reload", action: store.reloadConfiguration)
+                }
+            } header: {
+                Text("Configuration")
+            } footer: {
+                Text("StableBar applies saved changes on its own. Reload reads the files again.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            Section {
+                LabeledContent {
+                    Button("Set Up StableBar…") { NSApp.sendAction(#selector(AppDelegate.showSetup), to: NSApp.delegate, from: nil) }
+                } label: {
+                    Text("Setup")
+                    Text("Theme, appearance, placement, clock format and opening at login.")
+                }
+            }
+            Section("Workspaces") {
+                LabeledContent(store.workspaceStore.source.title) {
+                    Button("Reconnect", action: store.workspaceStore.start)
+                }
+                if let error = store.workspaceStore.error {
+                    Text(error).foregroundStyle(.red).textSelection(.enabled)
+                }
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 

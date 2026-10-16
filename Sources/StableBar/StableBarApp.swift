@@ -169,10 +169,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "StableBar", action: nil, keyEquivalent: "")
         menu.addItem(.separator())
         addItem("Customize StableBar…", action: #selector(showCustomization), to: menu)
-        addItem("Set up StableBar…", action: #selector(showSetup), to: menu)
-        addItem("Open configuration file…", action: #selector(openConfiguration), to: menu)
-        addItem("Reload configuration", action: #selector(reloadConfiguration), to: menu)
-        addItem("Reconnect \(store.workspaceStore.source.title)", action: #selector(reconnect), to: menu)
         if let error = store.configurationError ?? store.workspaceStore.error {
             menu.addItem(.separator())
             menu.addItem(withTitle: error, action: nil, keyEquivalent: "")
@@ -188,9 +184,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func showCustomization() { customization.show(store: store) }
     @objc func showSetup() { setup.show(store: store) }
-    @objc private func openConfiguration() { store.openConfiguration() }
-    @objc private func reloadConfiguration() { store.reloadConfiguration() }
-    @objc private func reconnect() { store.workspaceStore.start() }
     @objc private func quit() { NSApp.terminate(nil) }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

@@ -6,7 +6,7 @@ The default configuration includes a System Settings shortcut, the active app an
 
 ## Install and set up
 
-Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, theme, appearance, placement, clock format, and opening at login. Setup is also available from the menu-bar icon or by right-clicking the bar.
+Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, theme, appearance, placement, clock format, and opening at login. Run it again from **Customize StableBar → General**.
 
 The starter bar needs no special permissions. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. A [calendar provider](#calendar) asks for Calendars access the first time it updates. AeroSpace and yabai manage their own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
 
@@ -29,7 +29,7 @@ For development checks:
 swift test
 ```
 
-The first launch creates `~/.config/stablebar/config.json` from [Resources/config.json](Resources/config.json), with an offset for your menu bar. Subsequent launches keep your file. Right-click the bar or use its macOS menu-bar icon to open the configuration, reload it, reconnect the workspace source or quit.
+The first launch creates `~/.config/stablebar/config.json` from [Resources/config.json](Resources/config.json), with an offset for your menu bar. Subsequent launches keep your file. Right-click the bar or use its macOS menu-bar icon to open **Customize StableBar** or quit. **Customize → General** opens or reloads the configuration file, runs setup again and reconnects the workspace source.
 
 ### Download a release
 
@@ -423,7 +423,9 @@ A batch validates the whole resulting configuration before replacing the running
 
 ### Customize
 
-Open **Customize StableBar…** from the menu-bar icon or by right-clicking the bar, reopen the running app, or run `StableBar --customize`. Its sidebar has five sections.
+Open **Customize StableBar…** from the menu-bar icon or by right-clicking the bar, reopen the running app, or run `StableBar --customize`. Its sidebar has six sections.
+
+**General** opens the configuration file in your editor, shows it in Finder or reloads it, runs setup again, and reconnects the workspace source.
 
 **Appearance** chooses the [theme](#themes), keeps the bar light or dark or lets it follow the system, and edits the theme's colors. Each theme color has a light and a dark value; changing one saves it in your configuration's `tokens`, so every widget, popup and package that uses the color follows. **All widgets** sets the default colors, font, weight, size, padding and corners, and **Bar** sets the bar's size and position.
 

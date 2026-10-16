@@ -101,7 +101,7 @@ struct SetupView: View {
                     Button("Set up later", action: close)
                 }
                 Spacer()
-                Text(step == 2 ? "You can revisit setup from the bar’s menu." : "Changes apply when you finish.")
+                Text(step == 2 ? "You can run setup again from Customize StableBar → General." : "Changes apply when you finish.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button(step == 2 ? "Start StableBar" : "Continue") {

@@ -101,10 +101,6 @@ struct BarView: View {
         .contextMenu {
             Text("StableBar")
             Button("Customize StableBar…") { store.onCustomize?() }
-            Button("Set up StableBar…") { NSApp.sendAction(#selector(AppDelegate.showSetup), to: NSApp.delegate, from: nil) }
-            Button("Open configuration file…") { store.openConfiguration() }
-            Button("Reload configuration") { store.reloadConfiguration() }
-            Button("Reconnect \(store.workspaceStore.source.title)") { store.workspaceStore.start() }
             if let error = store.configurationError ?? store.workspaceStore.error {
                 Divider()
                 Text(error)
