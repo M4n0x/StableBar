@@ -1,0 +1,40 @@
+{
+  "tokens": {
+    "surface": "#f4f5f7ed",
+    "surfaceRaised": "#ffffff",
+    "text": "#1f2329",
+    "textMuted": "#5f6773",
+    "accent": "#3a6ea5",
+    "track": "#1f232926",
+    "hairline": "#1f23291f",
+    "warning": "#b45309",
+    "critical": "#c53030"
+  },
+  "defaults": {
+    "foreground": "@token.text",
+    "background": "@token.surface",
+    "hoverBackground": "@token.surfaceRaised",
+    "borderColor": "@token.hairline",
+    "accent": "@token.accent",
+    "cornerRadius": 8
+  },
+  "profiles": [
+    {
+      "name": "slate-dark",
+      "when": { "appearance": "dark" },
+      "configuration": {
+        "tokens": {
+          "surface": "#23272eee",
+          "surfaceRaised": "#323842",
+          "text": "#e6e9ef",
+          "textMuted": "#9aa3b0",
+          "accent": "#5b8ac4",
+          "track": "#e6e9ef26",
+          "hairline": "#ffffff1f",
+          "warning": "#f0b45a",
+          "critical": "#f07070"
+        }
+      }
+    }
+  ]
+}

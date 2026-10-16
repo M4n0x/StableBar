@@ -219,7 +219,7 @@ private struct ConfigurationEditorView: View {
                 .disabled(editor.selectedID == nil)
                 Spacer()
                 Button("Bar", systemImage: "rectangle.topthird.inset.filled") { showsBar = true }
-                    .help("Bar size and default widget style")
+                    .help("Theme, bar size and default widget style")
                     .popover(isPresented: $showsBar) { barSettings }
                     .padding(.trailing, 6)
             }
@@ -315,7 +315,21 @@ private struct ConfigurationEditorView: View {
         var defaults: [String: ConfigurationValue] = [:]
         if case let .object(object) = store.effectiveDocument["bar"] { bar = object }
         if case let .object(object) = store.effectiveDocument["defaults"] { defaults = object }
+        let themes = ((try? WidgetPackageStore(directory: store.configurationURL.deletingLastPathComponent().appending(path: "packages")).list()) ?? [])
+            .filter { $0.kind == .theme }
+        let theme = try? store.effectiveDocument["theme"]?.decoded(WidgetPackageSelection.self)
+        let selected = themes.first { $0.id == theme?.id && $0.version == theme?.version && theme?.enabled == true }
         return Form {
+            Section("Theme") {
+                Picker("Theme", selection: Binding(get: { selected?.versionKey }, set: { key in
+                    editor.change(ConfigurationEdit(action: .theme, properties: themes.first { $0.versionKey == key }.map {
+                        ["id": .string($0.id), "version": .string($0.version)]
+                    }))
+                })) {
+                    Text("Built-in").tag(String?.none)
+                    ForEach(themes, id: \.versionKey) { Text("\($0.name) · \($0.version)").tag(Optional($0.versionKey)) }
+                }
+            }
             Section("Bar") {
                 ForEach([("Height", "height", 40.0), ("Offset from top", "offset", 0), ("Side inset", "inset", 12), ("Spacing", "spacing", 8)],
                         id: \.1) { title, key, fallback in

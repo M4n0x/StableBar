@@ -47,6 +47,11 @@ struct SetupView: View {
             || directory == FileManager.default.homeDirectoryForCurrentUser.appending(path: "Applications", directoryHint: .isDirectory)
     }
 
+    private var themes: [WidgetPackageManifest] {
+        ((try? WidgetPackageStore(directory: store.configurationURL.deletingLastPathComponent().appending(path: "packages")).list()) ?? [])
+            .filter { $0.kind == .theme }
+    }
+
     private var menuBarHeight: Double {
         max(NSStatusBar.system.thickness, NSScreen.main?.safeAreaInsets.top ?? 0)
     }
@@ -152,8 +157,18 @@ struct SetupView: View {
             heading("A bar that feels like yours.", detail: "Start with a few essentials. Your custom widgets and settings stay in place.")
             barPreview
             Form {
-                Picker("Appearance", selection: $preferences.appearance) {
-                    ForEach(SetupPreferences.Appearance.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                Picker("Theme", selection: $preferences.theme) {
+                    Text("Keep current").tag(SetupPreferences.Theme.current)
+                    Text("Built-in").tag(SetupPreferences.Theme.builtIn)
+                    ForEach(themes, id: \.versionKey) {
+                        Text("\($0.name) · \($0.version)").tag(SetupPreferences.Theme.package(id: $0.id, version: $0.version))
+                    }
+                }
+                .pickerStyle(.menu)
+                if preferences.theme == .current || preferences.theme == .builtIn {
+                    Picker("Appearance", selection: $preferences.appearance) {
+                        ForEach(SetupPreferences.Appearance.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
                 }
                 Picker("Placement", selection: $preferences.placement) {
                     ForEach(SetupPreferences.Placement.allCases, id: \.self) { Text($0.rawValue).tag($0) }

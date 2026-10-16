@@ -141,19 +141,21 @@ struct PackagesView: View {
                         }
                     }
                 }
-                Section {
-                    if inspection.commands.isEmpty {
-                        Text("This package declares no commands.").foregroundStyle(.secondary)
+                if manifest.kind != .theme {
+                    Section {
+                        if inspection.commands.isEmpty {
+                            Text("This package declares no commands.").foregroundStyle(.secondary)
+                        }
+                        ForEach(Array(inspection.commands.enumerated()), id: \.offset) { _, command in
+                            Text(command).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    } header: {
+                        Text("Commands")
+                    } footer: {
+                        Text("Review the commands this package can run, including its profiles. Commands run with your account’s access when the package is enabled.")
+                            .font(.callout).foregroundStyle(.secondary)
                     }
-                    ForEach(Array(inspection.commands.enumerated()), id: \.offset) { _, command in
-                        Text(command).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                } header: {
-                    Text("Commands")
-                } footer: {
-                    Text("Review the commands this package can run, including its profiles. Commands run with your account’s access when the package is enabled.")
-                        .font(.callout).foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)
@@ -210,10 +212,11 @@ struct PackagesView: View {
     private func loadInstalled() throws {
         installed = try packages.list()
         selections = try store.effectiveDocument["packages"]?.decoded([WidgetPackageSelection].self) ?? []
+        if let theme = store.effectiveDocument["theme"] { selections.append(try theme.decoded(WidgetPackageSelection.self)) }
     }
 
     private func activate(_ manifest: WidgetPackageManifest, enabled: Bool) throws {
-        let edit = ConfigurationEdit(action: .package, properties: [
+        let edit = ConfigurationEdit(action: manifest.kind == .theme ? .theme : .package, properties: [
             "id": .string(manifest.id), "version": .string(manifest.version),
             "enabled": .bool(enabled), "settings": .object(settings)
         ])
@@ -231,7 +234,7 @@ struct PackagesView: View {
     }
 }
 
-private extension WidgetPackageManifest {
+extension WidgetPackageManifest {
     var versionKey: String { "\(id)/\(version)" }
 }
 

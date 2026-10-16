@@ -1,7 +1,7 @@
 import Foundation
 
 struct ConfigurationEdit: Codable, Sendable {
-    enum Action: String, Codable { case set, add, remove, reorder, bar, defaults, profile, profiles, package }
+    enum Action: String, Codable { case set, add, remove, reorder, bar, defaults, profile, profiles, package, theme }
     let action: Action
     var id: String?
     var properties: [String: ConfigurationValue]?
@@ -79,6 +79,8 @@ struct ConfigurationEdit: Codable, Sendable {
             if let index = packages.firstIndex(where: { $0["id"] == .string(id) }) { packages[index] = package }
             else { packages.append(package) }
             root["packages"] = .array(packages.map(ConfigurationValue.object))
+        case .theme:
+            root["theme"] = properties.map(ConfigurationValue.object)
         }
         return root
     }
