@@ -167,6 +167,11 @@ extension WidgetStyle {
     }
 }
 
+let fontWeights: [(name: String, weight: Font.Weight)] = [
+    ("ultralight", .ultraLight), ("thin", .thin), ("light", .light), ("regular", .regular),
+    ("medium", .medium), ("semibold", .semibold), ("bold", .bold)
+]
+
 struct WidgetAppearance {
     let foreground: Color
     let hoverForeground: Color
@@ -205,16 +210,7 @@ struct WidgetAppearance {
         shadowColor = (style.shadowColor ?? defaults.shadowColor)?.color ?? .clear
         let size = style.fontSize ?? defaults.fontSize ?? 12
         let name = style.fontName ?? defaults.fontName ?? "system"
-        let weight: Font.Weight
-        switch style.fontWeight ?? defaults.fontWeight ?? "medium" {
-        case "ultralight": weight = .ultraLight
-        case "thin": weight = .thin
-        case "light": weight = .light
-        case "regular": weight = .regular
-        case "semibold": weight = .semibold
-        case "bold": weight = .bold
-        default: weight = .medium
-        }
+        let weight = fontWeights.first { $0.name == style.fontWeight ?? defaults.fontWeight }?.weight ?? .medium
         font = name == "system" ? .system(size: size, weight: weight) : .custom(name, size: size).weight(weight)
     }
 }

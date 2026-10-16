@@ -160,9 +160,9 @@ A color token can hold a light and dark pair, as `accent` does here, so it follo
 
 Profiles match `appearance` (`light` or `dark`: `bar.appearance` when set, otherwise the system's), `onBattery`, `displayCount`, `externalDisplay`, and the focused app's bundle identifier in `app`. Conditions in one profile must all match. Matching profiles apply in array order after modules and the root configuration; later profiles win. A profile without `when` always matches. A profile that sets `bar.appearance` changes how the bar looks, not which profiles match. Widgets in profiles append to the bar; use `widgetOverrides` to change existing widgets. Appearance, power, screen and focused-app changes update the active profiles automatically.
 
-Set `"profile": "laptop"` to apply only that profile, regardless of its conditions. Remove `profile` to resume automatic matching, or set it to `null` to override a manual profile inherited from a module. The inspector reports active profiles and the file, template, override and token sources behind effective widget properties.
+Set `"profile": "laptop"` to apply only that profile, regardless of its conditions. Remove `profile` to resume automatic matching, or set it to `null` to override a manual profile inherited from a module. **Customize → Diagnostics** reports active profiles and the file, template, override and token sources behind effective widget properties.
 
-In **Customize StableBar → Editor → Profiles**, add profiles, edit their conditions and configuration, or choose Automatic matching or a pinned profile. Changes use the editor's Undo, Redo, Save and Discard controls. Editing profiles imported from another file writes the full profile list into the main file, preserving their order and configuration; the imported file stays unchanged.
+In **Customize StableBar → Profiles**, add profiles, edit their conditions and configuration, or choose Automatic matching or a pinned profile. Changes use Customize's Undo, Redo, Save and Discard controls. Editing profiles imported from another file writes the full profile list into the main file, preserving their order and configuration; the imported file stays unchanged.
 
 Setup, the editor and the command line save changes into the main file's ordinary keys and never edit imported files. A widget defined in the main file, including inside one of its profiles, is changed, removed or reordered where it is defined. A widget from an include or package gets an entry in the main file's `widgetOverrides`; removing it sets `enabled` to `false`. Bar and default-style changes merge into `bar` and `defaults`. Untouched parts of the file keep their formatting and key order. An active profile still applies on top of these changes.
 
@@ -213,7 +213,7 @@ Package selections in modules merge by package ID, with later modules and the ro
 
 ### Themes
 
-StableBar ships with four themes: **Built-in**, **Slate**, **Paper** and **Graphite**. Each has light and dark colors and follows the system's appearance, or the one `bar.appearance` sets. Choose one in setup or in **Customize → Editor → Bar**, or select a theme that ships with StableBar by its ID:
+StableBar ships with four themes: **Built-in**, **Slate**, **Paper** and **Graphite**. Each has light and dark colors and follows the system's appearance, or the one `bar.appearance` sets. Choose one in setup or in **Customize → Appearance**, or select a theme that ships with StableBar by its ID:
 
 ```json
 { "theme": { "id": "slate" } }
@@ -413,23 +413,31 @@ StableBar --batch '[
 ]' --persist
 ```
 
-A batch validates the whole resulting configuration before replacing the running bar or writing the file. A failed batch leaves both intact. Supported edit actions are `set` (`id`, `properties`), `add` (`properties`, including `id`), `remove` (`id`), `reorder` (`ids`), `bar`/`defaults` (`properties`), `profile` (`name`, omitted for automatic), `package` (`properties`: `id`, `version`, optional `enabled` and `settings`), and `theme` (the same `properties`, with only `id` for a theme that ships with StableBar, omitted for Built-in).
+A batch validates the whole resulting configuration before replacing the running bar or writing the file. A failed batch leaves both intact. Supported edit actions are `set` (`id`, `properties`), `add` (`properties`, including `id`), `remove` (`id`), `reorder` (`ids`), `bar`/`defaults`/`tokens` (`properties`, merged into those keys), `unset` (`properties` naming the keys to remove from the main file, with `id` for a widget, for example `{"action":"unset","id":"clock","properties":{"style":{"foreground":null}}}`), `profile` (`name`, omitted for automatic), `package` (`properties`: `id`, `version`, optional `enabled` and `settings`), and `theme` (the same `properties`, with only `id` for a theme that ships with StableBar, omitted for Built-in).
 
 - `--validate [PATH]`: compose and validate files without starting scripts.
-- `--refresh ID`: refresh a running widget. Hidden, suspended providers must first be made visible or opened in the inspector.
+- `--refresh ID`: refresh a running widget. Hidden, suspended providers must first be made visible or opened in **Customize → Diagnostics**.
 - `--trigger EVENT [KEY=VALUE ...]`: send an event. Without `--config`, this broadcasts to all subscribed bars for compatibility; with `--config`, it targets that configuration.
 - `--reload`: reload configuration; without `--config`, notify all running bars.
 - `--packages`, `--inspect-package PATH`, `--install-package PATH`, `--enable-package ID VERSION [--persist]`: review and manage local packages. Installation does not enable commands. Package selections belong in the root file or its includes; use profile widget overrides to hide package widgets contextually.
 
-### Editor and inspector
+### Customize
 
-Open **Customize StableBar…** from the menu-bar icon or by right-clicking the bar, reopen the running app, or run `StableBar --customize`.
+Open **Customize StableBar…** from the menu-bar icon or by right-clicking the bar, reopen the running app, or run `StableBar --customize`. Its sidebar has five sections.
 
-The **Editor** lists your widgets by position; drag to reorder them. Change positions, icons, text, clock formats, colors, font size, padding and corners, or edit a widget's properties as JSON. **Bar** chooses the theme and sets the bar's size and the default text color, background and font size. Changes apply to the bar immediately, like command-line edits without `--persist`. Undo and redo step through them, **Save** writes them to your configuration and **Discard** returns to the saved file. A change that would make the configuration invalid is rejected and its error is shown.
+**Appearance** chooses the [theme](#themes), keeps the bar light or dark or lets it follow the system, and edits the theme's colors. Each theme color has a light and a dark value; changing one saves it in your configuration's `tokens`, so every widget, popup and package that uses the color follows. **All widgets** sets the default colors, font, weight, size, padding and corners, and **Bar** sets the bar's size and position.
 
-The **Inspector** shows the composed widget configuration, defaults, source paths, provider output, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while that inspector is visible. Closing the window restores its visibility policy.
+**Widgets** lists your widgets by position; drag to reorder them. Change a widget's position, icon, text or clock format, its colors, font and shape, or edit its properties as JSON. A color either follows one of the theme's colors, such as Text or Accent, or is a custom light and dark pair.
 
-The **Packages** tab reviews local folders and their declared commands, edits typed settings, installs versions and enables a chosen version. Enabling a theme makes it the active theme; themes have no commands to review. Select an older installed version to roll back.
+Each style control says where its value comes from: a theme, a package, an included file, a template, a profile or your configuration. A value set in your configuration shows **Reset to default**, which removes it so the theme's or the inherited value applies again.
+
+Changes in these sections apply to the bar immediately, like command-line edits without `--persist`. Undo and redo step through them, **Save** writes them to your configuration and **Discard** returns to the saved file. A change that would make the configuration invalid is rejected and its error is shown.
+
+**Profiles** edits [profiles](#theme-tokens-and-automatic-profiles) and chooses automatic matching or a pinned profile.
+
+**Packages** reviews local folders and their declared commands, edits typed settings, installs versions and enables a chosen version. Enabling a theme makes it the active theme; themes have no commands to review. Select an older installed version to roll back.
+
+**Diagnostics** shows the composed widget configuration, defaults, source paths, provider output, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while Diagnostics is visible. Closing the window restores its visibility policy.
 
 ## Built-in widgets
 
@@ -569,7 +577,7 @@ Native providers use public macOS APIs and launch no shell commands:
 
 Fractions use 0–1. CPU and network rates are deltas; their first sample after startup or resume is zero. Native audio is a data source; use a control's `onChange` command to change volume or devices.
 
-Scripts and providers expose diagnostics in the inspector and runtime query: running/suspended state, last event/start/update, execution duration, bounded stdout/stderr, execution/failure/restart counts and next retry delay. CPU time is cumulative completed-command CPU time, not a live resource meter for a running stream. Diagnostics and graph history survive style-only edits and suspension. The existing process-group cancellation limit for deliberately detached descendants also applies to streams.
+Scripts and providers expose diagnostics in **Customize → Diagnostics** and the runtime query: running/suspended state, last event/start/update, execution duration, bounded stdout/stderr, execution/failure/restart counts and next retry delay. CPU time is cumulative completed-command CPU time, not a live resource meter for a running stream. Diagnostics and graph history survive style-only edits and suspension. The existing process-group cancellation limit for deliberately detached descendants also applies to streams.
 
 ### Calendar
 

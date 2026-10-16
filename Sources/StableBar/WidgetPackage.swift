@@ -226,6 +226,7 @@ struct WidgetPackageStore {
 
 struct ThemeChoice {
     let manifest: WidgetPackageManifest
+    let directory: URL
     let isBundled: Bool
 
     var key: String { isBundled ? manifest.id : manifest.versionKey }
@@ -238,11 +239,13 @@ struct ThemeChoice {
 func themeChoices(packages: URL) -> [ThemeChoice] {
     let bundled = ((bundledThemesDirectory.flatMap {
         try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
-    }) ?? []).filter { $0.lastPathComponent != "built-in" }
-        .compactMap { try? WidgetPackageStore(directory: $0.deletingLastPathComponent()).manifest(at: $0) }
-        .sorted { $0.name < $1.name }
-    let installed = ((try? WidgetPackageStore(directory: packages).list()) ?? []).filter { $0.kind == .theme }
-    return bundled.map { ThemeChoice(manifest: $0, isBundled: true) } + installed.map { ThemeChoice(manifest: $0, isBundled: false) }
+    }) ?? []).filter { $0.lastPathComponent != "built-in" }.compactMap { directory in
+        (try? WidgetPackageStore(directory: directory).manifest(at: directory)).map { ThemeChoice(manifest: $0, directory: directory, isBundled: true) }
+    }
+    let installed = ((try? WidgetPackageStore(directory: packages).list()) ?? []).filter { $0.kind == .theme }.map {
+        ThemeChoice(manifest: $0, directory: packages.appending(path: $0.id).appending(path: $0.version), isBundled: false)
+    }
+    return bundled.sorted { $0.manifest.name < $1.manifest.name } + installed
 }
 
 func preparePackageDocument(_ document: [String: ConfigurationValue], directory: URL) throws -> [String: ConfigurationValue] {

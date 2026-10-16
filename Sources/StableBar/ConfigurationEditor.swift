@@ -29,7 +29,7 @@ final class ConfigurationEditor {
 
     func change(_ edit: ConfigurationEdit) {
         let previous = store.sessionEdits
-        let merging = [.set, .bar, .defaults].contains(edit.action) && previous.last.map {
+        let merging = [.set, .bar, .defaults, .tokens].contains(edit.action) && previous.last.map {
             $0.action == edit.action && $0.id == edit.id && propertyPaths($0.properties!) == propertyPaths(edit.properties!)
         } == true
         do {

@@ -31,7 +31,7 @@ A configuration change rarely lives in one place. Before calling one done, say w
 
 - **Decoding.** Unknown properties are errors, so a new property needs a coding key and an entry in [stablebar.schema.json](stablebar.schema.json). `schemaListsTheSamePropertiesAsTheDecoders` fails when they differ.
 - **Layers.** Values can come from includes, templates, profiles and package overrides, not only the main file.
-- **Editing.** The Customize editor and inspector, and the command-line edits, which share `ConfigurationEdits.swift`.
+- **Editing.** Customize's Appearance, Widgets and Profiles sections, and the command-line edits, which share `ConfigurationEdits.swift`.
 - **Docs.** The README section that documents the feature, and the setups in [examples](examples).
 
 ## Pull requests

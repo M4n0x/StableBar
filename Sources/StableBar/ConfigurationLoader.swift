@@ -122,11 +122,17 @@ func expandWidgetTemplate(_ definition: [String: ConfigurationValue],
 struct ConfigurationOrigin: Equatable, Sendable, CustomStringConvertible {
     let file: String
     var detail = ""
+    var token: String?
+    var tokenSource = ""
 
-    var description: String { detail.isEmpty ? file : "\(file) \(detail)" }
+    var description: String {
+        [file, detail, token.map { "→ token \($0) (\(tokenSource))" } ?? ""].filter { !$0.isEmpty }.joined(separator: " ")
+    }
 
     func appending(_ text: String) -> ConfigurationOrigin {
-        ConfigurationOrigin(file: file, detail: detail.isEmpty ? text : "\(detail) \(text)")
+        var origin = self
+        origin.detail = detail.isEmpty ? text : "\(detail) \(text)"
+        return origin
     }
 }
 
@@ -331,7 +337,10 @@ struct ConfigurationLoader {
         case let .string(reference) where reference.hasPrefix("@token."):
             let name = String(reference.dropFirst(7))
             let resolved = try substituteConfigurationReferences(value, prefix: "@token.", values: tokens)
-            return configurationOrigins(resolved, source: source.appending("→ token \(name) (\(origins["tokens.\(name)"]!))"), path: path)
+            var origin = source
+            origin.token = name
+            origin.tokenSource = origins["tokens.\(name)"]!.description
+            return configurationOrigins(resolved, source: origin, path: path)
         case let .object(object):
             var result: [String: ConfigurationOrigin] = [:]
             for (key, child) in object {

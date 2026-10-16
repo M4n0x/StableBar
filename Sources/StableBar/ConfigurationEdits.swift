@@ -1,7 +1,7 @@
 import Foundation
 
 struct ConfigurationEdit: Codable, Sendable {
-    enum Action: String, Codable { case set, add, remove, reorder, bar, defaults, profile, profiles, package, theme }
+    enum Action: String, Codable { case set, add, remove, reorder, bar, defaults, tokens, unset, profile, profiles, package, theme }
     let action: Action
     var id: String?
     var properties: [String: ConfigurationValue]?
@@ -12,6 +12,7 @@ struct ConfigurationEdit: Codable, Sendable {
     func validateTargets(in widgetIDs: [String]) throws {
         switch action {
         case .set, .remove: _ = try target(in: widgetIDs)
+        case .unset where id != nil: _ = try target(in: widgetIDs)
         case .add:
             let widget = try requiredProperties()
             guard let id = try widget["id"]?.decoded(String.self), !widgetIDs.contains(id) else {
@@ -62,9 +63,20 @@ struct ConfigurationEdit: Codable, Sendable {
                 root["widgetOrder"] = .array(ids!.map(ConfigurationValue.string))
             }
             widgetIDs = order
-        case .bar, .defaults:
+        case .bar, .defaults, .tokens:
             let key = action.rawValue
             root[key] = .object(try requiredProperties()).overriding(root[key] ?? .object([:]))
+        case .unset:
+            let properties = try requiredProperties()
+            if let id {
+                if try !changeDefinition(id, in: &root, { widgets, index in widgets[index] = removing(properties, from: widgets[index]) }) {
+                    let override = removing(properties, from: try overrides[id]?.decoded([String: ConfigurationValue].self) ?? [:])
+                    overrides[id] = override.isEmpty ? nil : .object(override)
+                    root["widgetOverrides"] = overrides.isEmpty ? nil : .object(overrides)
+                }
+            } else {
+                root = removing(properties, from: root)
+            }
         case .profile:
             root["profile"] = name.map(ConfigurationValue.string) ?? .null
         case .profiles:
@@ -114,6 +126,21 @@ private func changeDefinition(_ id: String, in document: inout [String: Configur
         }
     }
     return false
+}
+
+private func removing(_ keys: [String: ConfigurationValue], from object: [String: ConfigurationValue]) -> [String: ConfigurationValue] {
+    var result = object
+    for (key, value) in keys {
+        if case let .object(nested) = value, !nested.isEmpty {
+            if case let .object(current) = result[key] {
+                let remaining = removing(nested, from: current)
+                result[key] = remaining.isEmpty ? nil : .object(remaining)
+            }
+        } else {
+            result[key] = nil
+        }
+    }
+    return result
 }
 
 private func removingReferences(to id: String, in document: [String: ConfigurationValue]) throws -> [String: ConfigurationValue] {

@@ -324,3 +324,49 @@ import Testing
 
     """)
 }
+
+@Test @MainActor func resetRemovesOnlyTheMainFilesValueAndTokenEditsKeepWidgetsLinked() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = directory.appending(path: "config.json")
+    try Data(##"""
+    {"tokens":{"text":"#111111"},
+     "widgets":[{"id":"imported","type":"text","position":"left","text":"I","style":{"background":"#222222"}}]}
+    """##.utf8).write(to: directory.appending(path: "module.json"))
+    try Data(##"""
+    {"includes":["module.json"],"tokens":{"text":"#333333"},"defaults":{"foreground":"@token.text","fontSize":13},
+     "widgets":[{"id":"local","type":"text","position":"right","text":"L","style":{"foreground":"#444444","fontSize":14}}],
+     "widgetOverrides":{"imported":{"style":{"background":"#555555"}}}}
+    """##.utf8).write(to: root)
+    let store = BarStore(configurationURL: root)
+    defer { store.stop() }
+    store.reloadConfiguration()
+    #expect(store.origins["defaults.foreground"]?.token == "text")
+    #expect(store.sourceText(store.origins["widgets.imported.style.background"]!) == "your configuration (widget override)")
+    #expect(store.setsInMainFile(store.origins["widgets.imported.style.background"]!))
+    try store.applyEdits([ConfigurationEdit(action: .tokens, properties: ["text": .object(["light": .string("#666666"), "dark": .string("#777777")])])],
+                         persist: false)
+    #expect(store.configuration?.defaults.foreground == HexColor(light: 0x666666ff, dark: 0x777777ff))
+    try store.applyEdits([ConfigurationEdit(action: .unset, id: "local", properties: ["style": .object(["foreground": .null])]),
+                          ConfigurationEdit(action: .unset, id: "imported", properties: ["style": .object(["background": .null])]),
+                          ConfigurationEdit(action: .unset, properties: ["tokens": .object(["text": .null])])], persist: true)
+    let widgets = try #require(store.configuration?.widgets)
+    #expect(widgets.first(where: { $0.id == "local" })?.style.foreground == nil)
+    #expect(widgets.first(where: { $0.id == "local" })?.style.fontSize == 14)
+    #expect(widgets.first(where: { $0.id == "imported" })?.style.background == HexColor(0x222222ff))
+    #expect(store.configuration?.defaults.foreground == HexColor(0x111111ff))
+    #expect(store.sourceText(store.origins["widgets.imported.style.background"]!) == "module.json")
+    let saved = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: root))
+    #expect(saved["tokens"] == nil)
+    #expect(saved["widgetOverrides"] == nil)
+    #expect(saved["widgets"] == .array([.object(["id": .string("local"), "type": .string("text"), "position": .string("right"),
+                                                 "text": .string("L"), "style": .object(["fontSize": .number(14)])])]))
+    #expect(throws: CommandFailure.self) {
+        try store.applyEdits([ConfigurationEdit(action: .unset, id: "missing", properties: ["style": .object(["fontSize": .null])])], persist: false)
+    }
+    var ids: [String] = []
+    let tokenDefaults: [String: ConfigurationValue] = ["defaults": .string("@token.card"), "widgets": .array([])]
+    #expect(try ConfigurationEdit(action: .unset, properties: ["defaults": .object(["foreground": .null])])
+        .applying(to: tokenDefaults, widgetIDs: &ids) == tokenDefaults)
+}
