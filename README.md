@@ -8,7 +8,7 @@ The default configuration includes a System Settings shortcut, the active app an
 
 Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, widget appearance, placement, clock format, and opening at login. Setup is also available from the menu-bar icon or by right-clicking the bar.
 
-The starter bar needs no special permissions. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. AeroSpace and yabai manage their own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
+The starter bar needs no special permissions. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. A [calendar provider](#calendar) asks for Calendars access the first time it updates. AeroSpace and yabai manage their own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
 
 Widgets follow the system's light or dark mode unless you pick a fixed appearance, which sets the global widget colors; individual widget styles still take precedence. Setup preserves custom widgets, scripts, and other settings. Closing setup leaves it available on the next launch. New configurations place the bar below the macOS menu bar; existing configurations retain their position.
 
@@ -382,7 +382,7 @@ The **Packages** tab reviews local folders and their declared commands, edits ty
 | `text` | Static text and optional icon | `text` |
 | `script` | Output of a shell command | `command`, `interval` in seconds or `null` for event-only updates |
 | `provider` | Shared command, stream or native data | `provider`: key from the top-level `providers` object |
-| `system`, `network`, `battery`, `audio` | Native CPU and memory, network, battery or audio output data | — |
+| `system`, `network`, `battery`, `audio`, `calendar` | Native CPU and memory, network, battery, audio output or calendar data | — |
 
 The AeroSpace connection subscribes to workspace, monitor, window and focus events. It loads an initial snapshot, coalesces pending events and reconnects after a disconnect. The accent color marks the focused workspace; an outline marks a workspace visible on another monitor. Empty, inactive workspaces are hidden. App icons are deduplicated per workspace. Active-app updates come from NSWorkspace notifications.
 
@@ -488,9 +488,9 @@ Define a provider once and reference it from several widgets. StableBar keeps on
 }
 ```
 
-Provider `type` is `command`, `stream`, `system`, `network`, `battery` or `audio`. `command` and `stream` require a shell `command`. `interval` defaults to 5 seconds: the polling interval for commands and native sources, or the initial reconnect delay for streams. `timeout` defaults to 10 seconds and applies to command providers; streams remain running until they exit, fail, suspend or stop. Provider intervals and timeouts must be positive and finite.
+Provider `type` is `command`, `stream`, `system`, `network`, `battery`, `audio` or `calendar`. `command` and `stream` require a shell `command`. `interval` defaults to 5 seconds: the polling interval for commands and native sources, or the initial reconnect delay for streams. `timeout` defaults to 10 seconds and applies to command providers; streams remain running until they exit, fail, suspend or stop. Provider intervals and timeouts must be positive and finite.
 
-A widget with `type` set to `system`, `network`, `battery` or `audio` uses the provider of that name. Without a definition in `providers`, it is a native provider of that type with default settings, shared by every widget that names it. Define a provider with the same name to change its interval or other settings. `{ "id": "power", "type": "battery", "position": "right" }` is enough for a battery widget.
+A widget with `type` set to `system`, `network`, `battery`, `audio` or `calendar` uses the provider of that name. Without a definition in `providers`, it is a native provider of that type with default settings, shared by every widget that names it. Define a provider with the same name to change its interval or other settings. `{ "id": "power", "type": "battery", "position": "right" }` is enough for a battery widget.
 
 Provider `environment` overlays the top-level environment. `NAME` is the provider name and `CONFIG_DIR` remains the main configuration directory. The environment of a consuming widget applies to that widget's actions, not the shared update process. Add `events` to a provider or consuming widget to request updates; one event refreshes a shared provider once. An explicit stream refresh restarts its process with the new event payload.
 
@@ -506,10 +506,89 @@ Native providers use public macOS APIs and launch no shell commands:
 | `network` | `values.download` and `values.upload`: aggregate bytes/second across up `en*` Wi-Fi/Ethernet interfaces. `fields.interface`: interface names. `lists.interfaces`: rows with `name`, `download`, `upload`. Virtual VPN interfaces are excluded to avoid counting the same traffic twice. |
 | `battery` | `value` and `values.percent`: charge fraction. `fields.percent`: whole percentage; `fields.state`: `charging`, `charged`, `battery` or `ac`; `fields.present`: `true`/`false`; optional `fields.timeRemaining`: minutes. Desktops without a battery return `AC` without a charge value. |
 | `audio` | `value` and `values.volume`: output-volume fraction when supported. `fields.device`, `fields.deviceID`, `fields.volumeAvailable` and optional `fields.muted`; `lists.devices`: output-device rows with `id` and `name`. Fixed-volume devices can omit volume, and no output device returns `No output`. |
+| `calendar` | The next meeting and today's agenda; see [Calendar](#calendar). |
 
 Fractions use 0–1. CPU and network rates are deltas; their first sample after startup or resume is zero. Native audio is a data source; use a control's `onChange` command to change volume or devices.
 
 Scripts and providers expose diagnostics in the inspector and runtime query: running/suspended state, last event/start/update, execution duration, bounded stdout/stderr, execution/failure/restart counts and next retry delay. CPU time is cumulative completed-command CPU time, not a live resource meter for a running stream. Diagnostics and graph history survive style-only edits and suspension. The existing process-group cancellation limit for deliberately detached descendants also applies to streams.
+
+### Calendar
+
+A `calendar` provider reads your calendars through EventKit. It asks for Calendars access the first time it updates, not when StableBar starts. All-day events are skipped.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `calendars` | all | Calendar names to include, as shown in Calendar |
+| `lookahead` | `24` | Hours ahead to look for the next meeting |
+| `soon` | `15` | Whole minutes before the start when the `soon` phase begins |
+| `now` | `5` | Whole minutes before the start when the `now` phase begins |
+
+Output:
+
+- `text`: the next meeting's title, `No meetings` or `No calendar access`.
+- `fields.access`: `granted`, `denied` or `notDetermined`. Without access, it is the only field.
+- `fields.phase`: `none` when no meeting starts within `lookahead`; otherwise `later`, `soon`, `now`, or `live` while the meeting runs.
+- `fields.title`, `fields.start` and `fields.end`: the meeting in progress, or else the next one. Times use your short time format.
+- `fields.minutes`: whole minutes until it starts, or until it ends while `live`, rounded up.
+- `fields.link`: the first Google Meet (`meet.google.com`), Zoom (`zoom.us`) or Teams (`teams.microsoft.com`, `teams.live.com`) HTTPS URL in the event's URL, location or notes. A link ends at the first character other than `A–Z a–z 0–9 . _ ~ % / ? = & + # : @ -`, so it never contains a quote or other shell syntax. `fields.joinCommand` is `open '<link>'` and exists only with a link; use it with `onClickField`.
+- `values.remaining`: before the start, the share of the `soon` lead time left; while `live`, the share of the meeting left. `targets.remaining` is the value one minute later, so a progress block with a 60-second `linear` animation shrinks smoothly.
+- `lists.today`: today's events in start order, with `title`, `start` and `end`, plus `link` and `joinCommand` when the event has a link.
+
+With access, the provider updates at each minute and phase boundary and when your calendars or the Calendars permission change. Until access is granted, it checks again every `interval`. `denied` also covers restricted and add-only access; change it in **System Settings → Privacy & Security → Calendars**.
+
+```json
+{
+  "providers": {
+    "meetings": { "type": "calendar", "calendars": ["Work"], "soon": 10 }
+  },
+  "widgets": [
+    {
+      "id": "meeting", "type": "provider", "provider": "meetings", "position": "right",
+      "layout": {
+        "type": "row", "style": { "spacing": 6 },
+        "children": [
+          { "type": "field", "field": "text" },
+          { "type": "field", "field": "minutes", "hideWhenEmpty": "minutes" },
+          { "type": "text", "text": "min", "hideWhenEmpty": "minutes" }
+        ]
+      },
+      "overlay": {
+        "type": "progress", "source": "remaining", "height": 2,
+        "animation": { "curve": "linear", "duration": 60 }
+      },
+      "popup": {
+        "style": {},
+        "layout": {
+          "type": "column",
+          "children": [
+            {
+              "type": "row",
+              "children": [
+                { "type": "field", "field": "title" },
+                { "type": "symbol", "name": "video", "onClickField": "joinCommand", "hideWhenEmpty": "joinCommand" }
+              ]
+            },
+            {
+              "type": "list", "source": "today",
+              "row": {
+                "type": "row", "onClickField": "joinCommand",
+                "children": [
+                  { "type": "field", "field": "start", "style": { "width": 56 } },
+                  { "type": "field", "field": "title" }
+                ]
+              }
+            },
+            {
+              "type": "button", "title": "Calendar access",
+              "onClick": "open 'x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars'"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+```
 
 ## Adaptive layout and groups
 

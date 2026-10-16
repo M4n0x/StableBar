@@ -213,6 +213,45 @@ private func provider(_ command: String, type: String = "stream", interval: Doub
     #expect(counters[3]?.sent == 2_000)
 }
 
+@Test func meetingPhasesChangeAtTheirLeadTimesAndUpdatesLandOnTheBoundaries() {
+    let start = Date(timeIntervalSinceReferenceDate: 3_600)
+    let end = start.addingTimeInterval(1_800)
+    let countdown = { (offset: Double) in meetingCountdown(start: start, end: end, at: start.addingTimeInterval(offset), soon: 15, now: 5) }
+    #expect([-901, -900, -301, -300, -1, 0, 1_799].map { countdown($0).phase } == ["later", "soon", "soon", "now", "now", "live", "live"])
+    #expect(countdown(-620).minutes == 11)
+    #expect(countdown(-620).delay == 20)
+    #expect(countdown(-600).delay == 60)
+    #expect(countdown(1_790).minutes == 1)
+    #expect(countdown(1_790).delay == 10)
+}
+
+@Test func meetingCountdownShrinksBeforeTheStartAndDuringTheMeeting() {
+    let start = Date(timeIntervalSinceReferenceDate: 3_600)
+    let end = start.addingTimeInterval(1_800)
+    let countdown = { (offset: Double) in meetingCountdown(start: start, end: end, at: start.addingTimeInterval(offset), soon: 15, now: 5) }
+    #expect(countdown(-3_600).remaining == 1)
+    #expect(countdown(-3_600).target == 1)
+    #expect(countdown(-600).remaining == 600.0 / 900)
+    #expect(countdown(-600).target == 540.0 / 900)
+    #expect(countdown(-30).target == 0)
+    #expect(countdown(0).remaining == 1)
+    #expect(countdown(900).remaining == 0.5)
+    #expect(countdown(900).target == 840.0 / 1_800)
+    #expect(countdown(1_780).target == 0)
+}
+
+@Test func meetingLinksKeepOnlyMeetZoomAndTeamsURLsAndStopAtShellSyntax() {
+    #expect(meetingLink(["Room 4", "Join: https://us02web.zoom.us/j/123456789?pwd=abc.DEF"]) == "https://us02web.zoom.us/j/123456789?pwd=abc.DEF")
+    #expect(meetingLink(["https://meet.google.com/abc-defg-hij?authuser=0", "https://zoom.us/j/1"]) == "https://meet.google.com/abc-defg-hij?authuser=0")
+    #expect(meetingLink(["<https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc%40thread.v2/0?context=%7b%22Tid%22%7d>"])
+        == "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc%40thread.v2/0?context=%7b%22Tid%22%7d")
+    #expect(meetingLink(["https://example.com/j/1 https://evilzoom.us/j/1 https://zoom.us.example.com/j/1",
+                         "https://meet.google.com@example.com/abc", "http://meet.google.com/abc"]) == nil)
+    #expect(meetingLink(["https://meet.google.com/abc-defg-hij';touch /tmp/x;'"]) == "https://meet.google.com/abc-defg-hij")
+    #expect(meetingLink(["https://zoom.us/j/1$(reboot)"]) == "https://zoom.us/j/1")
+    #expect(meetingLink(["https://teams.live.com/meet/9`id`;ls|cat>x\"y\nhttps://zoom.us/j/2"]) == "https://teams.live.com/meet/9")
+}
+
 @Test @MainActor func sharedProvidersRunOncePerEventAndSurviveIndependentWidgetEdits() async throws {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

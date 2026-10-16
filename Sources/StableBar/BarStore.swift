@@ -1,4 +1,5 @@
 import AppKit
+import EventKit
 import Observation
 
 @MainActor @Observable
@@ -32,6 +33,7 @@ final class BarStore: NSObject {
     private var reloadTask: Task<Void, Never>?
     private var eventObservers: [NSObjectProtocol] = []
     private var reloadObserver: NSObjectProtocol?
+    private var calendarObserver: NSObjectProtocol?
     private var actions: [UUID: Task<Void, Never>] = [:]
     private var actionTails: [String: (id: UUID, task: Task<Void, Never>)] = [:]
 
@@ -47,6 +49,9 @@ final class BarStore: NSObject {
             forName: LaunchCommand.reloadNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.reloadConfiguration() }
             }
+        calendarObserver = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshCalendars() }
+        }
         workspaceStore.onWorkspaceChange = { [weak self] in
             guard let self else { return }
             popup.close()
@@ -355,6 +360,12 @@ final class BarStore: NSObject {
         }
     }
 
+    private func refreshCalendars() {
+        for (name, provider) in providers where configuration!.providers[name]!.type == .calendar {
+            provider.refresh(ScriptEvent(sender: "calendar"))
+        }
+    }
+
     @discardableResult
     func runAction(_ command: String, widget: WidgetConfiguration,
                    event: ScriptEvent = ScriptEvent(sender: "mouse.clicked")) -> Task<Void, Never> {
@@ -404,6 +415,8 @@ final class BarStore: NSObject {
         for observer in eventObservers { DistributedNotificationCenter.default().removeObserver(observer) }
         if let reloadObserver { DistributedNotificationCenter.default().removeObserver(reloadObserver) }
         reloadObserver = nil
+        if let calendarObserver { NotificationCenter.default.removeObserver(calendarObserver) }
+        calendarObserver = nil
         eventObservers.removeAll()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }

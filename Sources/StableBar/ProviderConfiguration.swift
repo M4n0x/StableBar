@@ -1,7 +1,7 @@
 import Foundation
 
 enum ProviderType: String, Decodable, Sendable {
-    case command, stream, battery, network, system, audio
+    case command, stream, battery, network, system, audio, calendar
 
     var isNative: Bool { self != .command && self != .stream }
 }
@@ -14,8 +14,14 @@ struct ProviderConfiguration: Decodable, Equatable, Sendable {
     let environment: [String: String]
     let whenVisible: Bool
     let events: [String]
+    let calendars: [String]
+    let lookahead: Double
+    let soon: Int
+    let now: Int
 
-    enum CodingKeys: String, CodingKey, CaseIterable { case type, command, interval, timeout, environment, whenVisible, events }
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case type, command, interval, timeout, environment, whenVisible, events, calendars, lookahead, soon, now
+    }
 
     init(type: ProviderType) {
         self.type = type
@@ -25,6 +31,10 @@ struct ProviderConfiguration: Decodable, Equatable, Sendable {
         environment = [:]
         whenVisible = false
         events = []
+        calendars = []
+        lookahead = 24
+        soon = 15
+        now = 5
     }
 
     init(from decoder: Decoder) throws {
@@ -40,6 +50,10 @@ struct ProviderConfiguration: Decodable, Equatable, Sendable {
         environment = try values.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
         whenVisible = try values.decodeIfPresent(Bool.self, forKey: .whenVisible) ?? false
         events = try values.decodeIfPresent([String].self, forKey: .events) ?? []
+        calendars = try values.decodeIfPresent([String].self, forKey: .calendars) ?? []
+        lookahead = try values.decodeIfPresent(Double.self, forKey: .lookahead) ?? 24
+        soon = try values.decodeIfPresent(Int.self, forKey: .soon) ?? 15
+        now = try values.decodeIfPresent(Int.self, forKey: .now) ?? 5
         guard interval > 0, interval.isFinite else {
             throw DecodingError.dataCorruptedError(forKey: .interval, in: values,
                                                   debugDescription: "A provider interval must be greater than zero and finite.")

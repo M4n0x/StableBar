@@ -1,5 +1,6 @@
 import CoreAudio
 import Darwin
+import EventKit
 import Foundation
 import IOKit.ps
 
@@ -47,17 +48,39 @@ func networkCounters(_ data: Data) -> [UInt16: NetworkCounters] {
     return counters
 }
 
+func meetingCountdown(start: Date, end: Date, at date: Date, soon: Int, now: Int)
+    -> (phase: String, minutes: Int, remaining: Double, target: Double, delay: Double) {
+    let live = start <= date
+    let left = (live ? end : start).timeIntervalSince(date)
+    let span = live ? end.timeIntervalSince(start) : Double(soon * 60)
+    let phase = live ? "live" : (left <= Double(now * 60) ? "now" : (left <= Double(soon * 60) ? "soon" : "later"))
+    let second = left.truncatingRemainder(dividingBy: 60)
+    return (phase, Int((left / 60).rounded(.up)), min(1, left / span), min(1, max(0, left - 60) / span), second == 0 ? 60 : second)
+}
+
+func meetingLink(_ texts: [String]) -> String? {
+    texts.joined(separator: "\n")
+        .firstMatch(of: #/https://(?:meet\.google\.com|(?:[a-z0-9-]+\.)*zoom\.us|teams\.microsoft\.com|teams\.live\.com)/[A-Za-z0-9._~%/?=&+#:@-]+/#)
+        .map { String($0.output) }
+}
+
 final class NativeMetrics {
     private var cpu: CPUTicks?
     private var network: [String: NetworkCounters] = [:]
     private var networkTime: ContinuousClock.Instant?
+    private lazy var eventStore: EKEventStore = {
+        let store = EKEventStore()
+        store.requestFullAccessToEvents { _, _ in }
+        return store
+    }()
 
-    func sample(_ type: ProviderType) throws -> ScriptOutput {
-        switch type {
+    func sample(_ provider: ProviderConfiguration) throws -> ScriptOutput {
+        switch provider.type {
         case .battery: return try battery()
         case .network: return try networkRates()
         case .system: return try system()
         case .audio: return try audio()
+        case .calendar: return calendar(provider)
         case .command, .stream: preconditionFailure("Command providers do not use native metrics.")
         }
     }
@@ -83,6 +106,43 @@ final class NativeMetrics {
                                 value: percent, fields: fields, values: ["percent": percent])
         }
         return ScriptOutput(text: "AC", icon: "powerplug", fields: ["state": "ac", "present": "false"])
+    }
+
+    private func calendar(_ provider: ProviderConfiguration) -> ScriptOutput {
+        let store = eventStore
+        let access = EKEventStore.authorizationStatus(for: .event)
+        guard access == .fullAccess else {
+            return ScriptOutput(text: "No calendar access", icon: "calendar", fields: ["access": access == .notDetermined ? "notDetermined" : "denied"])
+        }
+        let now = Date()
+        let today = Calendar.current.startOfDay(for: now)
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
+        let horizon = now.addingTimeInterval(provider.lookahead * 3600)
+        let events = store.events(matching: store.predicateForEvents(withStart: today, end: max(tomorrow, horizon), calendars: nil))
+            .filter { !$0.isAllDay && (provider.calendars.isEmpty || provider.calendars.contains($0.calendar.title)) }
+            .sorted { $0.startDate < $1.startDate }
+        let agenda = events.filter { $0.startDate < tomorrow }.map(meetingFields)
+        guard let next = events.first(where: { $0.endDate > now && $0.startDate < horizon }) else {
+            return ScriptOutput(text: "No meetings", icon: "calendar", fields: ["access": "granted", "phase": "none"], lists: ["today": agenda],
+                                interval: 60 - now.timeIntervalSince1970.truncatingRemainder(dividingBy: 60))
+        }
+        let countdown = meetingCountdown(start: next.startDate, end: next.endDate, at: now, soon: provider.soon, now: provider.now)
+        var fields = meetingFields(next)
+        fields["access"] = "granted"
+        fields["phase"] = countdown.phase
+        fields["minutes"] = String(countdown.minutes)
+        return ScriptOutput(text: next.title, icon: "calendar", fields: fields, lists: ["today": agenda],
+                            values: ["remaining": countdown.remaining], targets: ["remaining": countdown.target], interval: countdown.delay)
+    }
+
+    private func meetingFields(_ event: EKEvent) -> [String: String] {
+        var fields: [String: String] = ["title": event.title, "start": event.startDate.formatted(date: .omitted, time: .shortened),
+                                        "end": event.endDate.formatted(date: .omitted, time: .shortened)]
+        if let link = meetingLink([event.url?.absoluteString, event.location, event.notes].compactMap { $0 }) {
+            fields["link"] = link
+            fields["joinCommand"] = "open '\(link)'"
+        }
+        return fields
     }
 
     private func system() throws -> ScriptOutput {
