@@ -22,12 +22,21 @@ struct PackagesView: View {
             VStack(spacing: 0) {
                 List(selection: Binding(get: { downloading ?? inspection.map { isInstalled($0) ? $0.manifest.versionKey : "store/\($0.manifest.versionKey)" } }, set: { key in
                     if let manifest = installed.first(where: { $0.versionKey == key || "store/\($0.versionKey)" == key }) {
+                        downloading = nil
                         perform { try select(packages.directory(id: manifest.id, version: manifest.version)) }
                     } else if let entry = storeEntries.first(where: { "store/\($0.id)/\($0.version)" == key }) {
                         downloading = key
                         Task {
-                            await perform { try select(await packages.download(entry, from: PackageIndex.url)) }
-                            downloading = nil
+                            do {
+                                let directory = try await packages.download(entry, from: PackageIndex.url)
+                                guard downloading == key else { return }
+                                downloading = nil
+                                perform { try select(directory) }
+                            } catch {
+                                guard downloading == key else { return }
+                                downloading = nil
+                                self.error = errorMessage(error)
+                            }
                         }
                     }
                 })) {
@@ -310,7 +319,10 @@ struct PackagesView: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Review package"
-        if panel.runModal() == .OK, let url = panel.url { perform { try select(url) } }
+        if panel.runModal() == .OK, let url = panel.url {
+            downloading = nil
+            perform { try select(url) }
+        }
     }
 
     private func select(_ directory: URL) throws {
@@ -364,15 +376,6 @@ struct PackagesView: View {
     private func perform(_ action: () throws -> Void) {
         do {
             try action()
-            error = nil
-        } catch {
-            self.error = errorMessage(error)
-        }
-    }
-
-    private func perform(_ action: () async throws -> Void) async {
-        do {
-            try await action()
             error = nil
         } catch {
             self.error = errorMessage(error)
