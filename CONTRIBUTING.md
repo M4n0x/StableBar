@@ -27,7 +27,7 @@ Reviews are requested automatically from the people listed in [CODEOWNERS](.gith
 
 Pull requests run `swift test` on macOS and check that every commit message, and the pull request title, follows [Conventional Commits](https://www.conventionalcommits.org). Squash merges use the title as the commit message.
 
-After the tests pass on `main`, [semantic-release](https://github.com/semantic-release/semantic-release) reads the commits since the last tag and decides the next version:
+[semantic-release](https://github.com/semantic-release/semantic-release) reads the commits since the last stable release and decides the next version:
 
 | Commit | Release |
 | --- | --- |
@@ -36,7 +36,12 @@ After the tests pass on `main`, [semantic-release](https://github.com/semantic-r
 | `feat!:`, or a `BREAKING CHANGE:` footer | Major: 0.1.0 → 1.0.0 |
 | `build:`, `chore:`, `ci:`, `docs:`, `refactor:`, `style:`, `test:` | None |
 
-A release sets `CFBundleShortVersionString` and `CFBundleVersion` in [Resources/Info.plist](Resources/Info.plist) with `scripts/set-version.sh`, adds its notes to `CHANGELOG.md`, commits both as `chore(release): <version>`, tags `v<version>` and publishes the notes as a GitHub release.
+Both release channels come from `main`:
+
+- **Beta:** after the tests pass on `main`, CI builds `dist/StableBar.dmg` as the next version plus `-beta.<run number>`, such as `0.5.0-beta.42`, and publishes it as a GitHub prerelease. A beta commits nothing. A push with no releasable commits since the last stable release makes no beta.
+- **Stable:** a maintainer starts it from **Actions → CI → Run workflow** on `main`. It releases the newest commit on `main`, and only once that commit has shipped as a beta, so stable ships what beta users have run. It sets `CFBundleShortVersionString` to the version and `CFBundleVersion` to the run number in [Resources/Info.plist](Resources/Info.plist) with `scripts/set-version.sh`, adds its notes to `CHANGELOG.md`, commits both as `chore(release): <version>`, tags `v<version>` and publishes a GitHub release with the DMG.
+
+Both jobs use the CI run number, which only goes up, so a stable build always numbers higher than the betas before it.
 
 ## Agent skills
 
