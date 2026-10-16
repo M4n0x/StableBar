@@ -87,6 +87,34 @@ import Testing
     }
 }
 
+@Test(arguments: [120.0, 600.0]) @MainActor
+func popupFoldKeepsTheScrollViewportAndPosition(documentHeight: Double) {
+    let size = NSSize(width: 360, height: 240)
+    let scroll = NSScrollView(frame: NSRect(origin: .zero, size: size))
+    scroll.hasVerticalScroller = true
+    scroll.autohidesScrollers = true
+    scroll.scrollerStyle = .overlay
+    scroll.documentView = NSView(frame: NSRect(x: 0, y: 0, width: size.width, height: documentHeight))
+    let reveal = PopupRevealView(content: scroll, size: size)
+    scroll.tile()
+    if documentHeight > size.height {
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 100))
+    }
+    let viewport = scroll.contentView.bounds
+    let visibleDocument = scroll.documentVisibleRect
+    #expect(viewport.height == size.height)
+    #expect(reveal.clipsToBounds)
+
+    for height in [1.0, 60, 120, 240, 120, 60, 1, 240] {
+        reveal.setFrameSize(NSSize(width: size.width, height: height))
+        scroll.layoutSubtreeIfNeeded()
+        #expect(scroll.frame.size == size)
+        #expect(scroll.frame.maxY == reveal.bounds.maxY)
+        #expect(scroll.contentView.bounds == viewport)
+        #expect(scroll.documentVisibleRect == visibleDocument)
+    }
+}
+
 @Test func duplicateIdsCannotBreakWidgetIdentity() {
     #expect(throws: DecodingError.self) {
         try JSONDecoder().decode(Configuration.self, from: Data(#"{"widgets":[{"id":"clock","type":"clock","position":"left"},{"id":"clock","type":"clock","position":"right"}]}"#.utf8))
