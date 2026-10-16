@@ -64,6 +64,7 @@ func meetingLink(_ texts: [String]) -> String? {
         .map { String($0.output) }
 }
 
+@MainActor
 final class NativeMetrics {
     private var cpu: CPUTicks?
     private var network: [String: NetworkCounters] = [:]

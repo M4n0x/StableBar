@@ -954,7 +954,8 @@ For new native widget types, add a case to `WidgetContent`, decode its settings 
 - [WidgetPackage.swift](Sources/StableBar/WidgetPackage.swift): package inspection, installation, store downloads and version selection.
 - [Workspaces.swift](Sources/StableBar/Workspaces.swift): AeroSpace subscriptions, yabai refreshes and workspace actions.
 - [Yabai.swift](Sources/StableBar/Yabai.swift): yabai snapshots mapped to workspaces and screen numbers.
-- [ScriptWidget.swift](Sources/StableBar/ScriptWidget.swift): custom widget output and refresh tasks.
+- [ScriptWidget.swift](Sources/StableBar/ScriptWidget.swift): the runner that applies a data source's output, with diagnostics, retries and suspension.
+- [DataSource.swift](Sources/StableBar/DataSource.swift): the data source protocol, and the command, stream and polling sources.
 - [BuiltInEvents.swift](Sources/StableBar/BuiltInEvents.swift): the events StableBar sends itself and what `INFO` holds.
 - [BarView.swift](Sources/StableBar/BarView.swift): native rendering and selection animation.
 - [LayoutConfiguration.swift](Sources/StableBar/LayoutConfiguration.swift): groups, priority overflow and notch-aware placement.
