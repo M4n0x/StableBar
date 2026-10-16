@@ -480,6 +480,7 @@ private func packageCommands(_ value: ConfigurationValue) -> [String] {
             let value = object[key]!
             if commandKeys.contains(key),
                case let .string(command) = value { return [command] }
+            if key == "onClickField", case let .string(field) = value { return ["Command from field \"\(field)\""] }
             return packageCommands(value)
         }
     case let .array(array): return array.flatMap(packageCommands)

@@ -165,12 +165,12 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     {"tokens":{"image":"assets/icon.png"},"templates":{"exported":{"type":"script","position":"left","command":"echo exported"}},
      "widgets":[{"id":"weather","type":"text","position":"right","text":"@setting.label",
       "style":{"fontSize":"@setting.size"},"onClick":"sh \"$PACKAGE_DIR/scripts/weather.sh\"",
-      "popup":{"height":120,"style":{},"layout":{"type":"image","path":"@token.image"}}}],
+      "popup":{"height":120,"style":{},"layout":{"type":"image","path":"@token.image","onClickField":"joinCommand"}}}],
      "profiles":[{"name":"night","when":{"appearance":"dark"},"configuration":{
        "widgetOverrides":{"weather":{"onClick":"echo night"}}}}]}
     """#, to: source.appending(path: "config.json"))
     let inspection = try store.inspect(source)
-    #expect(inspection.commands == ["echo exported", "echo night", "sh \"$PACKAGE_DIR/scripts/weather.sh\""])
+    #expect(inspection.commands == ["Command from field \"joinCommand\"", "echo exported", "echo night", "sh \"$PACKAGE_DIR/scripts/weather.sh\""])
     #expect(!FileManager.default.fileExists(atPath: marker.path))
     let installed = try store.install(source)
     #expect(installed.directory == directory.appending(path: "bar/packages/weather/1.0.0"))
