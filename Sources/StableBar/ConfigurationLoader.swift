@@ -177,7 +177,10 @@ func configurationOrigins(_ value: ConfigurationValue, source: ConfigurationOrig
     return origins
 }
 
+let bundledThemesDirectory = Bundle.main.url(forResource: "themes", withExtension: nil)
+
 struct ConfigurationLoader {
+    var themesDirectory = bundledThemesDirectory
     private(set) var dependencies: Set<URL> = []
     private(set) var document: [String: ConfigurationValue] = [:]
     private(set) var origins: [String: ConfigurationOrigin] = [:]
@@ -204,8 +207,11 @@ struct ConfigurationLoader {
         for selection in try base.values["packages"]?.decoded([WidgetPackageSelection].self, at: "packages") ?? [] where selection.enabled {
             try layer.merge(readSelectedPackage(selection, from: packageStore, kind: nil))
         }
+        if themesDirectory != nil {
+            try layer.merge(readBundledTheme(WidgetPackageSelection(id: "built-in")))
+        }
         if let theme = try base.values["theme"]?.decoded(WidgetPackageSelection.self, at: "theme"), theme.enabled {
-            try layer.merge(readSelectedPackage(theme, from: packageStore, kind: .theme))
+            try layer.merge(theme.version == nil ? readBundledTheme(theme) : readSelectedPackage(theme, from: packageStore, kind: .theme))
         }
         try layer.merge(base)
         return try finish(layer, context: context)
@@ -213,10 +219,11 @@ struct ConfigurationLoader {
 
     private mutating func readSelectedPackage(_ selection: WidgetPackageSelection, from packageStore: WidgetPackageStore,
                                               kind: WidgetPackageManifest.Kind?) throws -> ConfigurationLayer {
-        let directory = try packageStore.directory(id: selection.id, version: selection.version)
+        guard let version = selection.version else { throw WidgetPackageError.missingVersion(selection.id) }
+        let directory = try packageStore.directory(id: selection.id, version: version)
         dependencies.insert(directory.appending(path: "package.json"))
         let manifest = try packageStore.manifest(at: directory)
-        guard manifest.id == selection.id, manifest.version == selection.version else {
+        guard manifest.id == selection.id, manifest.version == version else {
             throw WidgetPackageError.manifestMismatch
         }
         guard manifest.kind == kind else {
@@ -226,8 +233,23 @@ struct ConfigurationLoader {
         return try readPackage(at: directory, manifest: manifest, settings: selection.settings)
     }
 
+    private mutating func readBundledTheme(_ selection: WidgetPackageSelection) throws -> ConfigurationLayer {
+        guard let themesDirectory, FileManager.default.fileExists(atPath: themesDirectory.appending(path: "\(selection.id)/package.json").path) else {
+            throw WidgetPackageError.unknownTheme(selection.id)
+        }
+        let directory = themesDirectory.appending(path: selection.id)
+        let manifest = try WidgetPackageStore(directory: themesDirectory).manifest(at: directory)
+        return try readPackage(at: directory, manifest: manifest, settings: selection.settings)
+    }
+
     mutating func finish(_ input: ConfigurationLayer, context: ConfigurationContext) throws -> [String: ConfigurationValue] {
         var layer = input
+        var context = context
+        if case let .object(bar) = layer.values["bar"], let appearance = bar["appearance"],
+           case let .string(name) = try substituteConfigurationReferences(appearance, prefix: "@token.",
+                                                                          values: layer.values["tokens"]?.decoded([String: ConfigurationValue].self) ?? [:]) {
+            context.appearance = name
+        }
         activeProfiles = []
         profiles = try layer.values["profiles"]?.decoded([ConfigurationProfile].self, at: "profiles") ?? []
         matchesApps = profiles.contains { $0.when?.app != nil }

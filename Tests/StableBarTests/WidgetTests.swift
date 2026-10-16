@@ -10,7 +10,7 @@ import Testing
     let rich = try ScriptOutput.read(Data(##"{"text":"Building","icon":"hammer","color":"#f7821b80","tooltip":"App build"}"##.utf8))
     #expect(rich.text == "Building")
     #expect(rich.icon == "hammer")
-    #expect(rich.color?.rgba == 0xf7821b80)
+    #expect(rich.color == HexColor(0xf7821b80))
     #expect(rich.tooltip == "App build")
     let popup = try ScriptOutput.read(Data(#"{"text":"30%","value":0.3,"fields":{"usage":"30%"},"lists":{"processes":[{"name":"Window Server","cpu":"90.1%","memory":"108 MB"}]}}"#.utf8))
     #expect(popup.fields?["usage"] == "30%")
@@ -291,7 +291,8 @@ import Testing
     #expect(configuration.bar.offset == 38)
     #expect(configuration.bar.height == 48)
     #expect(configuration.bar.notchSpacing == 20)
-    #expect(configuration.defaults.foreground == HexColor(0xf5f5f7ff))
+    #expect(configuration.bar.appearance == .dark)
+    #expect(configuration.defaults.foreground == nil)
     #expect(configuration.defaults.fontName == "Helvetica")
     #expect(configuration.defaults.accent == HexColor(0xff8800ff))
     #expect(configuration.widgets[0].content == .clock(format: "EEE d MMM  h:mm a"))
@@ -306,6 +307,11 @@ import Testing
     let themed = try SetupPreferences(theme: .package(id: "slate", version: "1.0.0")).applying(to: updated, menuBarHeight: 24)
     let themedResult = try JSONSerialization.jsonObject(with: themed) as! [String: Any]
     #expect(themedResult["defaults"] as! NSDictionary == original["defaults"] as! NSDictionary)
+    #expect(themedResult["theme"] as! NSDictionary == ["id": "slate", "version": "1.0.0"])
+    let bundled = try SetupPreferences(appearance: .automatic, theme: .package(id: "paper", version: nil)).applying(to: updated, menuBarHeight: 24)
+    let bundledResult = try JSONDecoder().decode([String: ConfigurationValue].self, from: bundled)
+    #expect(bundledResult["theme"] == .object(["id": .string("paper")]))
+    #expect(bundledResult["bar"] == .object(["height": .number(48), "offset": .number(38), "notchSpacing": .number(20), "appearance": .null]))
 }
 
 @Test func setupRejectsInvalidConfigurationBeforeEditing() {
@@ -362,8 +368,8 @@ import Testing
         .applying(to: data, menuBarHeight: 24, configurationURL: root)
     let document = try JSONDecoder().decode([String: ConfigurationValue].self, from: updated)
     let original = try JSONDecoder().decode([String: ConfigurationValue].self, from: data)
-    #expect(document["bar"] == .object(["height": .number(40), "offset": .number(24)]))
-    #expect(try document["defaults"]?.decoded(WidgetStyle.self).foreground == HexColor(0xf5f5f7ff))
+    #expect(document["bar"] == .object(["height": .number(40), "offset": .number(24), "appearance": .string("dark")]))
+    #expect(document["defaults"] == original["defaults"])
     #expect(document["widgets"] == .array([.object(["id": .string("clock"), "type": .string("clock"), "position": .string("right"),
                                                     "format": .string("EEE d MMM  h:mm a")])]))
     #expect(document["profiles"] == original["profiles"])

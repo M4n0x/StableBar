@@ -103,7 +103,6 @@ private struct ConfigurationEditorView: View {
     @State private var advanced = "{}"
     @State private var showsBar = false
     @State private var showsProfiles = false
-    @Environment(\.colorScheme) private var colorScheme
 
     init(store: BarStore) {
         self.store = store
@@ -269,10 +268,10 @@ private struct ConfigurationEditorView: View {
                 }
             }
             Section("Appearance") {
-                colorPicker("Text color", value: editor.selectedStyle["foreground"], fallback: builtInStyle.foreground!) {
+                colorPicker("Text color", value: editor.selectedStyle["foreground"]) {
                     editor.set(["style": .object(["foreground": .string($0)])])
                 }
-                colorPicker("Background", value: editor.selectedStyle["background"], fallback: builtInStyle.background!) {
+                colorPicker("Background", value: editor.selectedStyle["background"]) {
                     editor.set(["style": .object(["background": .string($0)])])
                 }
                 ForEach([("Font size", "fontSize", 12.0), ("Horizontal padding", "paddingHorizontal", 10), ("Corner radius", "cornerRadius", 14)],
@@ -315,19 +314,16 @@ private struct ConfigurationEditorView: View {
         var defaults: [String: ConfigurationValue] = [:]
         if case let .object(object) = store.effectiveDocument["bar"] { bar = object }
         if case let .object(object) = store.effectiveDocument["defaults"] { defaults = object }
-        let themes = ((try? WidgetPackageStore(directory: store.configurationURL.deletingLastPathComponent().appending(path: "packages")).list()) ?? [])
-            .filter { $0.kind == .theme }
+        let themes = themeChoices(packages: store.configurationURL.deletingLastPathComponent().appending(path: "packages"))
         let theme = try? store.effectiveDocument["theme"]?.decoded(WidgetPackageSelection.self)
-        let selected = themes.first { $0.id == theme?.id && $0.version == theme?.version && theme?.enabled == true }
+        let selected = theme?.enabled == true ? theme?.key : nil
         return Form {
             Section("Theme") {
-                Picker("Theme", selection: Binding(get: { selected?.versionKey }, set: { key in
-                    editor.change(ConfigurationEdit(action: .theme, properties: themes.first { $0.versionKey == key }.map {
-                        ["id": .string($0.id), "version": .string($0.version)]
-                    }))
+                Picker("Theme", selection: Binding(get: { selected }, set: { key in
+                    editor.change(ConfigurationEdit(action: .theme, properties: themes.first { $0.key == key }?.selection))
                 })) {
                     Text("Built-in").tag(String?.none)
-                    ForEach(themes, id: \.versionKey) { Text("\($0.name) · \($0.version)").tag(Optional($0.versionKey)) }
+                    ForEach(themes, id: \.key) { Text($0.title).tag(Optional($0.key)) }
                 }
             }
             Section("Bar") {
@@ -339,10 +335,10 @@ private struct ConfigurationEditorView: View {
                 }
             }
             Section("All widgets") {
-                colorPicker("Text color", value: defaults["foreground"], fallback: builtInStyle.foreground!) {
+                colorPicker("Text color", value: defaults["foreground"]) {
                     editor.change(ConfigurationEdit(action: .defaults, properties: ["foreground": .string($0)]))
                 }
-                colorPicker("Background", value: defaults["background"], fallback: builtInStyle.background!) {
+                colorPicker("Background", value: defaults["background"]) {
                     editor.change(ConfigurationEdit(action: .defaults, properties: ["background": .string($0)]))
                 }
                 numberField("Font size", value: defaults["fontSize"], fallback: 12) {
@@ -407,11 +403,9 @@ private struct ConfigurationEditorView: View {
         }
     }
 
-    private var builtInStyle: WidgetStyle { colorScheme == .dark ? .dark : .light }
-
-    private func colorPicker(_ title: String, value: ConfigurationValue?, fallback: HexColor, set: @escaping (String) -> Void) -> some View {
+    private func colorPicker(_ title: String, value: ConfigurationValue?, set: @escaping (String) -> Void) -> some View {
         ColorPicker(title, selection: Binding(get: {
-            ((try? value?.decoded(HexColor.self)) ?? fallback).color
+            ((try? value?.decoded(HexColor.self)) ?? HexColor(0)).color
         }, set: {
             let color = NSColor($0).usingColorSpace(.sRGB)!
             set(String(format: "#%02x%02x%02x%02x", Int((color.redComponent * 255).rounded()),

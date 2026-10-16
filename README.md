@@ -6,11 +6,11 @@ The default configuration includes a System Settings shortcut, the active app an
 
 ## Install and set up
 
-Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, theme, widget appearance, placement, clock format, and opening at login. Setup is also available from the menu-bar icon or by right-clicking the bar.
+Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, theme, appearance, placement, clock format, and opening at login. Setup is also available from the menu-bar icon or by right-clicking the bar.
 
 The starter bar needs no special permissions. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. A [calendar provider](#calendar) asks for Calendars access the first time it updates. AeroSpace and yabai manage their own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
 
-Widgets follow the system's light or dark mode unless you pick a [theme](#theme-packages) or a fixed appearance. Any appearance other than **Keep current** sets the global widget colors, which take precedence over a theme's. Choosing an installed theme in setup hides the appearance choice and removes those colors from your configuration. Individual widget styles still take precedence. Setup preserves custom widgets, scripts, and other settings. Closing setup leaves it available on the next launch. New configurations place the bar below the macOS menu bar; existing configurations retain their position.
+Setup offers the [themes](#themes) that ship with StableBar and any you have installed. Every theme has light and dark colors and follows the system's light or dark mode; choose **Light** or **Dark** to keep the bar in one appearance, which sets `bar.appearance`. Individual widget styles still take precedence. Setup preserves custom widgets, scripts, and other settings. Closing setup leaves it available on the next launch. New configurations place the bar below the macOS menu bar; existing configurations retain their position.
 
 ## Build and run
 
@@ -70,12 +70,12 @@ Unknown properties are errors, so a misspelled key cannot be silently ignored. T
 "$schema": "https://raw.githubusercontent.com/Seb-GRAF/StableBar/main/stablebar.schema.json"
 ```
 
-- `bar`: `height`, `offset`, `inset`, `spacing`, `background`, `animationDuration` (seconds), `displayScale`.
+- `bar`: `height`, `offset`, `inset`, `spacing`, `background`, `animationDuration` (seconds), `displayScale`, `appearance` (`light` or `dark` keeps the bar and its popups in that appearance; omit it to follow the system).
 - `defaults`: styles inherited by every widget.
 - `workspaceSource`: `aerospace` (default) or `yabai`, for workspace widgets and active-display tracking.
 - `widgets`: ordered widget definitions with unique `id`, `type`, `position` and optional `style`, `icon`, `onClick`, `menu`, `popup`.
 - `position`: `left`, `notchLeft`, `center`, `notchRight` or `right`.
-- Colors: `#RRGGBB` or `#RRGGBBAA` (alpha last).
+- Colors: `#RRGGBB` or `#RRGGBBAA` (alpha last), or `{ "light": "#RRGGBB", "dark": "#RRGGBB" }` for a color that follows the light or dark appearance.
 - Icons: SF Symbols names.
 - Measurements: points.
 
@@ -143,14 +143,9 @@ Define reusable JSON values in `tokens` and reference them with a whole string s
 
 ```json
 {
-  "tokens": { "accent": "#db733f", "fontSize": 12 },
+  "tokens": { "accent": { "light": "#db733f", "dark": "#ffa66b" }, "fontSize": 12 },
   "defaults": { "accent": "@token.accent", "fontSize": "@token.fontSize" },
   "profiles": [
-    {
-      "name": "dark",
-      "when": { "appearance": "dark" },
-      "configuration": { "tokens": { "accent": "#ffa66b" } }
-    },
     {
       "name": "laptop",
       "when": { "onBattery": true, "displayCount": 1 },
@@ -161,7 +156,9 @@ Define reusable JSON values in `tokens` and reference them with a whole string s
 }
 ```
 
-Profiles match `appearance` (`light` or `dark`), `onBattery`, `displayCount`, `externalDisplay`, and the focused app's bundle identifier in `app`. Conditions in one profile must all match. Matching profiles apply in array order after modules and the root configuration; later profiles win. A profile without `when` always matches. Widgets in profiles append to the bar; use `widgetOverrides` to change existing widgets. Appearance, power, screen and focused-app changes update the active profiles automatically.
+A color token can hold a light and dark pair, as `accent` does here, so it follows the appearance without a profile.
+
+Profiles match `appearance` (`light` or `dark`: `bar.appearance` when set, otherwise the system's), `onBattery`, `displayCount`, `externalDisplay`, and the focused app's bundle identifier in `app`. Conditions in one profile must all match. Matching profiles apply in array order after modules and the root configuration; later profiles win. A profile without `when` always matches. A profile that sets `bar.appearance` changes how the bar looks, not which profiles match. Widgets in profiles append to the bar; use `widgetOverrides` to change existing widgets. Appearance, power, screen and focused-app changes update the active profiles automatically.
 
 Set `"profile": "laptop"` to apply only that profile, regardless of its conditions. Remove `profile` to resume automatic matching, or set it to `null` to override a manual profile inherited from a module. The inspector reports active profiles and the file, template, override and token sources behind effective widget properties.
 
@@ -214,21 +211,27 @@ Enable an exact installed version in the root configuration:
 
 Package selections in modules merge by package ID, with later modules and the root taking precedence. Enabled packages load once before the composed modules and root properties. Root templates, tokens and widget overrides can customize them. Set `enabled` to `false` to stop loading a package; installation alone has no runtime effect. Packages cannot enable other packages. There is no network registry or automatic update process: versions remain pinned until you choose another installed version.
 
-### Theme packages
+### Themes
 
-A theme is a package whose `package.json` sets `"kind": "theme"`. Its configuration can contain only `tokens`, `defaults`, `bar`, `groups` and `profiles`, plus includes inside the package; profiles hold its light and dark variants. Widgets, templates, widget overrides, popups, providers, environment variables and any other key are rejected when the theme is reviewed, installed or loaded, so a theme runs no commands and needs no command review. [examples/themes/slate](examples/themes/slate/config.json) defines every token below, with a dark variant.
-
-Install a theme like any other package, then select one installed version in the root configuration:
+StableBar ships with four themes: **Built-in**, **Slate**, **Paper** and **Graphite**. Each has light and dark colors and follows the system's appearance, or the one `bar.appearance` sets. Choose one in setup or in **Customize → Editor → Bar**, or select a theme that ships with StableBar by its ID:
 
 ```json
-{ "theme": { "id": "slate", "version": "1.0.0" } }
+{ "theme": { "id": "slate" } }
 ```
 
-Only one theme is active: `theme` must name a theme package, and `packages` cannot list one. `theme` accepts the same `enabled` and `settings` as a package selection. Widget packages load first, then the theme, then includes and the main file. A theme's tokens, `defaults` and `bar` settings override a widget package's, and yours override the theme's. A `profiles` array in a later layer replaces the theme's profiles, like any array. Without `theme`, StableBar uses its built-in look, which follows the system's light or dark mode.
+Without `theme`, StableBar uses Built-in. Built-in also loads under every other theme, so a theme only needs what it changes: one that defines only tokens restyles widgets through Built-in's `defaults`, and anything it leaves out keeps Built-in's value.
 
-Choose a theme in setup, in **Customize → Editor → Bar**, or by enabling it in **Customize → Packages**. **Built-in** removes `theme`.
+A theme is a package whose `package.json` sets `"kind": "theme"`. Its configuration can contain only `tokens`, `defaults`, `bar`, `groups` and `profiles`, plus includes inside the package. Widgets, templates, widget overrides, popups, providers, environment variables and any other key are rejected when the theme is reviewed, installed or loaded, so a theme runs no commands and needs no command review. The themes that ship with StableBar are in [Resources/themes](Resources/themes); [Slate](Resources/themes/slate/config.json) defines every token below. Give each color a light and a dark value, such as `{ "light": "#1f2329", "dark": "#e6e9ef" }`, instead of a dark profile.
 
-Popups inherit `defaults`, and the workspace highlight uses `defaults.accent`. Themes should define these tokens so that widgets, widget packages, popups, layouts and workspace styles can use them, for example `"foreground": "@token.textMuted"`:
+Install your own theme like any other package, then select it with its version:
+
+```json
+{ "theme": { "id": "my-theme", "version": "1.0.0" } }
+```
+
+Only one theme is active: `theme` must name a theme, and `packages` cannot list one. An installed theme accepts the same `enabled` and `settings` as a package selection, and you can also enable it in **Customize → Packages**. Widget packages load first, then Built-in, then the selected theme, then includes and the main file. A theme's tokens, `defaults` and `bar` settings override a widget package's, and yours override the theme's. A `profiles` array in a later layer replaces the theme's profiles, like any array. **Built-in** in setup and Customize removes `theme`.
+
+Popups inherit `defaults`, and the workspace highlight uses `defaults.accent`. Every theme defines these tokens, so widgets, widget packages, popups, layouts and workspace styles can use them, for example `"foreground": "@token.textMuted"`:
 
 | Token | Use |
 | --- | --- |
@@ -242,7 +245,7 @@ Popups inherit `defaults`, and the workspace highlight uses `defaults.accent`. T
 | `warning` | Warning text or fills |
 | `critical` | Critical text or fills |
 
-A reference to a token that no layer defines is an error. A widget package should define fallback values for the shared tokens it uses, which any theme replaces; your own widgets need a theme or `tokens` of your own that define them.
+A reference to a token that no layer defines is an error. Built-in defines all of these, so your own widgets can use them under any theme. Their names are reserved for colors: Built-in's `defaults` use `text`, `surface`, `surfaceRaised` and `accent`, so a token of yours with one of these names replaces the theme's color and must be a color. A widget package should still define fallback values for the shared tokens it uses, so it passes review on its own; Built-in and any other theme replace them.
 
 ### Displays and notch placement
 
@@ -410,7 +413,7 @@ StableBar --batch '[
 ]' --persist
 ```
 
-A batch validates the whole resulting configuration before replacing the running bar or writing the file. A failed batch leaves both intact. Supported edit actions are `set` (`id`, `properties`), `add` (`properties`, including `id`), `remove` (`id`), `reorder` (`ids`), `bar`/`defaults` (`properties`), `profile` (`name`, omitted for automatic), `package` (`properties`: `id`, `version`, optional `enabled` and `settings`), and `theme` (the same `properties`, omitted for the built-in theme).
+A batch validates the whole resulting configuration before replacing the running bar or writing the file. A failed batch leaves both intact. Supported edit actions are `set` (`id`, `properties`), `add` (`properties`, including `id`), `remove` (`id`), `reorder` (`ids`), `bar`/`defaults` (`properties`), `profile` (`name`, omitted for automatic), `package` (`properties`: `id`, `version`, optional `enabled` and `settings`), and `theme` (the same `properties`, with only `id` for a theme that ships with StableBar, omitted for Built-in).
 
 - `--validate [PATH]`: compose and validate files without starting scripts.
 - `--refresh ID`: refresh a running widget. Hidden, suspended providers must first be made visible or opened in the inspector.

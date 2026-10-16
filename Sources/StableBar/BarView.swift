@@ -6,6 +6,7 @@ struct BarView: View {
     @State private var measuredWidths: [String: CGFloat] = [:]
     @State private var overflowAnchor = NSView()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Group {
@@ -95,6 +96,7 @@ struct BarView: View {
                 .animation(reduceMotion ? nil : .easeOut(duration: config.bar.animationDuration), value: style)
             }
         }
+        .environment(\.colorScheme, store.configuration?.bar.appearance?.colorScheme ?? colorScheme)
         .onDisappear { store.setVisibleWidgets(ids: [], displayID: display.id) }
         .contextMenu {
             Text("StableBar")
