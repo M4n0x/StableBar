@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import SwiftUI
@@ -204,6 +205,34 @@ import Testing
     #expect(glyph("Adobe Bridge 2026", "com.adobe.bridge14") == ":adobe:")
     #expect(glyph("Safari", "com.apple.Safari") == ":default:")
     #expect(appGlyph(for: WorkspaceApp(workspace: "1", name: "Safari", bundleID: "com.apple.Safari"), in: ["Adobe*": ":adobe:"]) == nil)
+}
+
+@Test @MainActor func nativeWorkspaceIconsKeepTheirImageIdentityAcrossRedraws() throws {
+    var loads: [String] = []
+    let icons = WorkspaceAppIcons { bundleID in
+        loads.append(bundleID)
+        return NSImage(size: NSSize(width: 32, height: 32))
+    }
+    let finder = try #require(icons.image(for: "com.apple.finder"))
+    let safari = try #require(icons.image(for: "com.apple.Safari"))
+    for _ in 0..<10 {
+        let redraw = try #require(icons.image(for: "com.apple.finder"))
+        #expect(Image(nsImage: finder) == Image(nsImage: redraw))
+        #expect(icons.image(for: "com.apple.Safari") === safari)
+    }
+    #expect(loads == ["com.apple.finder", "com.apple.Safari"])
+    #expect(finder !== safari)
+}
+
+@Test @MainActor func missingWorkspaceIconsRetryWhenAnAppBecomesAvailable() throws {
+    var available = false
+    let icons = WorkspaceAppIcons { _ in
+        available ? NSImage(size: NSSize(width: 32, height: 32)) : nil
+    }
+    #expect(icons.image(for: "com.example.new-app") == nil)
+    available = true
+    let image = try #require(icons.image(for: "com.example.new-app"))
+    #expect(icons.image(for: "com.example.new-app") === image)
 }
 
 @Test func notchGroupsStayOutsideAnOffCenterNotch() {
