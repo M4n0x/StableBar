@@ -4,8 +4,14 @@
     ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
     ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
     ["@semantic-release/changelog", { "changelogTitle": "# Changelog" }],
-    ["@semantic-release/exec", { "prepareCmd": "./scripts/set-version.sh ${nextRelease.version} $GITHUB_RUN_NUMBER" }],
+    [
+      "@semantic-release/exec",
+      {
+        "verifyReleaseCmd": "echo ${nextRelease.version} > .next-version",
+        "prepareCmd": "./scripts/set-version.sh ${nextRelease.version} $GITHUB_RUN_NUMBER && ./scripts/package.sh"
+      }
+    ],
     ["@semantic-release/git", { "assets": ["CHANGELOG.md", "Resources/Info.plist"] }],
-    "@semantic-release/github"
+    ["@semantic-release/github", { "assets": [{ "path": "dist/StableBar.dmg" }] }]
   ]
 }

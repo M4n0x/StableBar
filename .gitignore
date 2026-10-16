@@ -7,3 +7,4 @@ artifacts/
 !.env.example
 *.local.json
 node_modules/
+.next-version
