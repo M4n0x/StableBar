@@ -31,6 +31,10 @@ swift test
 
 The first launch creates `~/.config/stablebar/config.json` from [Resources/config.json](Resources/config.json), with an offset for your menu bar. Subsequent launches keep your file. Right-click the bar or use its macOS menu-bar icon to open the configuration, reload it, reconnect the workspace source or quit.
 
+### Download a release
+
+Stable releases after v0.4.0 on the [releases page](https://github.com/Seb-GRAF/StableBar/releases) include `StableBar.dmg`. Betas of the next version are marked **Pre-release**. Both are built for Apple silicon and are not notarized yet, so macOS blocks the app the first time you open it: allow it in **System Settings → Privacy & Security → Open Anyway**.
+
 ### Build an installer
 
 ```sh

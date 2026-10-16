@@ -4,12 +4,15 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Starts a stable release; see the release job.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# A stable release gets its own group, so a newer push can't cancel it while it waits.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && 'stable' || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -52,10 +55,63 @@ jobs:
           TITLE: ${{ github.event.pull_request.title }}
         run: printf '%s\n' "$TITLE" | npx commitlint --verbose
 
+  # Every push to main with releasable commits publishes the next version as a beta prerelease.
+  # It commits nothing. Both jobs build with github.run_number, which only goes up, so a stable
+  # build always numbers higher than the betas before it. The count belongs to this workflow
+  # file: keep both jobs here, and don't rename it.
+  #
+  # The dry run writes the next version to .next-version. It writes nothing when there is nothing
+  # to release, or when main moved on during this run; the newer push builds its own beta.
+  beta:
+    name: Beta
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+      - run: npm audit signatures
+      - name: Find the next version
+        id: next
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx semantic-release --dry-run
+          if [[ -f .next-version ]]; then
+            echo "version=$(cat .next-version)-beta.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          else
+            echo "No beta: nothing to release since the last stable version, or main moved on."
+          fi
+      - name: Build the beta
+        if: steps.next.outputs.version
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          ./scripts/set-version.sh "$VERSION" "$GITHUB_RUN_NUMBER"
+          ./scripts/package.sh
+      - name: Publish the beta
+        if: steps.next.outputs.version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          gh release create "v$VERSION" dist/StableBar.dmg --repo "$GITHUB_REPOSITORY" --prerelease \
+            --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes
+
+  # Run by hand from Actions > CI > Run workflow on main.
   release:
     name: Release
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: macos-26
     timeout-minutes: 20
     permissions:
@@ -79,6 +135,16 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # Stable ships only a commit that beta users already ran.
+      - name: Require a beta of this commit
+        run: |
+          beta=$(git tag --points-at HEAD --list 'v*-beta.*')
+          if [[ -z "$beta" ]]; then
+            echo "::error::The newest commit on main, $GITHUB_SHA, has no beta. Its beta may still be" \
+              "building, or it has nothing to release, such as the commit a stable release makes."
+            exit 1
+          fi
+          echo "Releasing the commit that shipped as $beta."
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -88,3 +154,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
         run: npx semantic-release
+      # semantic-release exits successfully without releasing when main moved during this run or
+      # there was nothing to release. Don't let that look like a release.
+      - name: Require a stable tag
+        run: |
+          if ! git tag --points-at HEAD | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Nothing was released: main moved during this run, or there was nothing" \
+              "to release. Run it again once the newest commit's beta is out."
+            exit 1
+          fi
