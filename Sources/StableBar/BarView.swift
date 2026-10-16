@@ -442,7 +442,7 @@ struct WorkspaceView: View {
                         Text(workspace.name)
                         if configuration?.showApps != false {
                             ForEach(workspace.apps) { app in
-                                if let glyph = configuration?.appGlyphs?[app.bundleID] ?? configuration?.appGlyphs?[app.name] ?? configuration?.appGlyphs?["*"] {
+                                if let glyphs = configuration?.appGlyphs, let glyph = appGlyph(for: app, in: glyphs) {
                                     Text(glyph)
                                         .font(WidgetAppearance(appStyle, defaults: WidgetStyle()).font)
                                         .foregroundStyle((hoveredWorkspace == workspace.name ? appStyle.hoverForeground?.color : nil)
@@ -496,4 +496,9 @@ struct WorkspaceView: View {
         .fixedSize(horizontal: true, vertical: false)
         .animation(reduceMotion ? nil : (animation?.value ?? .smooth(duration: animationDuration)), value: workspaces)
     }
+}
+
+func appGlyph(for app: WorkspaceApp, in glyphs: [String: String]) -> String? {
+    if let glyph = glyphs[app.bundleID] ?? glyphs[app.name] { return glyph }
+    return glyphs.filter { $0.key.hasSuffix("*") && app.name.hasPrefix($0.key.dropLast()) }.max { $0.key.count < $1.key.count }?.value
 }
