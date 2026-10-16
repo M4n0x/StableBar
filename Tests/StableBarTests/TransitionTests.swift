@@ -1,0 +1,106 @@
+import Foundation
+import Testing
+@testable import StableBar
+
+private func block(_ json: String) throws -> PopupBlock {
+    try JSONDecoder().decode(PopupBlock.self, from: Data(json.utf8))
+}
+
+@Test func widgetsAndTextFieldAndSymbolBlocksTakeATransition() throws {
+    let widget = try JSONDecoder().decode(WidgetConfiguration.self, from: Data(#"""
+    {"id":"time","type":"clock","position":"right","transition":"numeric",
+     "layout":{"type":"row","children":[{"type":"symbol","name":"clock","transition":"fade"},
+                                        {"type":"field","field":"text"},{"type":"text","text":"UTC","transition":"none"}]}}
+    """#.utf8))
+    #expect(widget.transition == .numeric)
+    guard case let .row(children)? = widget.layout?.content else {
+        Issue.record("Expected a row layout")
+        return
+    }
+    #expect(children.map(\.transition) == [.fade, nil, WidgetTransition.none])
+    #expect(try block(#"{"type":"field","field":"text","transition":"roll"}"#).transition == .roll)
+}
+
+@Test func transitionMistakesNameTheirProblem() throws {
+    let url = FileManager.default.temporaryDirectory.appending(path: "transitions.json")
+    var loader = ConfigurationLoader()
+    for (json, message) in [
+        (#"{"widgets":[{"id":"note","type":"text","text":"A","position":"left","transition":"spin"}]}"#,
+         "widgets.note: transition: Use none, fade, roll or numeric."),
+        (#"{"widgets":[{"id":"note","type":"text","text":"A","position":"left","layout":{"type":"row","transition":"fade","children":[]}}]}"#,
+         "widgets.note: layout.transition: Transitions apply to text, field and symbol blocks."),
+        (#"{"widgets":[{"id":"note","type":"text","text":"A","position":"left","layout":{"type":"progress","source":"x","height":2,"transition":"roll"}}]}"#,
+         "widgets.note: layout.transition: Transitions apply to text, field and symbol blocks.")
+    ] {
+        let error = #expect(throws: (any Error).self) { try loader.load(url, data: Data(json.utf8)) }
+        #expect(error.map(errorMessage) == message)
+    }
+}
+
+@Test func transitionsComeFromTemplatesProfilesAndOverrides() throws {
+    var loader = ConfigurationLoader()
+    let configuration = try loader.load(FileManager.default.temporaryDirectory.appending(path: "transitions.json"), data: Data(#"""
+    {"templates":{"metric":{"type":"script","command":"true","position":"right","transition":"fade",
+                            "layout":{"type":"field","field":"text","transition":"roll"}}},
+     "widgets":[{"id":"cpu","template":"metric"},{"id":"memory","template":"metric"}],
+     "widgetOverrides":{"memory":{"transition":"numeric","layout":{"transition":null}}},
+     "profiles":[{"name":"calm","configuration":{"widgetOverrides":{"cpu":{"transition":"none"}}}}]}
+    """#.utf8))
+    #expect(configuration.widgets[0].transition == WidgetTransition.none)
+    #expect(configuration.widgets[0].layout?.transition == .roll)
+    #expect(configuration.widgets[1].transition == .numeric)
+    #expect(configuration.widgets[1].layout?.transition == nil)
+}
+
+@Test func blocksUseTheirOwnTransitionElseTheWidgetsAndNoneWhileStill() throws {
+    let own = try block(#"{"type":"field","field":"text","transition":"roll","animation":{"duration":0.5}}"#)
+    let plain = try block(#"{"type":"symbol","name":"bolt"}"#)
+    let motion = BlockMotion(transition: .fade, animation: WidgetAnimation(duration: 0.3))
+    #expect(motion.transition(for: own, still: false) == .roll)
+    #expect(motion.transition(for: plain, still: false) == .fade)
+    #expect(motion.transition(for: own, still: true) == WidgetTransition.none)
+    #expect(motion.animation(for: own).duration == 0.5)
+    #expect(motion.animation(for: plain).duration == 0.3)
+    #expect(BlockMotion().transition(for: plain, still: false) == WidgetTransition.none)
+}
+
+@Test func theEditorOffersATransitionOnlyWhereTheWidgetDrawsOne() throws {
+    let widgets = try JSONDecoder().decode(Configuration.self, from: Data(#"""
+    {"widgets":[
+      {"id":"note","type":"text","text":"A","position":"left"},
+      {"id":"app","type":"activeApp","position":"left"},
+      {"id":"spaces","type":"workspaces","position":"left"},
+      {"id":"gap","type":"spacer","position":"left"},
+      {"id":"drawnSpaces","type":"workspaces","position":"left","layout":{"type":"text","text":"1"}},
+      {"id":"marked","type":"spacer","position":"left","overlay":{"type":"text","text":"·"}}]}
+    """#.utf8)).widgets
+    #expect(widgets.filter(\.drawsTransitions).map(\.id) == ["note", "app", "drawnSpaces", "marked"])
+}
+
+@Test @MainActor func theEditorAndCommandLineSetTransitions() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = directory.appending(path: "config.json")
+    try Data(#"{"widgets":[{"id":"note","type":"text","text":"A","position":"left"}]}"#.utf8).write(to: root)
+    let store = BarStore(configurationURL: root)
+    defer { store.stop() }
+    store.reloadConfiguration()
+    let editor = ConfigurationEditor(store: store)
+    editor.set(["transition": .string("fade")])
+    #expect(editor.error == nil)
+    #expect(store.configuration?.widgets[0].transition == .fade)
+    try store.applyEdits([ConfigurationEdit(action: .set, id: "note", properties: [
+        "layout": .object(["type": .string("field"), "field": .string("text"), "transition": .string("roll")])
+    ])], persist: true)
+    #expect(store.configuration?.widgets[0].layout?.transition == .roll)
+    let saved = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: root))
+    guard case let .array(widgets)? = saved["widgets"], case let .object(note)? = widgets.first else {
+        Issue.record("Expected the saved widget")
+        return
+    }
+    #expect(note["transition"] == .string("fade"))
+    editor.set(["transition": .string("spin")])
+    #expect(editor.error == "widgets.note: transition: Use none, fade, roll or numeric.")
+    #expect(store.configuration?.widgets[0].transition == .fade)
+}

@@ -65,7 +65,48 @@ struct BlockContext {
     var tracksHover = true
     /// The frontmost app's icon, for an active-app widget's default layout.
     var appIcon: NSImage?
+    /// How text, field and symbol blocks without a transition of their own show changes.
+    var motion = BlockMotion()
     let runAction: (String, [String: String]) -> Void
+}
+
+/// The transition and animation a widget gives its text, field and symbol blocks.
+struct BlockMotion: Equatable, Sendable {
+    var transition = WidgetTransition.none
+    var animation = WidgetAnimation()
+
+    /// The block's own transition, else this one; none while `still`, as with Reduce Motion or in
+    /// the bar's measuring copy.
+    func transition(for block: PopupBlock, still: Bool) -> WidgetTransition {
+        still ? WidgetTransition.none : block.transition ?? transition
+    }
+
+    func animation(for block: PopupBlock) -> WidgetAnimation { block.animation ?? animation }
+}
+
+/// Shows a change of `value` in a text or symbol: `fade` cross-fades, `roll` pushes the new value
+/// up from below, and `numeric` rolls the changed digits (symbols fade instead).
+struct TransitioningContent<Value: Hashable>: ViewModifier {
+    let value: Value
+    let transition: WidgetTransition
+    let animation: WidgetAnimation
+    var numeric = true
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        switch transition {
+        case .none:
+            content
+        case .fade:
+            content.contentTransition(.opacity).animation(animation.value, value: value)
+        case .numeric:
+            content.contentTransition(numeric ? .numericText() : .opacity).animation(animation.value, value: value)
+        case .roll:
+            ZStack { content.id(value).transition(.push(from: .bottom)) }
+                .clipped()
+                .animation(animation.value, value: value)
+        }
+    }
 }
 
 struct PopupBlockView: View {
@@ -76,6 +117,7 @@ struct PopupBlockView: View {
     @State private var pointerInside: Bool
     @State private var query = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.measuringBarWidths) private var measuring
 
     /// `pointerInside` starts the block with the pointer over it; tests use it, as drawing has no pointer.
     init(block: PopupBlock, inheritedStyle: WidgetStyle, fields: [String: String], context: BlockContext, pointerInside: Bool = false) {
@@ -163,6 +205,8 @@ struct PopupBlockView: View {
 
     @ViewBuilder
     private func content(_ style: BlockStyle, appearance: WidgetAppearance) -> some View {
+        let transition = context.motion.transition(for: block, still: reduceMotion || measuring)
+        let animation = context.motion.animation(for: block)
         switch block.content {
         case let .row(children):
             HStack(spacing: appearance.spacing) {
@@ -173,19 +217,25 @@ struct PopupBlockView: View {
                 ForEach(Array(children.enumerated()), id: \.offset) { _, item in child(item, of: style, fields: fields) }
             }
         case let .text(text):
-            if let speed = block.scrollSpeed {
-                ScrollingText(text: text, font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
-            } else {
-                Text(text)
+            Group {
+                if let speed = block.scrollSpeed {
+                    ScrollingText(text: text, font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
+                } else {
+                    Text(text)
+                }
             }
+            .modifier(TransitioningContent(value: text, transition: transition, animation: animation))
         case let .field(name):
-            if let speed = block.scrollSpeed {
-                ScrollingText(text: fields[name] ?? "", font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
-            } else if block.monospacedDigits {
-                Text(fields[name] ?? "—").lineLimit(1).monospacedDigit()
-            } else {
-                Text(fields[name] ?? "—").lineLimit(1)
+            Group {
+                if let speed = block.scrollSpeed {
+                    ScrollingText(text: fields[name] ?? "", font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
+                } else if block.monospacedDigits {
+                    Text(fields[name] ?? "—").lineLimit(1).monospacedDigit()
+                } else {
+                    Text(fields[name] ?? "—").lineLimit(1)
+                }
             }
+            .modifier(TransitioningContent(value: fields[name] ?? "", transition: transition, animation: animation))
         case let .graph(height, source, lineWidth):
             Sparkline(samples: source.flatMap { context.series[$0] } ?? context.samples)
                 .stroke(appearance.accent, lineWidth: lineWidth)
@@ -229,8 +279,10 @@ struct PopupBlockView: View {
         case .divider:
             Rectangle().fill(appearance.foreground.opacity(0.12)).frame(height: 1)
         case let .symbol(name, source):
-            Image(systemName: source.flatMap { fields[$0] } ?? name)
+            let symbol = source.flatMap { fields[$0] } ?? name
+            Image(systemName: symbol)
                 .font(.system(size: appearance.iconSize))
+                .modifier(TransitioningContent(value: symbol, transition: transition, animation: animation, numeric: false))
         case let .image(path, source, fit):
             WidgetImage(path: source.flatMap { fields[$0] } ?? path, fit: fit)
                 .frame(width: style.box.width ?? 52, height: style.box.height ?? 52)

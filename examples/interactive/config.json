@@ -31,6 +31,7 @@
       "type": "activeApp",
       "position": "left",
       "priority": 5,
+      "transition": "roll",
       "style": { "minWidth": 80, "maxWidth": 200 }
     },
     { "id": "flex", "type": "spacer", "position": "left" },

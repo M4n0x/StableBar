@@ -268,10 +268,11 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let priority: Int
     let overflow: WidgetOverflow
     let rules: [StyleRule]
+    let transition: WidgetTransition?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id, position, type, icon, onClick, open, menu, popup, popupName, style, format, text, command, interval
-        case display, layout, overlay, animation, workspace, events, environment, timeout, actions, enabled, provider, group, priority, overflow, rules
+        case display, layout, overlay, animation, workspace, events, environment, timeout, actions, enabled, provider, group, priority, overflow, rules, transition
     }
 
     init(from decoder: Decoder) throws {
@@ -309,6 +310,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
         priority = try values.decodeIfPresent(Int.self, forKey: .priority) ?? 0
         overflow = try values.decodeIfPresent(WidgetOverflow.self, forKey: .overflow) ?? .automatic
         rules = try values.decodeIfPresent([StyleRule].self, forKey: .rules) ?? []
+        transition = try values.decodeIfPresent(WidgetTransition.self, forKey: .transition)
         switch try values.decode(String.self, forKey: .type) {
         case "spacer": content = .spacer
         case "provider": content = .provider(try values.decode(String.self, forKey: .provider))

@@ -266,6 +266,12 @@ struct WidgetView: View {
         store.presentations[widget.id]?.style ?? ResolvedWidgetStyle(base: resolveStyle([defaults, widget.style]))
     }
 
+    /// How the widget's text, field and symbol blocks show changes.
+    private var motion: BlockMotion {
+        BlockMotion(transition: widget.transition ?? WidgetTransition.none,
+                    animation: store.scripts[widget.id]?.output.animation ?? widget.animation ?? WidgetAnimation(duration: animationDuration))
+    }
+
     var body: some View {
         let output = store.scripts[widget.id]?.output
         let resolution = self.resolution
@@ -314,7 +320,7 @@ struct WidgetView: View {
             if let overlay = widget.overlay {
                 timed { date in
                     WidgetBlocks(widget: widget, store: store, style: resolution.layoutStyle(configured: true, hovered: hovered, open: isOpen),
-                                 block: overlay, date: date, fillsWidth: true, runAction: blockAction)
+                                 block: overlay, date: date, fillsWidth: true, motion: motion, runAction: blockAction)
                 }
                 .allowsHitTesting(false)
             }
@@ -375,7 +381,7 @@ struct WidgetView: View {
     private func blocks(_ resolution: ResolvedWidgetStyle, open: Bool, date: Date) -> some View {
         WidgetBlocks(widget: widget, store: store,
                      style: resolution.layoutStyle(configured: widget.layout != nil, hovered: hovered, open: open),
-                     date: date, runAction: blockAction)
+                     date: date, motion: motion, runAction: blockAction)
             .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
     }
 
@@ -398,6 +404,7 @@ struct WidgetBlocks: View {
     var block: PopupBlock?
     var date = Date.now
     var fillsWidth = false
+    var motion = BlockMotion()
     let runAction: (String, [String: String]) -> Void
 
     var body: some View {
@@ -410,7 +417,8 @@ struct WidgetBlocks: View {
                                                  menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
                                                  targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
                                                  series: script?.output.series ?? [:], fillsWidth: fillsWidth, open: { $0.open() },
-                                                 states: style.states, tracksHover: style.tracksHover, appIcon: appIcon, runAction: runAction))
+                                                 states: style.states, tracksHover: style.tracksHover, appIcon: appIcon, motion: motion,
+                                                 runAction: runAction))
         }
     }
 }

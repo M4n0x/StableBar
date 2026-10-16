@@ -125,7 +125,7 @@ Widget properties override their template recursively. `widgetOverrides` applies
 
 Included files are watched even outside the main directory. A missing module or directory is watched for repair; the last working bar remains visible meanwhile.
 
-[examples/modular](examples/modular/config.json) is a complete, dependency-free starter with a theme that styles the shared data states, a template, an event-only status, a CPU widget whose rules set those states, and an optional volume widget. Try it without replacing your personal configuration:
+[examples/modular](examples/modular/config.json) is a complete, dependency-free starter with a theme that styles the shared data states, a template, an event-only status that fades in new text, a CPU widget whose rules set those states, a clock whose digits roll, and an optional volume widget. Try it without replacing your personal configuration:
 
 ```sh
 ./dist/StableBar.app/Contents/MacOS/StableBar --validate examples/modular/config.json
@@ -432,6 +432,8 @@ Script output ignores unknown top-level fields, but styles, animations and menu 
 
 Widgets and blocks accept `animation` with `duration` in seconds and `curve`: `linear`, `easeIn`, `easeOut`, `easeInOut`, `smooth` or `spring`. Widget animation defaults to `bar.animationDuration`. Block style animations are opt-in. Progress values use a 0–1 scale, clipped to that range when drawn. A progress block can also read a numeric string from its current list row when there is no matching entry in `values`. With a matching entry in `targets`, a progress rule starts at `values[source]` and animates toward `targets[source]`; without a target it animates between readings. Reduce Motion disables these animations.
 
+Widgets and text, field and symbol blocks accept `transition`, so changed text and symbols animate instead of snapping: `fade` cross-fades, `roll` slides the new content up from below, `numeric` rolls the digits that changed (symbols fade), and `none`, the default, swaps them at once. A widget's `transition` applies to its default layout and to the text, field and symbol blocks of its `layout` and `overlay` that set none of their own. A transition uses the block's `animation`, else the widget's; in popups, the block's or 0.22 seconds. Blocks that appear or disappear, such as with `hideWhenEmpty`, don't transition. Reduce Motion turns transitions off.
+
 ### Workspace appearance
 
 A `workspaces` widget (also accepted as `aerospace`) accepts `workspace` with:
@@ -569,7 +571,7 @@ Open **Customize StableBar…** from the menu-bar icon or by right-clicking the 
 
 **Appearance** chooses the [theme](#themes), keeps the bar light or dark or lets it follow the system, and edits the theme's colors. Each theme color has a light and a dark value; changing one saves it in your configuration's `tokens`, so every widget, popup and package that uses the color follows. **All widgets** sets the default colors, shadow, font, weight, size, padding and corners. **Popups** sets their background, border, shadow and weight, which apply over All widgets. **Bar** sets the bar's background, bottom border, corners, size and position. Together they reach every property the themes that ship with StableBar set, so you can build any of their looks here.
 
-**Widgets** lists your widgets by position; drag to reorder them. Change a widget's position, icon, text or clock format, its colors, font and shape, or edit its properties as JSON. A color either follows one of the theme's colors, such as Text or Accent, or is a custom light and dark pair.
+**Widgets** lists your widgets by position; drag to reorder them. Change a widget's position, icon, text, clock format or transition, its colors, font and shape, or edit its properties as JSON. A color either follows one of the theme's colors, such as Text or Accent, or is a custom light and dark pair.
 
 Each style control says where its value comes from: a theme, a package, an included file, a template, a profile or your configuration. A value set in your configuration shows **Reset to default**, which removes it so the theme's or the inherited value applies again.
 
@@ -838,7 +840,7 @@ A named group has one shared background, padding, border and spacing. Members mu
 
 A `spacer` uses the remaining width. Place it between widgets to separate them without choosing a fixed gap. Widget styles accept `minWidth` and `maxWidth` in addition to a fixed `width`.
 
-The [interactive example](examples/interactive/config.json) combines groups, an expanding spacer, constrained text, and all popup controls. Copy both files from `examples/interactive` into your configuration directory. Its controls update demo state in `.control-state` next to the configuration; they do not alter macOS settings. The app list opens the selected application.
+The [interactive example](examples/interactive/config.json) combines groups, an expanding spacer, constrained text that rolls to the new app's name, and all popup controls. Copy both files from `examples/interactive` into your configuration directory. Its controls update demo state in `.control-state` next to the configuration; they do not alter macOS settings. The app list opens the selected application.
 
 ## Custom popups
 

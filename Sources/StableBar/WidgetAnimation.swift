@@ -45,6 +45,19 @@ struct WidgetAnimation: Decodable, Equatable, Sendable {
     }
 }
 
+/// How a widget's text, field and symbol blocks show changed content.
+enum WidgetTransition: String, Decodable, CaseIterable, Sendable {
+    case none, fade, roll, numeric
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        guard let transition = WidgetTransition(rawValue: try container.decode(String.self)) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Use none, fade, roll or numeric.")
+        }
+        self = transition
+    }
+}
+
 struct WorkspaceConfiguration: Decodable, Sendable {
     enum Indicator: String, Decodable, Sendable {
         case background, underline, none

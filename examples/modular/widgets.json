@@ -7,6 +7,7 @@
       "interval": null,
       "events": ["demo"],
       "icon": "bolt.circle",
+      "transition": "fade",
       "command": "printf '%s' \"${INFO:-$STATUS_TEXT}\"",
       "onClick": "open \"$CONFIG_DIR/config.json\""
     },
@@ -35,6 +36,7 @@
       "type": "clock",
       "position": "right",
       "format": "EEE HH:mm",
+      "transition": "numeric",
       "onClick": "open -a Calendar"
     }
   ]
