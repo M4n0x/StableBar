@@ -61,7 +61,6 @@ struct HexColor: Decodable, Equatable, Sendable {
 struct WidgetStyle: Decodable, Equatable, Sendable {
     var foreground: HexColor?
     var background: HexColor?
-    var hoverBackground: HexColor?
     var borderColor: HexColor?
     var accent: HexColor?
     var accentText: HexColor?
@@ -87,20 +86,23 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
     var offsetX: Double?
     var offsetY: Double?
     var opacity: Double?
-    var hoverForeground: HexColor?
+    /// Styles that apply over this one while a state is active, keyed by state name.
+    var states: [String: WidgetStyle]?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case foreground, background, hoverBackground, borderColor, accent, accentText, borderWidth, cornerRadius
         case fontName, fontSize, fontWeight, iconSize, paddingHorizontal, paddingVertical, spacing, width
         case minWidth, maxWidth, shadowRadius, shadowColor, height, paddingLeading, paddingTrailing, paddingTop
-        case paddingBottom, offsetX, offsetY, opacity, hoverForeground
+        case paddingBottom, offsetX, offsetY, opacity, hoverForeground, states
     }
+
+    var hoverBackground: HexColor? { states?["hover"]?.background }
+    var hoverForeground: HexColor? { states?["hover"]?.foreground }
 
     func inheriting(_ defaults: WidgetStyle) -> WidgetStyle {
         WidgetStyle(
             foreground: foreground ?? defaults.foreground,
             background: background ?? defaults.background,
-            hoverBackground: hoverBackground ?? defaults.hoverBackground,
             borderColor: borderColor ?? defaults.borderColor,
             accent: accent ?? defaults.accent,
             accentText: accentText ?? defaults.accentText,
@@ -126,8 +128,17 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
             offsetX: offsetX ?? defaults.offsetX,
             offsetY: offsetY ?? defaults.offsetY,
             opacity: opacity ?? defaults.opacity,
-            hoverForeground: hoverForeground ?? defaults.hoverForeground
+            states: states.map { own in own.merging(defaults.states ?? [:]) { $0.inheriting($1) } } ?? defaults.states
         )
+    }
+
+    /// This style with each of `aliases`, such as `focusedStyle`, merged into the state of the same
+    /// name. Properties already set in `states` win.
+    func addingStates(_ aliases: [String: WidgetStyle]) -> WidgetStyle {
+        guard !aliases.isEmpty else { return self }
+        var style = self
+        style.states = (states ?? [:]).merging(aliases) { own, alias in own.inheriting(alias) }
+        return style
     }
 }
 
@@ -137,7 +148,6 @@ extension WidgetStyle {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         foreground = try values.decodeIfPresent(HexColor.self, forKey: .foreground)
         background = try values.decodeIfPresent(HexColor.self, forKey: .background)
-        hoverBackground = try values.decodeIfPresent(HexColor.self, forKey: .hoverBackground)
         borderColor = try values.decodeIfPresent(HexColor.self, forKey: .borderColor)
         accent = try values.decodeIfPresent(HexColor.self, forKey: .accent)
         accentText = try values.decodeIfPresent(HexColor.self, forKey: .accentText)
@@ -163,7 +173,13 @@ extension WidgetStyle {
         offsetX = try values.decodeIfPresent(Double.self, forKey: .offsetX)
         offsetY = try values.decodeIfPresent(Double.self, forKey: .offsetY)
         opacity = try values.decodeIfPresent(Double.self, forKey: .opacity)
-        hoverForeground = try values.decodeIfPresent(HexColor.self, forKey: .hoverForeground)
+        let hoverForeground = try values.decodeIfPresent(HexColor.self, forKey: .hoverForeground)
+        let hoverBackground = try values.decodeIfPresent(HexColor.self, forKey: .hoverBackground)
+        let explicit = try values.decodeIfPresent([String: WidgetStyle?].self, forKey: .states)?.compactMapValues { $0 }
+        states = explicit?.isEmpty == false ? explicit : nil
+        if hoverForeground != nil || hoverBackground != nil {
+            self = addingStates(["hover": WidgetStyle(foreground: hoverForeground, background: hoverBackground)])
+        }
     }
 }
 
@@ -174,7 +190,6 @@ let fontWeights: [(name: String, weight: Font.Weight)] = [
 
 struct WidgetAppearance {
     let foreground: Color
-    let hoverForeground: Color
     let background: Color
     let hoverBackground: Color
     let borderColor: Color
@@ -193,7 +208,6 @@ struct WidgetAppearance {
 
     init(_ style: WidgetStyle, defaults: WidgetStyle) {
         foreground = (style.foreground ?? defaults.foreground)?.color ?? .primary
-        hoverForeground = (style.hoverForeground ?? defaults.hoverForeground)?.color ?? foreground
         background = (style.background ?? defaults.background)?.color ?? .clear
         hoverBackground = (style.hoverBackground ?? defaults.hoverBackground)?.color ?? background
         borderColor = (style.borderColor ?? defaults.borderColor)?.color ?? .clear
@@ -253,10 +267,11 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let group: String?
     let priority: Int
     let overflow: WidgetOverflow
+    let rules: [StyleRule]
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id, position, type, icon, onClick, open, menu, popup, popupName, style, format, text, command, interval
-        case display, layout, overlay, animation, workspace, events, environment, timeout, actions, enabled, provider, group, priority, overflow
+        case display, layout, overlay, animation, workspace, events, environment, timeout, actions, enabled, provider, group, priority, overflow, rules
     }
 
     init(from decoder: Decoder) throws {
@@ -293,6 +308,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
         group = try values.decodeIfPresent(String.self, forKey: .group)
         priority = try values.decodeIfPresent(Int.self, forKey: .priority) ?? 0
         overflow = try values.decodeIfPresent(WidgetOverflow.self, forKey: .overflow) ?? .automatic
+        rules = try values.decodeIfPresent([StyleRule].self, forKey: .rules) ?? []
         switch try values.decode(String.self, forKey: .type) {
         case "spacer": content = .spacer
         case "provider": content = .provider(try values.decode(String.self, forKey: .provider))
@@ -311,6 +327,13 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
                 throw DecodingError.dataCorruptedError(forKey: .type, in: values, debugDescription: "Unknown widget type.")
             }
             content = .provider(type)
+        }
+        if !rules.isEmpty {
+            switch content {
+            case .script, .provider: break
+            default:
+                throw DecodingError.dataCorruptedError(forKey: .rules, in: values, debugDescription: "Rules need a script or provider widget.")
+            }
         }
     }
 }
@@ -421,10 +444,13 @@ struct Configuration: Decodable, Sendable {
         var ids = Set<String>()
         for widget in widgets {
             let style = widget.style.inheriting(defaults)
-            if let min = style.minWidth, min < 0 { throw CommandFailure(message: "minWidth must be nonnegative.") }
-            if let max = style.maxWidth, max < 0 { throw CommandFailure(message: "maxWidth must be nonnegative.") }
-            if let min = style.minWidth, let max = style.maxWidth, min > max {
-                throw CommandFailure(message: "minWidth must not exceed maxWidth.")
+            let states = (style.states ?? [:]).sorted { $0.key < $1.key }.map { $0.value.inheriting(style) }
+            for checked in [style] + states {
+                if let min = checked.minWidth, min < 0 { throw CommandFailure(message: "minWidth must be nonnegative.") }
+                if let max = checked.maxWidth, max < 0 { throw CommandFailure(message: "maxWidth must be nonnegative.") }
+                if let min = checked.minWidth, let max = checked.maxWidth, min > max {
+                    throw CommandFailure(message: "minWidth must not exceed maxWidth.")
+                }
             }
             if let group = widget.group {
                 guard groups[group] != nil else { throw CommandFailure(message: "Unknown group: \(group).") }

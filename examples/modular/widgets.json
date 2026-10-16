@@ -22,6 +22,15 @@
       }
     },
     {
+      "id": "cpu",
+      "type": "system",
+      "position": "right",
+      "rules": [
+        { "when": { "value": "cpu", "above": 0.9 }, "state": "critical" },
+        { "when": { "value": "cpu", "above": 0.7 }, "state": "warning" }
+      ]
+    },
+    {
       "id": "clock",
       "type": "clock",
       "position": "right",

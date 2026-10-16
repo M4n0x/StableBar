@@ -370,3 +370,110 @@ import Testing
     #expect(try ConfigurationEdit(action: .unset, properties: ["defaults": .object(["foreground": .null])])
         .applying(to: tokenDefaults, widgetIDs: &ids) == tokenDefaults)
 }
+
+@Test @MainActor func editsAndTheEditorMergeStatesLikeOtherStyleProperties() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = directory.appending(path: "config.json")
+    try Data(##"""
+    {"defaults":{"states":{"warning":{"foreground":"#111111"}}},
+     "widgets":[{"id":"a","type":"text","position":"left","text":"A","style":{"states":{"hover":{"background":"#222222"}}}}]}
+    """##.utf8).write(to: root)
+    let store = BarStore(configurationURL: root)
+    defer { store.stop() }
+    store.reloadConfiguration()
+    try store.applyEdits([
+        ConfigurationEdit(action: .defaults, properties: ["states": .object(["warning": .object(["background": .string("#333333")])])]),
+        ConfigurationEdit(action: .set, id: "a", properties: ["style": .object(["states": .object(["hover": .object(["foreground": .string("#444444")])])])])
+    ], persist: true)
+    #expect(store.configuration?.defaults.states?["warning"] == WidgetStyle(foreground: HexColor(0x111111ff), background: HexColor(0x333333ff)))
+    #expect(store.configuration?.widgets[0].style.states?["hover"] == WidgetStyle(foreground: HexColor(0x444444ff), background: HexColor(0x222222ff)))
+    let saved = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: root))
+    #expect(saved["defaults"] == .object(["states": .object(["warning": .object(["foreground": .string("#111111"), "background": .string("#333333")])])]))
+    let editor = ConfigurationEditor(store: store)
+    editor.set(["style": .object(["foreground": .string("#555555")])])
+    #expect(editor.error == nil)
+    #expect(store.configuration?.widgets[0].style.foreground == HexColor(0x555555ff))
+    #expect(store.configuration?.widgets[0].style.states?["hover"]?.background == HexColor(0x222222ff))
+}
+
+@Test @MainActor func customizesHoverBackgroundBeatsALowerHoverStateWhileAnActiveProfileStillWins() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = directory.appending(path: "config.json")
+    let includes = ["{}", ##"{"states":{"hover":{"background":"#123456","foreground":"#abcdef"}}}"##,
+                    ##"{"hoverBackground":"#123456","hoverForeground":"#abcdef"}"##]
+    let profiles: [(defaults: String?, hover: HexColor)] = [(nil, HexColor(0x445566ff)),
+                                                            (##"{"hoverBackground":"#778899"}"##, HexColor(0x778899ff)),
+                                                            (##"{"states":{"hover":{"background":"#99aabb"}}}"##, HexColor(0x99aabbff))]
+    for include in includes {
+        try Data(#"{"defaults":\#(include)}"#.utf8).write(to: directory.appending(path: "theme.json"))
+        for profile in profiles {
+            let active = profile.defaults.map { #","profiles":[{"name":"p","configuration":{"defaults":\#($0)}}]"# } ?? ""
+            try Data(#"{"includes":["theme.json"],"widgets":[]\#(active)}"#.utf8).write(to: root)
+            let store = BarStore(configurationURL: root)
+            defer { store.stop() }
+            store.reloadConfiguration()
+            ConfigurationEditor(store: store).change(ConfigurationEdit(action: .defaults, properties: HoverBackgroundRow.properties(.string("#445566"))))
+            let message = "include \(include), profile \(profile.defaults ?? "none")"
+            #expect(store.configuration?.defaults.hoverBackground == profile.hover, "\(message)")
+            #expect(store.configuration?.defaults.hoverForeground == (include == "{}" ? nil : HexColor(0xabcdefff)), "\(message)")
+        }
+    }
+}
+
+@Test @MainActor func customizesHoverBackgroundRowsShowTheDrawnHoverAndResetBringsTheLowerOneBack() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try Data(##"""
+    {"defaults":{"states":{"hover":{"background":"#123456"}}},
+     "templates":{"label":{"type":"text","position":"left","style":{"states":{"hover":{"background":"#222222"}}}}}}
+    """##.utf8).write(to: directory.appending(path: "theme.json"))
+    let root = directory.appending(path: "config.json")
+    let original = Data(##"""
+    {"includes":["theme.json"],
+     "widgets":[{"id":"a","template":"label","text":"A"},{"id":"b","type":"text","position":"left","text":"B"}]}
+    """##.utf8)
+    try original.write(to: root)
+    let store = BarStore(configurationURL: root)
+    defer { store.stop() }
+    store.reloadConfiguration()
+    let editor = ConfigurationEditor(store: store)
+    func row(_ id: String? = nil) -> (path: String, source: String, color: HexColor?)? {
+        HoverBackgroundRow.drawn(in: store.effectiveDocument, widget: id).map {
+            ($0.path, store.sourceText(store.origins[$0.path]!), try? $0.value.decoded(HexColor.self))
+        }
+    }
+    func drawn(_ id: String) throws -> HexColor? {
+        let configuration = try #require(store.configuration)
+        return try resolveStyle([configuration.defaults, #require(configuration.widgets.first { $0.id == id }).style]).hoverBackground
+    }
+    #expect(row()! == ("defaults.states.hover.background", "theme.json", HexColor(0x123456ff)))
+    #expect(row("a")! == ("widgets.a.style.states.hover.background", "theme.json (template label)", HexColor(0x222222ff)))
+    #expect(row("b")! == ("defaults.states.hover.background", "theme.json", HexColor(0x123456ff)))
+    #expect(try drawn("a") == HexColor(0x222222ff))
+    editor.change(ConfigurationEdit(action: .defaults, properties: HoverBackgroundRow.properties(.string("#445566"))))
+    editor.selectedID = "a"
+    editor.set(["style": .object(HoverBackgroundRow.properties(.string("#556677")))])
+    #expect(editor.error == nil)
+    #expect(try drawn("a") == HexColor(0x556677ff))
+    #expect(try drawn("b") == HexColor(0x445566ff))
+    #expect(row()! == ("defaults.hoverBackground", "your configuration", HexColor(0x445566ff)))
+    #expect(row("a")! == ("widgets.a.style.hoverBackground", "your configuration", HexColor(0x556677ff)))
+    #expect(row("b")! == ("defaults.hoverBackground", "your configuration", HexColor(0x445566ff)))
+    #expect(store.setsInMainFile(store.origins["widgets.a.style.hoverBackground"]!))
+    editor.change(ConfigurationEdit(action: .defaults, properties: HoverBackgroundRow.properties(.string("#667788"))))
+    #expect(try drawn("b") == HexColor(0x667788ff))
+    editor.change(ConfigurationEdit(action: .unset, properties: ["defaults": .object(HoverBackgroundRow.reset)]))
+    editor.change(ConfigurationEdit(action: .unset, id: "a", properties: ["style": .object(HoverBackgroundRow.reset)]))
+    #expect(editor.error == nil)
+    #expect(try drawn("a") == HexColor(0x222222ff))
+    #expect(try drawn("b") == HexColor(0x123456ff))
+    #expect(row("a")! == ("widgets.a.style.states.hover.background", "theme.json (template label)", HexColor(0x222222ff)))
+    editor.save()
+    #expect(try JSONDecoder().decode(ConfigurationValue.self, from: Data(contentsOf: root))
+        == JSONDecoder().decode(ConfigurationValue.self, from: original))
+}

@@ -318,9 +318,9 @@ private struct WidgetsView: View {
     }
 
     private func inspector(_ widget: WidgetConfiguration) -> some View {
-        let style = StyleFields(store: store, path: "widgets.\(widget.id).style", defaultsPath: "defaults", values: editor.selectedStyle,
-                                set: { editor.set(["style": .object([$0: $1])]) },
-                                unset: { editor.change(ConfigurationEdit(action: .unset, id: widget.id, properties: ["style": .object([$0: .null])])) })
+        let style = StyleFields(store: store, path: "widgets.\(widget.id).style", defaultsPath: "defaults", widgetID: widget.id,
+                                values: editor.selectedStyle, set: { editor.set(["style": .object($0)]) },
+                                unset: { editor.change(ConfigurationEdit(action: .unset, id: widget.id, properties: ["style": .object($0)])) })
         return Form {
             Section {
                 HStack(spacing: 12) {
@@ -363,7 +363,7 @@ private struct WidgetsView: View {
             Section("Colors") {
                 style.color("Text", "foreground")
                 style.color("Background", "background")
-                style.color("Hover background", "hoverBackground")
+                style.hoverBackground("Hover background")
                 style.color("Border", "borderColor")
                 style.color("Accent", "accent")
             }
@@ -414,22 +414,38 @@ struct StyleFields {
     let store: BarStore
     let path: String
     var defaultsPath: String?
+    var widgetID: String?
     let values: [String: ConfigurationValue]
-    let set: (String, ConfigurationValue) -> Void
-    let unset: (String) -> Void
+    let set: ([String: ConfigurationValue]) -> Void
+    /// Removes the given keys, set to `null`, from the main file.
+    let unset: ([String: ConfigurationValue]) -> Void
 
     func color(_ title: String, _ key: String) -> some View {
         row(title, key) { origin in
             let color = try? values[key]?.decoded(HexColor.self)
-            TokenPicker(token: origin?.token, color: color ?? HexColor(0)) { set(key, $0) }
-            ColorWells(color: color) { set(key, $0) }
+            TokenPicker(token: origin?.token, color: color ?? HexColor(0)) { set([key: $0]) }
+            ColorWells(color: color) { set([key: $0]) }
+        }
+    }
+
+    /// Shows the hover background the bar draws and where it comes from, and sets it so it wins.
+    func hoverBackground(_ title: String) -> some View {
+        let drawn = HoverBackgroundRow.drawn(in: store.effectiveDocument, widget: widgetID)
+        let origin = drawn.flatMap { store.origins[$0.path] }
+        let own = drawn?.path.hasPrefix(path + ".") == true
+        let color = try? drawn?.value.decoded(HexColor.self)
+        return OverrideRow(title: title,
+                           source: origin.map { own ? "From \(store.sourceText($0))" : "Default from \(store.sourceText($0))" },
+                           reset: own && origin.map(store.setsInMainFile) == true ? { unset(HoverBackgroundRow.reset) } : nil) {
+            TokenPicker(token: origin?.token, color: color ?? HexColor(0)) { set(HoverBackgroundRow.properties($0)) }
+            ColorWells(color: color) { set(HoverBackgroundRow.properties($0)) }
         }
     }
 
     func number(_ title: String, _ key: String, default fallback: Double) -> some View {
         row(title, key) { _ in
             let value = if case let .number(number) = values[key] { number } else { fallback }
-            let binding = Binding(get: { value }, set: { if $0 != value { set(key, .number($0)) } })
+            let binding = Binding(get: { value }, set: { if $0 != value { set([key: .number($0)]) } })
             HStack(spacing: 6) {
                 TextField(title, value: binding, format: .number)
                     .labelsHidden()
@@ -444,7 +460,7 @@ struct StyleFields {
     func font(_ families: [String]) -> some View {
         row("Font", "fontName") { _ in
             let name = if case let .string(name) = values["fontName"] { name } else { "system" }
-            Picker("Font", selection: Binding(get: { name }, set: { set("fontName", .string($0)) })) {
+            Picker("Font", selection: Binding(get: { name }, set: { set(["fontName": .string($0)]) })) {
                 Text("System").tag("system")
                 Divider()
                 ForEach(name == "system" || families.contains(name) ? families : [name] + families, id: \.self) { Text($0).tag($0) }
@@ -457,7 +473,7 @@ struct StyleFields {
     func weight() -> some View {
         row("Weight", "fontWeight") { _ in
             let weight = if case let .string(weight) = values["fontWeight"] { weight } else { "medium" }
-            Picker("Weight", selection: Binding(get: { weight }, set: { set("fontWeight", .string($0)) })) {
+            Picker("Weight", selection: Binding(get: { weight }, set: { set(["fontWeight": .string($0)]) })) {
                 ForEach(fontWeights, id: \.name) { Text($0.name.capitalized).tag($0.name) }
             }
             .labelsHidden()
@@ -470,7 +486,7 @@ struct StyleFields {
         let inherited = defaultsPath.flatMap { store.origins["\($0).\(key)"] }
         return OverrideRow(title: title,
                            source: own.map { "From \(store.sourceText($0))" } ?? inherited.map { "Default from \(store.sourceText($0))" },
-                           reset: own.map(store.setsInMainFile) == true ? { unset(key) } : nil) {
+                           reset: own.map(store.setsInMainFile) == true ? { unset([key: .null]) } : nil) {
             control(own ?? inherited)
         }
     }

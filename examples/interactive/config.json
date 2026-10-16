@@ -7,7 +7,10 @@
     "accent": "#69d2b0",
     "borderWidth": 0,
     "cornerRadius": 9,
-    "fontSize": 12
+    "fontSize": 12,
+    "states": {
+      "open": { "background": "#2f3d38", "borderColor": "#69d2b0", "borderWidth": 1 }
+    }
   },
   "groups": {
     "session": {

@@ -23,6 +23,8 @@ final class BarStore: NSObject {
     var pinnedProfile: String?
     var sessionEdits: [ConfigurationEdit] = []
     var context = ConfigurationContext()
+    private(set) var presentations: [String: WidgetPresentation] = [:]
+    private(set) var barStyle = WidgetStyle()
     private var providers: [String: ScriptWidget] = [:]
     private var visibleWidgets: [Int: Set<String>] = [:]
     private var sleeping = false
@@ -245,6 +247,7 @@ final class BarStore: NSObject {
         if needsWorkspaces && (!hadWorkspaces || sourceChanged) { workspaceStore.start() }
         if !needsWorkspaces && hadWorkspaces { workspaceStore.stop() }
         configuration = next
+        preparePresentations()
         effectiveDocument = configurationLoader.document
         origins = configurationLoader.origins
         activeProfiles = configurationLoader.activeProfiles
@@ -267,6 +270,36 @@ final class BarStore: NSObject {
         onConfigurationChange?()
     }
 
+    /// Keeps one presentation per configured widget and has every running script re-resolve
+    /// styles when it updates. A script reports to the first store that prepares it, so a store
+    /// that only shows the bar's scripts, like the setup preview, doesn't take them over.
+    func preparePresentations() {
+        presentations = Dictionary(uniqueKeysWithValues: (configuration?.widgets ?? []).map {
+            ($0.id, presentations[$0.id] ?? WidgetPresentation())
+        })
+        for script in scripts.values where script.onUpdate == nil {
+            script.onUpdate = { [weak self] in self?.updatePresentations() }
+        }
+        updatePresentations()
+    }
+
+    /// Resolves every widget's style and presence and the bar's style from the configuration and the
+    /// current outputs. Only changed values are assigned, so views of unaffected widgets stay valid.
+    func updatePresentations() {
+        guard let configuration else { return }
+        let output = { (id: String) in self.scripts[id]?.output }
+        for widget in configuration.widgets {
+            let script = scripts[widget.id]
+            let base = resolveStyle(widgetStyleLayers(widget, defaults: configuration.defaults, widgets: configuration.widgets,
+                                                      output: output))
+            presentations[widget.id]?.update(style: ResolvedWidgetStyle(base: base, state: dataState(script?.output, rules: widget.rules)),
+                                             hidden: script?.output.hidden == true && script?.error == nil,
+                                             display: script?.output.display)
+        }
+        let bar = resolveStyle(barStyleLayers(configuration.bar.style, widgets: configuration.widgets, output: output))
+        if barStyle != bar { barStyle = bar }
+    }
+
     func setVisibleWidgets(ids: Set<String>, displayID: Int) {
         visibleWidgets[displayID] = ids
         updateSuspension()
@@ -277,8 +310,10 @@ final class BarStore: NSObject {
         updateSuspension()
     }
 
-    func setPopupVisibleWidget(_ id: String?) {
+    func setPopupVisibleWidget(_ id: String?, anchor: NSView? = nil) {
         popupWidgetID = id
+        let anchor = anchor.map(ObjectIdentifier.init)
+        for (widgetID, presentation) in presentations { presentation.setPopupAnchor(widgetID == id ? anchor : nil) }
         updateSuspension()
     }
 
@@ -358,6 +393,7 @@ final class BarStore: NSObject {
                 result["text"] = .string(script.output.text)
                 result["fields"] = .object((script.output.fields ?? [:]).mapValues(ConfigurationValue.string))
                 result["values"] = .object((script.output.values ?? [:]).mapValues(ConfigurationValue.number))
+                result["state"] = presentations[id]?.style.state.map(ConfigurationValue.string) ?? .null
             }
             return .object(result)
         }
@@ -414,7 +450,7 @@ final class BarStore: NSObject {
                 if let script, scripts[widget.id] === script {
                     script.refresh(ScriptEvent(sender: "action", environment: event.environment))
                 }
-                actionErrors[widget.id] = nil
+                if actionErrors[widget.id] != nil { actionErrors[widget.id] = nil }
             } catch {
                 if Task.isCancelled { return }
                 actionErrors[widget.id] = error.localizedDescription
@@ -454,4 +490,28 @@ final class BarStore: NSObject {
 private func withoutShellVariables(_ environment: [String: String]) -> [String: String] {
     let shell = shellEnvironment.withLock { $0 }
     return environment.filter { shell[$0.key] == nil }
+}
+
+/// One widget's resolved style and presence, observed per widget so one widget's update doesn't
+/// invalidate the views of the others.
+@MainActor @Observable
+final class WidgetPresentation {
+    private(set) var style = ResolvedWidgetStyle(base: WidgetStyle())
+    /// Output `hidden`, unless the widget has an error to show.
+    private(set) var hidden = false
+    /// Output `display`, which replaces the configured one.
+    private(set) var display: DisplaySelection?
+    /// The view that anchors this widget's open popup: only that instance shows `open`.
+    private(set) var popupAnchor: ObjectIdentifier?
+
+    /// Assigns only what changed: equal assignments must not invalidate the widget's views.
+    func update(style: ResolvedWidgetStyle, hidden: Bool, display: DisplaySelection?) {
+        if self.style != style { self.style = style }
+        if self.hidden != hidden { self.hidden = hidden }
+        if self.display != display { self.display = display }
+    }
+
+    func setPopupAnchor(_ anchor: ObjectIdentifier?) {
+        if popupAnchor != anchor { popupAnchor = anchor }
+    }
 }

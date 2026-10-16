@@ -57,6 +57,8 @@ struct PopupBlockView: View {
     var series: [String: [Double]] = [:]
     var fillsWidth = true
     let open: (OpenTarget) -> Void
+    /// The widget's states, such as `open`; the block adds its own hover.
+    var states = StyleStates()
     let runAction: (String, [String: String]) -> Void
     @State private var hovered = false
     @State private var query = ""
@@ -79,10 +81,12 @@ struct PopupBlockView: View {
     }
 
     private var styledContent: some View {
-        let styleName = block.styleField.flatMap { fields[$0] } ?? block.styleSource
-        let ownStyle = (styleName.flatMap { styles[$0] } ?? WidgetStyle()).inheriting(block.style)
-        let style = ownStyle.inheriting(inheritedStyle)
-        let appearance = WidgetAppearance(style, defaults: WidgetStyle())
+        let resting = block.resolvedStyle(inherited: inheritedStyle, styles: styles, fields: fields, states: states)
+        var hovering = states
+        hovering.hover = true
+        let current = hovered ? block.resolvedStyle(inherited: inheritedStyle, styles: styles, fields: fields, states: hovering) : resting
+        let appearance = WidgetAppearance(resting.text, defaults: WidgetStyle())
+        let box = current.box
         let alignment: Alignment = switch block.alignment {
         case .leading: .leading
         case .center: .center
@@ -90,67 +94,66 @@ struct PopupBlockView: View {
         }
         return Group {
             if handlesInteraction {
-                content(style, ownStyle: ownStyle, appearance: appearance)
+                content(resting, appearance: appearance)
             } else if let command = block.onClickField.flatMap({ fields[$0] }) ?? block.onClick {
-                Button { runAction(command, [:]) } label: { content(style, ownStyle: ownStyle, appearance: appearance) }
+                Button { runAction(command, [:]) } label: { content(resting, appearance: appearance) }
                     .buttonStyle(.plain)
             } else if let value = block.openField.flatMap({ fields[$0] }) ?? block.open {
-                Button { if let target = OpenTarget(value) { open(target) } } label: { content(style, ownStyle: ownStyle, appearance: appearance) }
+                Button { if let target = OpenTarget(value) { open(target) } } label: { content(resting, appearance: appearance) }
                     .buttonStyle(.plain)
             } else {
-                content(style, ownStyle: ownStyle, appearance: appearance)
+                content(resting, appearance: appearance)
             }
         }
             .font(appearance.font)
-            .foregroundStyle(hovered ? appearance.hoverForeground : appearance.foreground)
+            .foregroundStyle(current.text.foreground?.color ?? appearance.foreground)
             .tint(appearance.accent)
-            .padding(.leading, ownStyle.paddingLeading ?? ownStyle.paddingHorizontal ?? 0)
-            .padding(.trailing, ownStyle.paddingTrailing ?? ownStyle.paddingHorizontal ?? 0)
-            .padding(.top, ownStyle.paddingTop ?? ownStyle.paddingVertical ?? 0)
-            .padding(.bottom, ownStyle.paddingBottom ?? ownStyle.paddingVertical ?? 0)
-            .frame(width: ownStyle.width.map { CGFloat($0) }, height: ownStyle.height.map { CGFloat($0) }, alignment: alignment)
-            .frame(maxWidth: fillsWidth && ownStyle.width == nil ? .infinity : nil, alignment: alignment)
-            .background((hovered ? ownStyle.hoverBackground ?? ownStyle.background : ownStyle.background)?.color ?? .clear,
-                        in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
+            .padding(.leading, box.paddingLeading ?? box.paddingHorizontal ?? 0)
+            .padding(.trailing, box.paddingTrailing ?? box.paddingHorizontal ?? 0)
+            .padding(.top, box.paddingTop ?? box.paddingVertical ?? 0)
+            .padding(.bottom, box.paddingBottom ?? box.paddingVertical ?? 0)
+            .frame(width: box.width.map { CGFloat($0) }, height: box.height.map { CGFloat($0) }, alignment: alignment)
+            .frame(maxWidth: fillsWidth && box.width == nil ? .infinity : nil, alignment: alignment)
+            .background(box.background?.color ?? .clear, in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
             .overlay {
                 RoundedRectangle(cornerRadius: appearance.cornerRadius)
-                    .strokeBorder(ownStyle.borderColor?.color ?? .clear, lineWidth: ownStyle.borderWidth ?? 0)
+                    .strokeBorder(box.borderColor?.color ?? .clear, lineWidth: box.borderWidth ?? 0)
             }
-            .offset(x: ownStyle.offsetX ?? 0, y: ownStyle.offsetY ?? 0)
-            .opacity(ownStyle.opacity ?? 1)
+            .offset(x: box.offsetX ?? 0, y: box.offsetY ?? 0)
+            .opacity(box.opacity ?? 1)
             .onHover { hovered = $0 }
-            .animation(reduceMotion ? nil : block.animation?.value, value: ownStyle)
+            .animation(reduceMotion ? nil : block.animation?.value, value: box)
             .animation(reduceMotion ? nil : block.animation?.value, value: hovered)
     }
 
     @ViewBuilder
-    private func content(_ style: WidgetStyle, ownStyle: WidgetStyle, appearance: WidgetAppearance) -> some View {
+    private func content(_ style: BlockStyle, appearance: WidgetAppearance) -> some View {
         switch block.content {
         case let .row(children):
             HStack(spacing: appearance.spacing) {
                 ForEach(Array(children.enumerated()), id: \.offset) { _, child in
-                    AnyView(PopupBlockView(block: child, inheritedStyle: style, fields: fields,
+                    AnyView(PopupBlockView(block: child, inheritedStyle: style.inherited, fields: fields,
                                           lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, runAction: runAction))
+                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
                 }
             }
         case let .column(children):
             VStack(alignment: .leading, spacing: appearance.spacing) {
                 ForEach(Array(children.enumerated()), id: \.offset) { _, child in
-                    AnyView(PopupBlockView(block: child, inheritedStyle: style, fields: fields,
+                    AnyView(PopupBlockView(block: child, inheritedStyle: style.inherited, fields: fields,
                                           lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, runAction: runAction))
+                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
                 }
             }
         case let .text(text):
             if let speed = block.scrollSpeed {
-                ScrollingText(text: text, font: appearance.font, fontSize: style.fontSize ?? 12, speed: speed)
+                ScrollingText(text: text, font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
             } else {
                 Text(text)
             }
         case let .field(name):
             if let speed = block.scrollSpeed {
-                ScrollingText(text: fields[name] ?? "", font: appearance.font, fontSize: style.fontSize ?? 12, speed: speed)
+                ScrollingText(text: fields[name] ?? "", font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
             } else {
                 Text(fields[name] ?? "—").lineLimit(1).monospacedDigit()
             }
@@ -162,9 +165,9 @@ struct PopupBlockView: View {
         case let .list(source, row):
             VStack(spacing: appearance.spacing) {
                 ForEach(Array((lists[source] ?? []).enumerated()), id: \.offset) { _, fields in
-                    AnyView(PopupBlockView(block: row, inheritedStyle: style, fields: fields,
+                    AnyView(PopupBlockView(block: row, inheritedStyle: style.inherited, fields: fields,
                                           lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, runAction: runAction))
+                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
                 }
             }
         case let .button(title, command):
@@ -187,9 +190,9 @@ struct PopupBlockView: View {
             VStack(alignment: .leading, spacing: appearance.spacing) {
                 TextField(title, text: $query).textFieldStyle(.roundedBorder).accessibilityLabel(title)
                 ForEach(Array(searchPopupRows(lists[source] ?? [], query: query, fields: searchFields).enumerated()), id: \.offset) { _, fields in
-                    AnyView(PopupBlockView(block: row, inheritedStyle: style, fields: fields,
+                    AnyView(PopupBlockView(block: row, inheritedStyle: style.inherited, fields: fields,
                                           lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, runAction: runAction))
+                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
                 }
             }
         case .menu:
@@ -205,13 +208,13 @@ struct PopupBlockView: View {
                 .font(.system(size: appearance.iconSize))
         case let .image(path, source, fit):
             WidgetImage(path: source.flatMap { fields[$0] } ?? path, fit: fit)
-                .frame(width: ownStyle.width ?? 52, height: ownStyle.height ?? 52)
+                .frame(width: style.box.width ?? 52, height: style.box.height ?? 52)
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: appearance.cornerRadius))
         case let .progress(source, height):
             ProgressRule(value: values[source] ?? Double(fields[source] ?? "") ?? 0, target: targets[source],
                          animation: block.animation ?? WidgetAnimation(), color: appearance.accent,
-                         track: style.background?.color ?? .clear, cornerRadius: appearance.cornerRadius)
+                         track: style.text.background?.color ?? .clear, cornerRadius: appearance.cornerRadius)
                 .frame(height: height)
         }
     }

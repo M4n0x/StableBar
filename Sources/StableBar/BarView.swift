@@ -12,9 +12,7 @@ struct BarView: View {
         Group {
             if let config = store.configuration {
                 let scale = CGFloat(config.bar.scale(for: display))
-                let style = config.widgets.reduce(config.bar.style) { style, widget in
-                    store.scripts[widget.id]?.output.barStyle?.inheriting(style) ?? style
-                }
+                let style = store.barStyle
                 let notch = display.notch.map { range in
                     let range: ClosedRange<CGFloat> = ((range.lowerBound - config.bar.margin) / scale)...((range.upperBound - config.bar.margin) / scale)
                     return config.bar.notchWidth.map { width in
@@ -24,13 +22,13 @@ struct BarView: View {
                 }
                 let activeID = store.workspaceStore.workspaces.first(where: \.isFocused)?.monitor ?? store.activeDisplayID
                 let widgets = config.widgets.filter { widget in
-                    let output = store.scripts[widget.id]?.output
+                    let presentation = store.presentations[widget.id]
                     if widget.content == .workspaces && widget.layout == nil && store.workspaceStore.error == nil
                         && store.workspaceStore.workspaces(on: display.id, showEmpty: widget.workspace?.showEmpty == true).isEmpty {
                         return false
                     }
-                    return widget.enabled && (output?.display ?? widget.display).includes(display, activeID: activeID)
-                        && (output?.hidden != true || store.scripts[widget.id]?.error != nil)
+                    return widget.enabled && (presentation?.display ?? widget.display).includes(display, activeID: activeID)
+                        && presentation?.hidden != true
                 }
                 let units = BarUnit.make(widgets: widgets, groups: config.groups)
                 GeometryReader { geometry in
@@ -251,24 +249,18 @@ struct WidgetView: View {
     @State private var popupAnchor = NSView()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var style: WidgetStyle {
-        let output = store.scripts[widget.id]?.output
-        var style = widget.style.inheriting(defaults)
-        for source in store.configuration?.widgets ?? [] {
-            if let override = store.scripts[source.id]?.output.widgetStyles?[widget.id] {
-                style = override.inheriting(style)
-            }
-        }
-        style = (output?.style ?? WidgetStyle()).inheriting(style)
-        if let color = output?.color { style.foreground = color }
-        return style
+    private var resolution: ResolvedWidgetStyle {
+        store.presentations[widget.id]?.style ?? ResolvedWidgetStyle(base: resolveStyle([defaults, widget.style]))
     }
 
     var body: some View {
         let output = store.scripts[widget.id]?.output
+        let resolution = self.resolution
+        let isOpen = store.presentations[widget.id]?.popupAnchor == ObjectIdentifier(popupAnchor)
+        let style = resolution.style(hovered: hovered, open: isOpen)
         let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let animation = output?.animation ?? widget.animation ?? WidgetAnimation(duration: animationDuration)
-        let tile = content(appearance)
+        let tile = content(appearance, resolution: resolution, open: isOpen)
             .padding(.leading, style.paddingLeading ?? appearance.paddingHorizontal)
             .padding(.trailing, style.paddingTrailing ?? appearance.paddingHorizontal)
             .padding(.top, style.paddingTop ?? appearance.paddingVertical)
@@ -293,9 +285,8 @@ struct WidgetView: View {
             }
         }
         .font(appearance.font)
-        .foregroundStyle(hovered ? appearance.hoverForeground : appearance.foreground)
-        .background(hovered ? appearance.hoverBackground : appearance.background,
-                    in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
+        .foregroundStyle(appearance.foreground)
+        .background(appearance.background, in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
         .overlay {
             RoundedRectangle(cornerRadius: appearance.cornerRadius)
                 .strokeBorder(appearance.borderColor, lineWidth: appearance.borderWidth)
@@ -308,7 +299,7 @@ struct WidgetView: View {
         .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
         .overlay(alignment: .bottom) {
             if let overlay = widget.overlay {
-                block(overlay, style: style, fillsWidth: true).allowsHitTesting(false)
+                block(overlay, style: resolution.base, states: resolution.blockStates(open: isOpen), fillsWidth: true).allowsHitTesting(false)
             }
         }
         .overlay {
@@ -340,15 +331,16 @@ struct WidgetView: View {
     }
 
     @ViewBuilder
-    private func content(_ appearance: WidgetAppearance) -> some View {
+    private func content(_ appearance: WidgetAppearance, resolution: ResolvedWidgetStyle, open: Bool) -> some View {
         if let layout = widget.layout {
-            block(layout, style: style, fillsWidth: false)
+            block(layout, style: resolution.base, states: resolution.blockStates(open: open), fillsWidth: false)
                 .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
         } else {
             switch widget.content {
             case .workspaces:
                 WorkspaceView(workspaceStore: store.workspaceStore, monitor: monitor,
-                              appearance: appearance, animationDuration: animationDuration,
+                              appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
+                              animationDuration: animationDuration,
                               configuration: widget.workspace, animation: widget.animation, defaults: widget.style.inheriting(defaults))
             case .activeApp:
                 HStack(spacing: appearance.spacing) {
@@ -367,7 +359,7 @@ struct WidgetView: View {
             case let .text(text):
                 label(text, icon: widget.icon, appearance: appearance)
             case .spacer:
-                Spacer(minLength: style.minWidth ?? 0)
+                Spacer(minLength: resolution.base.minWidth ?? 0)
             case .script, .provider:
                 if let script = store.scripts[widget.id] {
                     HStack(spacing: appearance.spacing) {
@@ -378,14 +370,14 @@ struct WidgetView: View {
                         }
                         label(script.output.text, icon: script.output.icon ?? widget.icon, appearance: appearance)
                     }
-                        .foregroundStyle(hovered ? appearance.hoverForeground : appearance.foreground)
+                        .foregroundStyle(appearance.foreground)
                         .help(script.error ?? script.output.tooltip ?? "")
                 }
             }
         }
     }
 
-    private func block(_ block: PopupBlock, style: WidgetStyle, fillsWidth: Bool) -> some View {
+    private func block(_ block: PopupBlock, style: WidgetStyle, states: StyleStates, fillsWidth: Bool) -> some View {
         let script = store.scripts[widget.id]
         var fields = script?.output.fields ?? [:]
         switch widget.content {
@@ -401,7 +393,7 @@ struct WidgetView: View {
                               menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
                               targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
                               series: script?.output.series ?? [:],
-                              fillsWidth: fillsWidth, open: { $0.open() }) { command, environment in
+                              fillsWidth: fillsWidth, open: { $0.open() }, states: states) { command, environment in
             if environment.isEmpty {
                 runAction(command, sender: "mouse.clicked", button: "left")
             } else {
@@ -453,64 +445,57 @@ struct WorkspaceView: View {
     var body: some View {
         let workspaces = workspaceStore.workspaces(on: monitor, showEmpty: configuration?.showEmpty == true)
         let indicator = configuration?.indicator ?? .background
-        let indicatorStyle = configuration?.indicatorStyle ?? WidgetStyle()
         HStack(spacing: appearance.spacing) {
             ForEach(workspaces) { workspace in
-                let base = configuration?.style ?? WidgetStyle()
-                let stateStyle = if workspace.isFocused { configuration?.focusedStyle }
-                    else if workspace.isVisible { configuration?.visibleStyle }
-                    else if workspace.apps.isEmpty { configuration?.emptyStyle }
-                    else { nil as WidgetStyle? }
-                let style = (stateStyle ?? WidgetStyle()).inheriting(base)
-                let appStateStyle = workspace.isFocused ? configuration?.focusedAppStyle : workspace.isVisible ? configuration?.visibleAppStyle : nil
-                let appStyle = (appStateStyle ?? WidgetStyle()).inheriting(configuration?.appStyle ?? WidgetStyle())
+                let styles = configuration?.cellStyle(WorkspaceState(workspace)) ?? WorkspaceCellStyle()
+                let hovered = hoveredWorkspace == workspace.name
+                let style = styles.label(hovered: hovered)
+                let glyph = styles.glyph(hovered: hovered)
                 Button { workspaceStore.select(workspace) } label: {
                     HStack(spacing: style.spacing ?? 4) {
                         Text(workspace.name)
                         if configuration?.showApps != false {
                             ForEach(workspace.apps) { app in
-                                if let glyphs = configuration?.appGlyphs, let glyph = appGlyph(for: app, in: glyphs) {
-                                    Text(glyph)
-                                        .font(WidgetAppearance(appStyle, defaults: WidgetStyle()).font)
-                                        .foregroundStyle((hoveredWorkspace == workspace.name ? appStyle.hoverForeground?.color : nil)
-                                                         ?? appStyle.foreground?.color ?? appearance.foreground)
+                                if let glyphs = configuration?.appGlyphs, let text = appGlyph(for: app, in: glyphs) {
+                                    Text(text)
+                                        .font(WidgetAppearance(glyph, defaults: WidgetStyle()).font)
+                                        .foregroundStyle(glyph.foreground?.color ?? appearance.foreground)
                                         .help(app.name)
                                 } else if let image = appIcons.image(for: app.bundleID,
-                                                                   size: NSSize(width: appStyle.width ?? 14, height: appStyle.height ?? 14),
+                                                                   size: NSSize(width: glyph.width ?? 14, height: glyph.height ?? 14),
                                                                    scale: displayScale) {
                                     Image(nsImage: image)
                                         .renderingMode(.original)
                                         .resizable()
                                         .interpolation(.high)
-                                        .frame(width: appStyle.width ?? 14, height: appStyle.height ?? 14)
+                                        .frame(width: glyph.width ?? 14, height: glyph.height ?? 14)
                                         .help(app.name)
                                 }
                             }
                         }
                     }
                     .font(WidgetAppearance(style, defaults: defaults).font)
-                    .foregroundStyle((hoveredWorkspace == workspace.name ? style.hoverForeground?.color : nil)
-                                     ?? style.foreground?.color ?? (workspace.isFocused ? appearance.accentText : appearance.foreground))
+                    .foregroundStyle(style.foreground?.color ?? (workspace.isFocused ? appearance.accentText : appearance.foreground))
                     .padding(.leading, style.paddingLeading ?? style.paddingHorizontal ?? 7)
                     .padding(.trailing, style.paddingTrailing ?? style.paddingHorizontal ?? 7)
                     .frame(width: style.width.map { CGFloat($0) }, height: style.height ?? 22)
                     .background {
                         if indicator == .background && workspace.isFocused {
-                            RoundedRectangle(cornerRadius: style.cornerRadius ?? max(appearance.cornerRadius - 4, 0))
-                                .fill(style.background?.color ?? appearance.accent)
+                            RoundedRectangle(cornerRadius: styles.resting.cornerRadius ?? max(appearance.cornerRadius - 4, 0))
+                                .fill(styles.resting.background?.color ?? appearance.accent)
                                 .matchedGeometryEffect(id: "focused-workspace", in: selection)
                         } else if indicator == .background && workspace.isVisible {
-                            RoundedRectangle(cornerRadius: style.cornerRadius ?? max(appearance.cornerRadius - 4, 0))
-                                .strokeBorder(style.borderColor?.color ?? appearance.accent, lineWidth: style.borderWidth ?? 1)
+                            RoundedRectangle(cornerRadius: styles.resting.cornerRadius ?? max(appearance.cornerRadius - 4, 0))
+                                .strokeBorder(styles.resting.borderColor?.color ?? appearance.accent, lineWidth: styles.resting.borderWidth ?? 1)
                         }
                     }
                     .overlay(alignment: .bottom) {
                         if indicator == .underline && workspace.isVisible {
-                            RoundedRectangle(cornerRadius: indicatorStyle.cornerRadius ?? 0)
-                                .fill(indicatorStyle.background?.color ?? appearance.accent)
-                                .frame(width: indicatorStyle.width.map { CGFloat($0) }, height: indicatorStyle.height ?? 2)
+                            RoundedRectangle(cornerRadius: styles.underline.cornerRadius ?? 0)
+                                .fill(styles.underline.background?.color ?? appearance.accent)
+                                .frame(width: styles.underline.width.map { CGFloat($0) }, height: styles.underline.height ?? 2)
                                 .matchedGeometryEffect(id: "workspace-underline", in: selection)
-                                .offset(x: indicatorStyle.offsetX ?? 0, y: indicatorStyle.offsetY ?? 0)
+                                .offset(x: styles.underline.offsetX ?? 0, y: styles.underline.offsetY ?? 0)
                         }
                     }
                     .contentShape(Rectangle())

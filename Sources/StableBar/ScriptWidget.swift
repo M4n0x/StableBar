@@ -52,6 +52,9 @@ struct ScriptOutput: Decodable, Sendable {
     var onClick: String?
     var widgetStyles: [String: WidgetStyle]?
     var interval: Double?
+    /// The widget's data state. Earlier versions ignored this field, so any JSON value decodes;
+    /// `dataState(_:rules:)` uses only a string.
+    var state: ConfigurationValue?
 
     static func read(_ data: Data) throws -> ScriptOutput {
         let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -70,6 +73,8 @@ final class ScriptWidget {
     var error: String?
     var samples: [Double] = []
     var diagnostics = ScriptDiagnostics()
+    /// Called after each new output or failure, so the store can re-resolve the styles it affects.
+    @ObservationIgnored var onUpdate: (() -> Void)?
     private var task: Task<Void, Never>?
     private var timer: Task<Void, Never>?
     private var events: AsyncStream<ScriptEvent>.Continuation?
@@ -164,6 +169,7 @@ final class ScriptWidget {
                 } catch {
                     if Task.isCancelled { return }
                     self.error = error.localizedDescription
+                    onUpdate?()
                     diagnostics.failureCount += 1
                     diagnostics.consecutiveFailures += 1
                     if let failure = error as? CommandFailure {
@@ -198,7 +204,7 @@ final class ScriptWidget {
         diagnostics.cpuTime += result.cpuTime
     }
 
-    private func accept(_ next: ScriptOutput) throws {
+    func accept(_ next: ScriptOutput) throws {
         if let interval = next.interval, !interval.isFinite || interval <= 0 {
             throw CommandFailure(message: "A script interval must be greater than zero.")
         }
@@ -210,6 +216,7 @@ final class ScriptWidget {
         }
         error = nil
         diagnostics.lastUpdated = Date()
+        onUpdate?()
     }
 
     func refresh(_ event: ScriptEvent) {
