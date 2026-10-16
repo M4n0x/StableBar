@@ -412,6 +412,11 @@ struct Configuration: Decodable, Sendable {
 
     let providers: [String: ProviderConfiguration]
     let groups: [String: WidgetGroupConfiguration]
+    /// Events that enabled widgets, and the providers they show, subscribe to.
+    let subscribedEvents: Set<String>
+    /// The providers to run: those enabled widgets show and, for each subscribed event a data
+    /// source sends, a provider of that source, unless a provider of another type has its name.
+    let activeProviders: Set<String>
 
     enum CodingKeys: String, CodingKey, CaseIterable { case workspaceSource, bar, defaults, popupDefaults, widgets, popups, templates, widgetOverrides, environment, providers, groups }
 
@@ -448,7 +453,19 @@ struct Configuration: Decodable, Sendable {
                 providers[name] = ProviderConfiguration(type: name)
             }
         }
+        let shown = Set(widgets.filter(\.enabled).compactMap(\.providerName))
+        let subscribed = Set(widgets.filter(\.enabled).flatMap(\.events) + shown.flatMap { providers[$0]?.events ?? [] })
+        var active = shown
+        for type in DataSourceRegistry.builtIn.types {
+            guard type.events.contains(where: { subscribed.contains($0.rawValue) }),
+                  !shown.contains(where: { providers[$0]?.type == type.name }),
+                  (providers[type.name]?.type ?? type.name) == type.name else { continue }
+            providers[type.name] = providers[type.name] ?? ProviderConfiguration(type: type.name)
+            active.insert(type.name)
+        }
         self.providers = providers
+        subscribedEvents = subscribed
+        activeProviders = active
         groups = try values.decodeIfPresent([String: WidgetGroupConfiguration].self, forKey: .groups) ?? [:]
         var groupPositions: [String: WidgetPosition] = [:]
         var ids = Set<String>()

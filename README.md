@@ -475,7 +475,7 @@ Your own `tokens.appGlyphs` merges into the module's map, so `{ "tokens": { "app
 
 ### Script events
 
-Add `events` to a script widget to refresh it on named events, alongside its interval. Set `"interval": null` to run once at startup and then only on events or after a click action. Omitting the interval keeps the default 30-second polling. Numeric intervals must be greater than zero. StableBar sends these events itself:
+Add `events` to a script widget to refresh it on named events, alongside its interval. Set `"interval": null` to run once at startup and then only on events or after a click action. Omitting the interval keeps the default 30-second polling. Numeric intervals must be greater than zero. StableBar knows these events:
 
 | Event | Sent when | `INFO` |
 | --- | --- | --- |
@@ -484,8 +484,9 @@ Add `events` to a script widget to refresh it on named events, alongside its int
 | `aerospaceMode` | AeroSpace switches binding mode | The mode's name |
 | `wake` | The Mac wakes from sleep | Not set |
 | `yabai` | `StableBar --trigger yabai` runs, usually from a yabai signal; StableBar also refreshes its workspaces | The trigger's `INFO`, if any |
+| `powerSourceChange` | The Mac switches between its power adapter and battery | `ac` or `battery` |
 
-Other names subscribe to macOS distributed notifications, for example `com.spotify.client.PlaybackStateChanged`.
+`powerSourceChange` comes from the `battery` data source. Subscribing to it runs that source while the subscribing widget is enabled, even when no widget shows it, and keeps it running while its own widgets are hidden. Other names subscribe to macOS distributed notifications, for example `com.spotify.client.PlaybackStateChanged`.
 
 External hooks can trigger an event without launching another bar:
 
@@ -715,11 +716,11 @@ Provider `type` is `command`, `stream`, `system`, `network`, `battery`, `audio` 
 
 A widget with `type` set to `system`, `network`, `battery`, `audio` or `calendar` uses the provider of that name. Without a definition in `providers`, it is a native provider of that type with default settings, shared by every widget that names it. Define a provider with the same name to change its interval or other settings. `{ "id": "power", "type": "battery", "position": "right" }` is enough for a battery widget.
 
-Provider `environment` overlays the top-level environment. `NAME` is the provider name and `CONFIG_DIR` remains the main configuration directory. The environment of a consuming widget applies to that widget's actions, not the shared update process. Add `events` to a provider or consuming widget to request updates; one event refreshes a shared provider once. An explicit stream refresh restarts its process with the new event payload.
+Provider `environment` overlays the top-level environment. `NAME` is the provider name and `CONFIG_DIR` remains the main configuration directory. The environment of a consuming widget applies to that widget's actions, not the shared update process. Add `events` to a provider or consuming widget to request updates; one event refreshes a shared provider once. An explicit refresh restarts a stream's process with the new event payload, and restarts the listener of a push source such as `battery`, which then reads its current state again.
 
 A stream writes one complete JSON object per line, including `text`, and flushes stdout after each update. Empty lines are ignored; the final line may omit its newline. Streaming output represents current state: when updates arrive faster than the UI consumes them, only the newest pending update is retained. Each line is limited to 1 MiB; stderr retains its latest 16 KiB. Malformed output stops the process and retains the last good value. Clean exits and failures reconnect with exponential backoff, capped at five minutes or the configured interval if longer. Ten seconds of successful streaming resets the failure streak.
 
-Set `whenVisible` to `true` to suspend a provider when none of its consumers is visible on any display, including widgets moved to overflow. Removing or disabling the last consuming widget stops the provider. System sleep suspends scripts and providers; resuming preserves the last output and graph history, and starts a fresh update with `SENDER=resume`. A suspended or stopped `battery` provider removes its macOS listener.
+Set `whenVisible` to `true` to suspend a provider when none of its consumers is visible on any display, including widgets moved to overflow. Removing or disabling the last consuming widget stops the provider. System sleep suspends scripts and providers; resuming preserves the last output and graph history, and starts a fresh update with `SENDER=resume`. A suspended or stopped `battery` provider removes its macOS listener. A provider whose events a widget subscribes to stays running; see [Script events](#script-events).
 
 Native providers use public macOS APIs and launch no shell commands:
 

@@ -428,6 +428,7 @@ private final class FakeMonitor: ChangeMonitor {
     private struct State {
         var output: Result<ScriptOutput, any Error>
         var changed: (@Sendable () -> Void)?
+        var startError: (any Error)?
     }
 
     private let state: OSAllocatedUnfairLock<State>
@@ -441,7 +442,13 @@ private final class FakeMonitor: ChangeMonitor {
     func read() throws -> ScriptOutput { try state.withLock { $0.output }.get() }
 
     func start(changed: @escaping @Sendable () -> Void) throws {
+        if let error = state.withLock({ $0.startError }) { throw error }
         state.withLock { $0.changed = changed }
+    }
+
+    /// Makes `start` throw, as when macOS refuses the listener, or work again with `nil`.
+    func failToStart(with error: (any Error)?) {
+        state.withLock { $0.startError = error }
     }
 
     func stop() {
@@ -598,4 +605,170 @@ private extension DataSourceRegistry {
     try store.applyEdits([ConfigurationEdit(action: .set, id: "power", properties: ["enabled": .bool(false)])], persist: false)
     #expect(!monitor.listening)
     #expect(store.providers.isEmpty)
+}
+
+@Test @MainActor func aMonitorThatCannotStartShowsItsErrorRetriesAndHoldsNoRunOpen() async throws {
+    let monitor = FakeMonitor(ScriptOutput(text: "80%"))
+    monitor.failToStart(with: CommandFailure(message: "No listener."))
+    let script = ScriptWidget()
+    defer { script.stop() }
+    script.start(schedule: SourceSchedule(interval: 0.05, continuous: true)) { PushSource(monitor: monitor) }
+    try await awaitCondition { script.error == "No listener." }
+    try await awaitCondition { !script.diagnostics.running }
+    #expect(!monitor.listening)
+    #expect(script.diagnostics.nextDelay == 1)
+    #expect(script.diagnostics.failureCount == 1)
+    monitor.failToStart(with: nil)
+    try await awaitCondition { script.error == nil && script.output.text == "80%" && monitor.listening }
+    #expect(script.diagnostics.running)
+}
+
+private func battery(_ state: String) -> ScriptOutput {
+    ScriptOutput(text: "50%", value: 0.5, fields: ["state": state, "present": "true"], values: ["percent": 0.5])
+}
+
+@Test @MainActor func outputChangesAfterTheFirstReachTheChangeHook() throws {
+    let script = ScriptWidget()
+    var changes: [String] = []
+    script.onOutputChange = { previous, output in changes.append("\(previous.text)→\(output.text)") }
+    try script.accept(ScriptOutput(text: "a"))
+    try script.accept(ScriptOutput(text: "a"))
+    try script.accept(ScriptOutput(text: "b"))
+    #expect(changes == ["a→b"])
+}
+
+@Test func powerSourceChangesOnlyWhenTheMacSwitchesBetweenAdapterAndBattery() {
+    let event = BuiltInEvent.powerSourceChange
+    #expect(event.variables(from: battery("charging"), to: battery("battery")) == ["INFO": "battery"])
+    #expect(event.variables(from: battery("battery"), to: battery("charged")) == ["INFO": "ac"])
+    #expect(event.variables(from: battery("charging"), to: battery("charged")) == nil)
+    #expect(event.variables(from: battery("battery"), to: ScriptOutput(text: "51%", fields: ["state": "battery"])) == nil)
+    #expect(BuiltInEvent.frontApp.variables(from: battery("battery"), to: battery("charged")) == nil)
+    #expect(DataSourceType.battery.events == [.powerSourceChange])
+}
+
+@Test func subscribedSourceEventsAddTheProvidersThatSendThem() throws {
+    func configuration(_ json: String) throws -> Configuration {
+        var loader = ConfigurationLoader()
+        return try loader.load(FileManager.default.temporaryDirectory.appending(path: "events.json"), data: Data(json.utf8))
+    }
+    let subscribed = try configuration(#"""
+    {"templates":{"notice":{"type":"script","position":"left","interval":null,"events":["powerSourceChange"]}},
+     "widgets":[{"id":"notice","template":"notice","command":"true"},{"id":"cpu","type":"system","position":"right"}]}
+    """#)
+    #expect(subscribed.activeProviders == ["battery", "system"])
+    #expect(subscribed.providers["battery"] == ProviderConfiguration(type: "battery"))
+    let shown = try configuration(#"""
+    {"providers":{"power":{"type":"battery"}},
+     "widgets":[{"id":"power","type":"provider","provider":"power","position":"right","events":["powerSourceChange"]}]}
+    """#)
+    #expect(shown.activeProviders == ["power"])
+    let disabled = try configuration(#"""
+    {"widgets":[{"id":"notice","type":"script","position":"left","command":"true","enabled":false,"events":["powerSourceChange"]}]}
+    """#)
+    #expect(disabled.activeProviders.isEmpty)
+    let own = try configuration(#"""
+    {"providers":{"battery":{"type":"command","command":"true"}},
+     "widgets":[{"id":"notice","type":"script","position":"left","command":"true","events":["powerSourceChange"]}]}
+    """#)
+    #expect(own.providers["battery"]?.type == "command")
+    #expect(own.activeProviders.isEmpty)
+}
+
+@Test @MainActor func subscribingToASourceEventRunsThatSource() async throws {
+    let url = try writeTemporaryConfiguration(#"""
+    {"widgets":[{"id":"notice","type":"script","position":"left","interval":null,"events":["powerSourceChange"],
+      "command":"printf '%s' \"${INFO:-none}\""}]}
+    """#)
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let monitor = FakeMonitor(battery("charging"))
+    let store = BarStore(configurationURL: url, registry: .builtIn.replacing("battery") { _, _ in PushSource(monitor: monitor) })
+    defer { store.stop() }
+    store.reloadConfiguration()
+    let notice = try #require(store.scripts["notice"])
+    try await awaitCondition { notice.output.text == "none" && store.providers["battery"]?.diagnostics.lastUpdated != nil }
+    #expect(store.scripts["battery"] == nil)
+    monitor.change(to: battery("battery"))
+    try await awaitCondition { notice.output.text == "battery" }
+    monitor.change(to: battery("charged"))
+    try await awaitCondition { notice.output.text == "ac" }
+    try store.applyEdits([ConfigurationEdit(action: .set, id: "notice", properties: ["events": .array([])])], persist: false)
+    #expect(!monitor.listening)
+    #expect(store.providers.isEmpty)
+}
+
+@Test @MainActor func aProviderNamedAfterABuiltInSourceKeepsThatSourceFromStarting() async throws {
+    let url = try writeTemporaryConfiguration(#"""
+    {"providers":{"battery":{"type":"command","command":"printf helper"}},
+     "widgets":[{"id":"helper","type":"provider","provider":"battery","position":"right"},
+                {"id":"notice","type":"script","position":"left","interval":null,"events":["powerSourceChange"],
+                 "command":"printf '%s' \"${INFO:-none}\""}]}
+    """#)
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let sources = FakeSources()
+    let store = BarStore(configurationURL: url, registry: .builtIn.replacing("battery") { _, _ in sources.make() })
+    defer { store.stop() }
+    store.reloadConfiguration()
+    #expect(store.configurationError == nil)
+    let notice = try #require(store.scripts["notice"])
+    try await awaitCondition { notice.output.text == "none" && store.scripts["helper"]?.output.text == "helper" }
+    store.refreshScripts(for: "powerSourceChange", environment: ["INFO": "battery"])
+    try await awaitCondition { notice.output.text == "battery" }
+    #expect(sources.made.isEmpty)
+    #expect(Array(store.providers.keys) == ["battery"])
+}
+
+@Test @MainActor func aProviderWhoseEventsAreSubscribedIgnoresWhenVisible() async throws {
+    let url = try writeTemporaryConfiguration(#"""
+    {"providers":{"battery":{"type":"battery","whenVisible":true}},
+     "widgets":[{"id":"power","type":"battery","position":"right"},
+                {"id":"notice","type":"script","position":"left","interval":null,"events":["powerSourceChange"],"command":"true"}]}
+    """#)
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let monitor = FakeMonitor(battery("charging"))
+    let store = BarStore(configurationURL: url, registry: .builtIn.replacing("battery") { _, _ in PushSource(monitor: monitor) })
+    store.reloadConfiguration()
+    try await awaitCondition { monitor.listening }
+    #expect(store.scripts["power"]?.diagnostics.suspended == false)
+    try store.applyEdits([ConfigurationEdit(action: .set, id: "notice", properties: ["enabled": .bool(false)])], persist: false)
+    #expect(store.scripts["power"]?.diagnostics.suspended == true)
+    #expect(!monitor.listening)
+    store.stop()
+}
+
+@Test @MainActor func aSourceEventRefreshesItsSubscribersButNotTheProviderThatSentIt() async throws {
+    let url = try writeTemporaryConfiguration(#"""
+    {"widgets":[{"id":"power","type":"battery","position":"right","events":["powerSourceChange"]},
+                {"id":"notice","type":"script","position":"left","interval":null,"events":["powerSourceChange"],
+                 "command":"printf '%s' \"${INFO:-none}\""}]}
+    """#)
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let sources = FakeSources()
+    let store = BarStore(configurationURL: url, registry: .builtIn.replacing("battery") { _, _ in sources.make() })
+    defer { store.stop() }
+    store.reloadConfiguration()
+    let power = try #require(store.scripts["power"])
+    let notice = try #require(store.scripts["notice"])
+    try await awaitCondition { sources.made.first?.emit != nil && notice.output.text == "none" }
+    let source = try #require(sources.made.first)
+    source.emit?(.output(.success(battery("charging"))))
+    try await awaitCondition { power.output.fields?["state"] == "charging" }
+    source.emit?(.output(.success(battery("battery"))))
+    try await awaitCondition { notice.output.text == "battery" }
+    #expect(power.diagnostics.restartCount == 0)
+    #expect(sources.made.count == 1)
+    #expect(notice.diagnostics.executionCount == 2)
+}
+
+@Test @MainActor func stoppingTheStoreStopsProvidersThatOnlySendEvents() async throws {
+    let url = try writeTemporaryConfiguration(#"""
+    {"widgets":[{"id":"notice","type":"script","position":"left","interval":null,"events":["powerSourceChange"],"command":"true"}]}
+    """#)
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let monitor = FakeMonitor(battery("charging"))
+    let store = BarStore(configurationURL: url, registry: .builtIn.replacing("battery") { _, _ in PushSource(monitor: monitor) })
+    store.reloadConfiguration()
+    try await awaitCondition { monitor.listening }
+    store.stop()
+    #expect(!monitor.listening)
 }

@@ -334,6 +334,7 @@ func widgetActionsRunInOrderAndStoppingCancelsQueuedWork(stop: Bool) async throw
     let rows = lines[(header + 2)...].prefix { $0.hasPrefix("| ") }.map { row in
         row.dropFirst(2).dropLast(2).components(separatedBy: " | ")
     }
+    #expect(rows.allSatisfy { $0.count == 3 })
     #expect(rows.map { $0[0] } == BuiltInEvent.allCases.map { "`\($0.rawValue)`" })
     #expect(rows.map { $0[1] } == BuiltInEvent.allCases.map(\.trigger))
     #expect(rows.map { $0[2] } == BuiltInEvent.allCases.map(\.info))
@@ -365,4 +366,32 @@ func widgetActionsRunInOrderAndStoppingCancelsQueuedWork(stop: Bool) async throw
         try await Task.sleep(for: .milliseconds(20))
     }
     #expect(script.output.text == "wake:none")
+}
+
+@Test @MainActor func sendingABuiltInEventPassesItsVariablesToTheScript() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let url = directory.appending(path: "config.json")
+    try Data(#"""
+    {"widgets":[{"id":"front","type":"script","position":"right","interval":null,"events":["frontApp"],
+      "command":"printf '%s:%s' \"$SENDER\" \"${INFO:-none}\""}]}
+    """#.utf8).write(to: url)
+    let store = BarStore(configurationURL: url)
+    defer {
+        store.stop()
+        try? FileManager.default.removeItem(at: directory)
+    }
+    store.reloadConfiguration()
+    let script = try #require(store.scripts["front"])
+    for _ in 0..<100 {
+        if script.output.text == "startup:none" { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(script.output.text == "startup:none")
+    store.send(.frontApp, ["INFO": "Safari"])
+    for _ in 0..<100 {
+        if script.output.text == "frontApp:Safari" { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(script.output.text == "frontApp:Safari")
 }

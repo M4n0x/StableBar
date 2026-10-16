@@ -100,6 +100,9 @@ final class ScriptWidget {
     /// Called when the output or the error changes, so the store can re-resolve the styles it affects,
     /// and for each output with a `temporary`, which the store shows again after it ran out.
     @ObservationIgnored var onUpdate: (() -> Void)?
+    /// Called when an output replaces an earlier one, so the store can send the events that a data
+    /// source's changes stand for, such as `powerSourceChange`.
+    @ObservationIgnored var onOutputChange: ((_ previous: ScriptOutput, _ output: ScriptOutput) -> Void)?
     /// Numbers each accepted output, unique across scripts, so the store can tell a new output from
     /// one it applies again. 0 before the first.
     @ObservationIgnored private(set) var outputNumber = 0
@@ -249,6 +252,7 @@ final class ScriptWidget {
         }
         var next = next
         next.series = next.series?.mapValues { Array($0.suffix(60)) }
+        let previous = diagnostics.lastUpdated == nil ? nil : output
         let outputChanged = next != output
         let changed = outputChanged || error != nil
         if outputChanged { output = next }
@@ -261,6 +265,7 @@ final class ScriptWidget {
         Self.acceptedOutputs += 1
         outputNumber = Self.acceptedOutputs
         if changed || next.temporary != nil { onUpdate?() }
+        if let previous, outputChanged { onOutputChange?(previous, next) }
     }
 
     func refresh(_ event: ScriptEvent) {

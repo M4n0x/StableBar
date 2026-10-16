@@ -206,10 +206,7 @@ final class BarStore: NSObject {
                 scripts.removeValue(forKey: id)
             }
         }
-        let usedProviders = Set(next.widgets.filter(\.enabled).compactMap { widget -> String? in
-            if case let .provider(name) = widget.content { return name }
-            return nil
-        })
+        let usedProviders = next.activeProviders
         for (name, script) in providers {
             if !usedProviders.contains(name) || configuration?.providers[name] != next.providers[name]
                 || configuration?.environment != next.environment {
@@ -219,10 +216,18 @@ final class BarStore: NSObject {
         }
         for name in usedProviders where providers[name] == nil {
             let script = ScriptWidget()
+            let provider = next.providers[name]!
             var environment = next.environment
             environment["NAME"] = name
             environment["CONFIG_DIR"] = configurationURL.deletingLastPathComponent().path
-            script.start(provider: next.providers[name]!, registry: registry, environment: environment)
+            if let events = registry[provider.type]?.events, !events.isEmpty {
+                script.onOutputChange = { [weak self, weak script] previous, output in
+                    for event in events {
+                        if let variables = event.variables(from: previous, to: output) { self?.send(event, variables, from: script) }
+                    }
+                }
+            }
+            script.start(provider: provider, registry: registry, environment: environment)
             providers[name] = script
         }
         for widget in next.widgets where widget.enabled {
@@ -338,7 +343,10 @@ final class BarStore: NSObject {
         if let popupWidgetID { visible.insert(popupWidgetID) }
         if inspectorOpen, let inspectedWidgetID { visible.insert(inspectedWidgetID) }
         for (name, provider) in providers {
-            let hidden = configuration?.providers[name]?.whenVisible == true
+            let definition = configuration?.providers[name]
+            let sendsSubscribedEvents = registry[definition?.type ?? ""]?.events
+                .contains { configuration?.subscribedEvents.contains($0.rawValue) == true } == true
+            let hidden = definition?.whenVisible == true && !sendsSubscribedEvents
                 && !(configuration?.widgets.contains { $0.content == .provider(name) && visible.contains($0.id) } ?? false)
             if sleeping || hidden { provider.suspend() } else { provider.resume() }
         }
@@ -423,13 +431,16 @@ final class BarStore: NSObject {
     }
 
     /// Sends one of StableBar's own events to the widgets and providers that subscribe to it.
-    func send(_ event: BuiltInEvent, _ variables: [String: String] = [:]) {
-        refreshScripts(for: event.rawValue, environment: variables)
+    /// `sender`, the provider whose change sent the event, isn't refreshed: it has the change already,
+    /// and a refresh would restart it.
+    func send(_ event: BuiltInEvent, _ variables: [String: String] = [:], from sender: ScriptWidget? = nil) {
+        refreshScripts(for: event.rawValue, environment: variables, skipping: sender)
     }
 
-    func refreshScripts(for event: String, environment: [String: String] = [:]) {
+    func refreshScripts(for event: String, environment: [String: String] = [:], skipping sender: ScriptWidget? = nil) {
         if event == BuiltInEvent.yabai.rawValue { workspaceStore.trigger() }
         var refreshed = Set<ObjectIdentifier>()
+        if let sender { refreshed.insert(ObjectIdentifier(sender)) }
         for widget in configuration?.widgets ?? [] {
             let providerEvents: [String]
             if case let .provider(name) = widget.content { providerEvents = configuration!.providers[name]!.events }
@@ -483,6 +494,7 @@ final class BarStore: NSObject {
         configurationWatcher.stop()
         workspaceStore.stop()
         for script in scripts.values { script.stop() }
+        for provider in providers.values { provider.stop() }
         providers.removeAll()
         scripts.removeAll()
         for action in actions.values { action.cancel() }

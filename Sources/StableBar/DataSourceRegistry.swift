@@ -51,7 +51,8 @@ extension DataSourceType {
         StreamSource(command: provider.command!, environment: environment)
     }
 
-    static let battery = DataSourceType(name: "battery", isNative: true, symbol: "battery.100percent", settings: [], continuous: true) { _, _ in
+    static let battery = DataSourceType(name: "battery", isNative: true, symbol: "battery.100percent", settings: [],
+                                        continuous: true, events: [.powerSourceChange]) { _, _ in
         PushSource(monitor: PowerMonitor())
     }
 
