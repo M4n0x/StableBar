@@ -231,3 +231,48 @@ private func output(_ json: String) throws -> ScriptOutput {
     #expect(invalidated { store.setPopupVisibleWidget("b", anchor: bAnchor) } == ["a", "b"])
     #expect(invalidated { store.setPopupVisibleWidget(nil) } == ["b"])
 }
+
+@Test @MainActor func outputStateRestylesOnlyItsWidget() async throws {
+    let store = try makeStore(##"""
+    {"defaults":{"states":{"warning":{"foreground":"#ff0000"}}},"widgets":[
+      {"id":"a","type":"script","command":"true","position":"left"},
+      {"id":"b","type":"script","command":"true","position":"left"}]}
+    """##)
+    let a = try #require(store.scripts["a"])
+    let first = try #require(store.presentations["a"])
+    let second = try #require(store.presentations["b"])
+    try await confirmation("a enters warning", expectedCount: 1) { restyled in
+        try await confirmation("b stays valid", expectedCount: 0) { invalidated in
+            withObservationTracking { _ = first.style } onChange: { restyled() }
+            withObservationTracking { _ = second.style } onChange: { invalidated() }
+            try a.accept(output(#"{"text":"12%","state":"warning"}"#))
+        }
+    }
+    #expect(first.style.state == "warning")
+    #expect(first.style.style(hovered: false).foreground == HexColor(0xff0000ff))
+    try a.accept(output(#"{"text":"40%"}"#))
+    #expect(first.style.state == nil)
+}
+
+@Test @MainActor func snapshotsReportTheDataState() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appending(path: "config.json")
+    try Data(#"""
+    {"widgets":[{"id":"power","type":"script","position":"right","interval":null,
+      "command":"printf '{\"text\":\"Low\",\"state\":\"warning\"}'"}]}
+    """#.utf8).write(to: url)
+    let store = BarStore(configurationURL: url)
+    defer { store.stop() }
+    store.reloadConfiguration()
+    for _ in 0..<100 {
+        if store.presentations["power"]?.style.state == "warning" { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    guard case let .object(snapshot) = try store.snapshot(id: "power") else {
+        Issue.record("Expected an object snapshot")
+        return
+    }
+    #expect(snapshot["state"] == .string("warning"))
+}

@@ -279,3 +279,48 @@ private func workspace(_ json: String) throws -> WorkspaceConfiguration {
     #expect(borderOnly.style(hovered: false, open: true).background == HexColor(0x000000ff))
     #expect(borderOnly.blockStates(open: true) == StyleStates(open: true))
 }
+
+@Test func dataStatesApplyBeforeHoverAndOpenAndThemeStatesBeatTheBase() throws {
+    let defaults = try style(##"{"states":{"warning":{"foreground":"#ff0000","background":"#110000"}}}"##)
+    let widget = try style(##"{"foreground":"#ffffff","hoverBackground":"#222222"}"##)
+    let resolution = ResolvedWidgetStyle(base: resolveStyle([defaults, widget]), state: "warning")
+    #expect(resolution.style(hovered: false, open: false).foreground == HexColor(0xff0000ff))
+    #expect(resolution.style(hovered: false, open: false).background == HexColor(0x110000ff))
+    #expect(resolution.style(hovered: true, open: false).background == HexColor(0x222222ff))
+    #expect(resolution.style(hovered: true, open: false).foreground == HexColor(0xff0000ff))
+    let own = try style(##"{"states":{"warning":{"foreground":"#00ff00"}}}"##)
+    #expect(ResolvedWidgetStyle(base: resolveStyle([defaults, widget, own]), state: "warning").style(hovered: false).foreground
+        == HexColor(0x00ff00ff))
+    #expect(ResolvedWidgetStyle(base: resolveStyle([defaults, widget]), state: "unknown").style(hovered: false).foreground
+        == HexColor(0xffffffff))
+    #expect(resolution.blockStates(open: true) == StyleStates(data: "warning", open: true))
+}
+
+@Test func outputStateIgnoresReservedNamesAndNonStringValues() throws {
+    #expect(dataState(try output(#"{"text":"x","state":"warning"}"#)) == "warning")
+    #expect(dataState(try output(#"{"text":"x","state":"open"}"#)) == nil)
+    #expect(dataState(try output(#"{"text":"x","state":{"door":"open"}}"#)) == nil)
+    #expect(dataState(try output(#"{"text":"x","state":3}"#)) == nil)
+    #expect(dataState(try output(#"{"text":"x"}"#)) == nil)
+    #expect(dataState(nil) == nil)
+}
+
+@Test func layoutBlocksApplyTheWidgetsDataState() throws {
+    let block = try JSONDecoder().decode(PopupBlock.self, from: Data(##"""
+    {"type":"symbol","name":"bolt","style":{"states":{"warning":{"foreground":"#ff0000","background":"#330000"}}}}
+    """##.utf8))
+    let resolved = block.resolvedStyle(inherited: try style(##"{"foreground":"#ffffff"}"##), styles: [:], fields: [:],
+                                       states: StyleStates(data: "warning"))
+    #expect(resolved.text.foreground == HexColor(0xff0000ff))
+    #expect(resolved.box.background == HexColor(0x330000ff))
+    #expect(resolved.inherited.foreground == HexColor(0xffffffff))
+}
+
+@Test func openShowsOverTheDataState() throws {
+    let resolution = ResolvedWidgetStyle(base: try style(##"""
+    {"foreground":"#ffffff","states":{"warning":{"foreground":"#ff0000","background":"#110000"},"open":{"background":"#222222"}}}
+    """##), state: "warning")
+    #expect(resolution.style(hovered: false, open: true).background == HexColor(0x222222ff))
+    #expect(resolution.style(hovered: false, open: true).foreground == HexColor(0xff0000ff))
+    #expect(resolution.style(hovered: false, open: false).background == HexColor(0x110000ff))
+}

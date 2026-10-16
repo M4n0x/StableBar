@@ -1,13 +1,17 @@
 import Foundation
 
 /// The states active for one drawn element. Their styles apply over the base style in the order
-/// of `names`, later ones winning: the workspace state, `hover`, then `open`.
+/// of `names`, later ones winning: the data state, the workspace state, `hover`, then `open`.
 struct StyleStates: Equatable, Sendable {
+    var data: String?
     var workspace: WorkspaceState?
     var hover = false
     var open = false
 
-    var names: [String] { [workspace?.rawValue, hover ? "hover" : nil, open ? "open" : nil].compactMap { $0 } }
+    /// The states StableBar sets itself, which output `state` and rules can't use.
+    static let reservedNames: Set<String> = ["hover", "open", "focused", "visible", "empty"]
+
+    var names: [String] { [data, workspace?.rawValue, hover ? "hover" : nil, open ? "open" : nil].compactMap { $0 } }
 }
 
 /// A workspace cell's state. A cell has at most one: focused, else visible, else empty.
@@ -63,20 +67,23 @@ func barStyleLayers(_ style: WidgetStyle, widgets: [WidgetConfiguration], output
 struct ResolvedWidgetStyle: Equatable, Sendable {
     /// The merged layers, with their `states`, that the widget's layout and overlay blocks inherit.
     let base: WidgetStyle
+    /// The data state from the widget's output.
+    let state: String?
     /// `base` resolved at rest, hovered, open, then open and hovered.
     private let variants: [WidgetStyle]
 
-    init(base: WidgetStyle) {
+    init(base: WidgetStyle, state: String? = nil) {
         self.base = base
+        self.state = state
         variants = [(false, false), (true, false), (false, true), (true, true)].map {
-            base.resolved(for: StyleStates(hover: $0.0, open: $0.1))
+            base.resolved(for: StyleStates(data: state, hover: $0.0, open: $0.1))
         }
     }
 
     func style(hovered: Bool, open: Bool = false) -> WidgetStyle { variants[(hovered ? 1 : 0) + (open ? 2 : 0)] }
 
     /// The states the widget's layout and overlay blocks share; each block adds its own hover.
-    func blockStates(open: Bool) -> StyleStates { StyleStates(open: open) }
+    func blockStates(open: Bool) -> StyleStates { StyleStates(data: state, open: open) }
 }
 
 /// A workspace cell's styles in one workspace state, resolved when the configuration loads.
@@ -124,4 +131,10 @@ extension PopupBlock {
         let merged = resolveStyle([inherited, own])
         return BlockStyle(inherited: merged, text: merged.resolved(for: states), box: own.resolved(for: states))
     }
+}
+
+/// A widget's data state: its output's `state` when that is a string other than a reserved name.
+func dataState(_ output: ScriptOutput?) -> String? {
+    guard case let .string(name)? = output?.state, !StyleStates.reservedNames.contains(name) else { return nil }
+    return name
 }

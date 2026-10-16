@@ -292,7 +292,7 @@ final class BarStore: NSObject {
             let script = scripts[widget.id]
             let base = resolveStyle(widgetStyleLayers(widget, defaults: configuration.defaults, widgets: configuration.widgets,
                                                       output: output))
-            presentations[widget.id]?.update(style: ResolvedWidgetStyle(base: base),
+            presentations[widget.id]?.update(style: ResolvedWidgetStyle(base: base, state: dataState(script?.output)),
                                              hidden: script?.output.hidden == true && script?.error == nil,
                                              display: script?.output.display)
         }
@@ -393,6 +393,7 @@ final class BarStore: NSObject {
                 result["text"] = .string(script.output.text)
                 result["fields"] = .object((script.output.fields ?? [:]).mapValues(ConfigurationValue.string))
                 result["values"] = .object((script.output.values ?? [:]).mapValues(ConfigurationValue.number))
+                result["state"] = presentations[id]?.style.state.map(ConfigurationValue.string) ?? .null
             }
             return .object(result)
         }

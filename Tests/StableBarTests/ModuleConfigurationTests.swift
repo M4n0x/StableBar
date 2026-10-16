@@ -362,6 +362,7 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     loader.themesDirectory = repository.appending(path: "Resources/themes")
     let modular = try loader.load(repository.appending(path: "examples/modular/config.json"))
     #expect(modular.defaults.hoverBackground == HexColor(0x29384bff))
+    #expect(modular.defaults.states?["warning"]?.foreground == HexColor(0xf5c26bff))
     let interactive = try loader.load(repository.appending(path: "examples/interactive/config.json"))
     #expect(interactive.defaults.states?["open"]?.borderWidth == 1)
     _ = try loader.load(repository.appending(path: "Resources/config.json"))

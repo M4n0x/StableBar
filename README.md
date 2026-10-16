@@ -161,13 +161,39 @@ Any style can have `states`: styles that apply over it while a state is active. 
 }
 ```
 
-`hover` is active while the pointer is over a bar widget, a workspace cell or a layout block, on that display only. `open` is active on a bar widget and its layout while its popup shows, on the instance that opened it: not on its copies on other displays, and not when the popup opened from the More widgets menu. Workspace cells also have a workspace state; see [Workspace appearance](#workspace-appearance). States apply in a fixed order, later ones winning: the workspace state, `hover`, then `open`, so an `open` style stays visible while the pointer rests on its widget. A state's style can have its own `states`, which refine later states while both are active: `states.focused.states.hover` styles the focused workspace under the pointer. `bar.style` and group styles have no states.
+`hover` is active while the pointer is over a bar widget, a workspace cell or a layout block, on that display only. `open` is active on a bar widget and its layout while its popup shows, on the instance that opened it: not on its copies on other displays, and not when the popup opened from the More widgets menu. Workspace cells also have a workspace state; see [Workspace appearance](#workspace-appearance). Script and provider widgets can have a data state; see [Data states](#data-states). States apply in a fixed order, later ones winning: the data state, the workspace state, `hover`, then `open`, so an `open` style stays visible while the pointer rests on its widget. A state's style can have its own `states`, which refine later states while both are active: `states.focused.states.hover` styles the focused workspace under the pointer. `bar.style` and group styles have no states.
 
 `hoverBackground` and `hoverForeground` are shorthand for `states.hover.background` and `states.hover.foreground`. In each style, such as `defaults` or a widget's `style`, the two are compared after includes, packages, themes, templates, widget overrides and profiles merge, so a `states.hover.background` from any layer wins over `hoverBackground` from any layer, and likewise for the foreground; to override a lower layer's hover state, set `states.hover.background`. Customize's **Hover background** rows handle this for you: they set `hoverBackground` and set `states.hover.background` to `null` beside it, so the color you pick wins over a lower layer's hover state but not over an active profile's `hoverBackground`. A hover without a background keeps the background. In layout and popup blocks, `hover` changes the text color and the block's own background, border, padding, size, offset and opacity.
 
 A widget's states merge with those in `defaults`, and every style's states merge through includes, templates, profiles and widget overrides one state and property at a time: a widget's `states.hover.foreground` keeps the theme's `states.hover.background`. Set a state to `null` in a later layer to remove it at the same place: in `defaults` through includes, profiles and packages, and in a widget's `style` through its templates, widget overrides and package widgets. Nothing set on a widget (its `style`, a template, a widget override or script output) can remove a state set in `defaults`. A state wins over the base style, so a theme's states also show on widgets that set their own colors.
 
 The bar measures widths without `hover` and `open`, so use them for colors, borders, opacity and offsets rather than sizes.
+
+### Data states
+
+A data state says what a widget's data means, such as a battery running low, so its look can come from the theme. A script, or a command or stream provider, sets it with `state` in its output, for example `{"text":"12%","state":"warning"}`; the next output without `state` clears it. Use these shared names so themes and widget packages agree without hard-coded colors:
+
+| State | Meaning |
+| --- | --- |
+| `warning` | Needs attention soon, such as a battery at 20 % |
+| `critical` | Needs attention now, such as memory at 95 % |
+| `active` | On or in progress, such as charging or recording |
+| `muted` | Off or quiet, such as muted audio |
+
+Other names work too. `hover`, `open`, `focused`, `visible` and `empty` are StableBar's own, so output `state` with one of those names is ignored. Define each state once in `defaults.states`:
+
+```json
+"defaults": {
+  "states": {
+    "warning": { "foreground": "#f5b041" },
+    "critical": { "foreground": "#ffffff", "background": "#c0392b" },
+    "active": { "foreground": "#69d2b0" },
+    "muted": { "opacity": 0.5 }
+  }
+}
+```
+
+A widget's own `states` override the theme's property by property. The data state applies first, so `hover` and `open` still show over it. It also reaches the widget's `layout` and `overlay` blocks, which apply their own `states` for it. Popups keep their own styles.
 
 ### Theme tokens and automatic profiles
 
@@ -533,7 +559,7 @@ Changes in these sections apply to the bar immediately, like command-line edits 
 
 **Packages** reviews local folders and [store](#store) packages and their declared commands, edits typed settings, installs versions and enables a chosen version. Enabling a theme makes it the active theme; themes have no commands to review. Select an older installed version to roll back, or **Uninstall…** to remove one.
 
-**Diagnostics** shows the composed widget configuration, defaults, source paths, provider output, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while Diagnostics is visible. Closing the window restores its visibility policy.
+**Diagnostics** shows the composed widget configuration, defaults, source paths, provider output and data state, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while Diagnostics is visible. Closing the window restores its visibility policy.
 
 ## Built-in widgets
 
@@ -613,6 +639,7 @@ Return plain text, or one JSON object:
 - `value`: a graph sample, displayed on a 0–1 scale with the last 60 samples.
 - `fields`: named display strings for popup field blocks.
 - `lists`: named arrays of objects containing display strings for popup list blocks.
+- `state`: the widget's data state, such as `warning`; see [Data states](#data-states).
 
 A nonzero exit, timeout, excessive output or invalid JSON preserves the previous output and adds a warning with the error in its tooltip. Repeated polling failures increase the retry delay exponentially up to five minutes, without shortening a configured interval longer than that. A successful update resets the delay; event-only scripts retry on their next event or action. A completed click action requests an immediate refresh. `onClick` runs only when clicked.
 

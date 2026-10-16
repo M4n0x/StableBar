@@ -11,7 +11,11 @@
     "cornerRadius": 6,
     "fontSize": 12,
     "states": {
-      "hover": { "background": "#29384b" }
+      "hover": { "background": "#29384b" },
+      "warning": { "foreground": "#f5c26b" },
+      "critical": { "foreground": "#18212d", "background": "#f28b82" },
+      "active": { "foreground": "#8bd5ca" },
+      "muted": { "opacity": 0.5 }
     }
   },
   "templates": {
