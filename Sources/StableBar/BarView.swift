@@ -4,6 +4,8 @@ struct BarView: View {
     let store: BarStore
     let display: BarDisplay
     @State private var measuredWidths: [String: CGFloat] = [:]
+    /// The units the last measurement had: only an active app that stayed in the bar animates a resize.
+    @State private var measuredUnits: Set<String> = []
     @State private var overflowAnchor = NSView()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -53,6 +55,7 @@ struct BarView: View {
                                     .geometryGroup()
                                     .frame(width: placement.width, height: geometry.size.height / scale, alignment: alignment)
                                     .offset(x: placement.x)
+                                    .transition(visibilityTransition(unit.transition, still: reduceMotion))
                             }
                         }
                         if let x = plan.overflowX {
@@ -84,13 +87,13 @@ struct BarView: View {
                             transaction.disablesAnimations = true
                         }
                     }
+                    // Keeps the last width of units that leave, so a returning widget is planned at its size.
                     .onPreferenceChange(BarWidthPreference.self) { widths in
-                        let appResized = units.contains { unit in
-                            unit.widgets.contains { $0.content == .activeApp }
-                                && measuredWidths[unit.id] != nil && measuredWidths[unit.id] != widths[unit.id]
-                        }
-                        withAnimation(appResized && !reduceMotion ? .easeOut(duration: config.bar.animationDuration) : nil) {
-                            measuredWidths = widths
+                        let animates = BarUnit.animatesResize(units, measured: measuredUnits, from: measuredWidths, to: widths,
+                                                              reduceMotion: reduceMotion)
+                        measuredUnits = Set(widths.keys)
+                        withAnimation(animates ? .easeOut(duration: config.bar.animationDuration) : nil) {
+                            measuredWidths.merge(widths) { $1 }
                         }
                     }
                     .onChange(of: visible, initial: true) { _, ids in store.setVisibleWidgets(ids: ids, displayID: display.id) }
@@ -207,6 +210,8 @@ private struct BarUnitView: View {
     let config: Configuration
     let store: BarStore
     let display: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.measuringBarWidths) private var measuring
 
     var body: some View {
         if unit.isSpacer {
@@ -218,6 +223,7 @@ private struct BarUnitView: View {
                 ForEach(unit.widgets) { widget in
                     WidgetView(widget: widget, defaults: config.defaults, popupDefaults: config.popupDefaults, store: store,
                                monitor: display, animationDuration: config.bar.animationDuration)
+                        .transition(visibilityTransition(widget.transition, still: reduceMotion || measuring))
                 }
             }
             .padding(.leading, style.paddingLeading ?? style.paddingHorizontal ?? 0)

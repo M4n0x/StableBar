@@ -109,6 +109,21 @@ struct TransitioningContent<Value: Hashable>: ViewModifier {
     }
 }
 
+/// Hands the content of a text, field or symbol block the transition and animation it shows: the
+/// block's own, else the widget's, and no transition under Reduce Motion or in the bar's measuring
+/// copy, which never moves.
+struct ResolvedBlockMotion<Content: View>: View {
+    let motion: BlockMotion
+    let block: PopupBlock
+    @ViewBuilder let content: (WidgetTransition, WidgetAnimation) -> Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.measuringBarWidths) private var measuring
+
+    var body: some View {
+        content(motion.transition(for: block, still: reduceMotion || measuring), motion.animation(for: block))
+    }
+}
+
 struct PopupBlockView: View {
     let block: PopupBlock
     let inheritedStyle: WidgetStyle
@@ -117,7 +132,6 @@ struct PopupBlockView: View {
     @State private var pointerInside: Bool
     @State private var query = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.measuringBarWidths) private var measuring
 
     /// `pointerInside` starts the block with the pointer over it; tests use it, as drawing has no pointer.
     init(block: PopupBlock, inheritedStyle: WidgetStyle, fields: [String: String], context: BlockContext, pointerInside: Bool = false) {
@@ -205,8 +219,6 @@ struct PopupBlockView: View {
 
     @ViewBuilder
     private func content(_ style: BlockStyle, appearance: WidgetAppearance) -> some View {
-        let transition = context.motion.transition(for: block, still: reduceMotion || measuring)
-        let animation = context.motion.animation(for: block)
         switch block.content {
         case let .row(children):
             HStack(spacing: appearance.spacing) {
@@ -217,25 +229,29 @@ struct PopupBlockView: View {
                 ForEach(Array(children.enumerated()), id: \.offset) { _, item in child(item, of: style, fields: fields) }
             }
         case let .text(text):
-            Group {
-                if let speed = block.scrollSpeed {
-                    ScrollingText(text: text, font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
-                } else {
-                    Text(text)
+            ResolvedBlockMotion(motion: context.motion, block: block) { transition, animation in
+                Group {
+                    if let speed = block.scrollSpeed {
+                        ScrollingText(text: text, font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
+                    } else {
+                        Text(text)
+                    }
                 }
+                .modifier(TransitioningContent(value: text, transition: transition, animation: animation))
             }
-            .modifier(TransitioningContent(value: text, transition: transition, animation: animation))
         case let .field(name):
-            Group {
-                if let speed = block.scrollSpeed {
-                    ScrollingText(text: fields[name] ?? "", font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
-                } else if block.monospacedDigits {
-                    Text(fields[name] ?? "—").lineLimit(1).monospacedDigit()
-                } else {
-                    Text(fields[name] ?? "—").lineLimit(1)
+            ResolvedBlockMotion(motion: context.motion, block: block) { transition, animation in
+                Group {
+                    if let speed = block.scrollSpeed {
+                        ScrollingText(text: fields[name] ?? "", font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
+                    } else if block.monospacedDigits {
+                        Text(fields[name] ?? "—").lineLimit(1).monospacedDigit()
+                    } else {
+                        Text(fields[name] ?? "—").lineLimit(1)
+                    }
                 }
+                .modifier(TransitioningContent(value: fields[name] ?? "", transition: transition, animation: animation))
             }
-            .modifier(TransitioningContent(value: fields[name] ?? "", transition: transition, animation: animation))
         case let .graph(height, source, lineWidth):
             Sparkline(samples: source.flatMap { context.series[$0] } ?? context.samples)
                 .stroke(appearance.accent, lineWidth: lineWidth)
@@ -280,9 +296,11 @@ struct PopupBlockView: View {
             Rectangle().fill(appearance.foreground.opacity(0.12)).frame(height: 1)
         case let .symbol(name, source):
             let symbol = source.flatMap { fields[$0] } ?? name
-            Image(systemName: symbol)
-                .font(.system(size: appearance.iconSize))
-                .modifier(TransitioningContent(value: symbol, transition: transition, animation: animation, numeric: false))
+            ResolvedBlockMotion(motion: context.motion, block: block) { transition, animation in
+                Image(systemName: symbol)
+                    .font(.system(size: appearance.iconSize))
+                    .modifier(TransitioningContent(value: symbol, transition: transition, animation: animation, numeric: false))
+            }
         case let .image(path, source, fit):
             WidgetImage(path: source.flatMap { fields[$0] } ?? path, fit: fit)
                 .frame(width: style.box.width ?? 52, height: style.box.height ?? 52)

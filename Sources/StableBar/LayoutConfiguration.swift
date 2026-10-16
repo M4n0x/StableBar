@@ -26,6 +26,9 @@ struct BarUnit: Identifiable {
     var canOverflow: Bool { widgets.allSatisfy { $0.overflow == .automatic } }
     var isSpacer: Bool { widgets.count == 1 && widgets[0].content == .spacer }
 
+    /// How the unit enters and leaves the bar: the first transition its widgets set.
+    var transition: WidgetTransition { widgets.lazy.compactMap(\.transition).first ?? WidgetTransition.none }
+
     static func make(widgets: [WidgetConfiguration], groups: [String: WidgetGroupConfiguration]) -> [BarUnit] {
         var units: [BarUnit] = []
         for widget in widgets {
@@ -41,6 +44,17 @@ struct BarUnit: Identifiable {
             }
         }
         return units
+    }
+
+    /// Whether the bar animates taking new `widths`: only when an active app that was in the last
+    /// measurement (`measured`) changed width from `previous`. A unit that returns appears at its new
+    /// width, though `previous` keeps its old one for planning.
+    static func animatesResize(_ units: [BarUnit], measured: Set<String>, from previous: [String: CGFloat],
+                               to widths: [String: CGFloat], reduceMotion: Bool) -> Bool {
+        !reduceMotion && units.contains { unit in
+            unit.widgets.contains { $0.content == .activeApp }
+                && measured.contains(unit.id) && previous[unit.id] != widths[unit.id]
+        }
     }
 }
 

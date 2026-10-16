@@ -288,13 +288,16 @@ final class BarStore: NSObject {
     func updatePresentations() {
         guard let configuration else { return }
         let output = { (id: String) in self.scripts[id]?.output }
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         for widget in configuration.widgets {
             let script = scripts[widget.id]
             let base = resolveStyle(widgetStyleLayers(widget, defaults: configuration.defaults, widgets: configuration.widgets,
                                                       output: output))
+            let animation = script?.output.animation ?? widget.animation ?? WidgetAnimation(duration: configuration.bar.animationDuration)
             presentations[widget.id]?.update(style: ResolvedWidgetStyle(base: base, state: dataState(script?.output, rules: widget.rules)),
                                              hidden: script?.output.hidden == true && script?.error == nil,
-                                             display: script?.output.display)
+                                             display: script?.output.display,
+                                             visibility: visibilityAnimation(widget.transition, animation: animation, reduceMotion: reduceMotion))
         }
         let bar = resolveStyle(barStyleLayers(configuration.bar.style, widgets: configuration.widgets, output: output))
         if barStyle != bar { barStyle = bar }
@@ -508,10 +511,13 @@ final class WidgetPresentation {
     /// The view that anchors this widget's open popup: only that instance shows `open`.
     private(set) var popupAnchor: ObjectIdentifier?
 
-    /// Assigns only what changed: equal assignments must not invalidate the widget's views.
-    func update(style: ResolvedWidgetStyle, hidden: Bool, display: DisplaySelection?) {
+    /// Assigns only what changed: equal assignments must not invalidate the widget's views. With a
+    /// `visibility` animation, a change of `hidden` animates the widget in or out.
+    func update(style: ResolvedWidgetStyle, hidden: Bool, display: DisplaySelection?, visibility: WidgetAnimation? = nil) {
         if self.style != style { self.style = style }
-        if self.hidden != hidden { self.hidden = hidden }
+        if self.hidden != hidden {
+            if let visibility { visibility.animate { self.hidden = hidden } } else { self.hidden = hidden }
+        }
         if self.display != display { self.display = display }
     }
 

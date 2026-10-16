@@ -172,6 +172,24 @@ private let tolerance = 1
             "A default layout's block keeps the hover and open style it inherited")
 }
 
+@Test @MainActor func transitionsDrawTextFieldAndSymbolBlocksLikeNoneAtRest() throws {
+    let style = WidgetStyle(foreground: HexColor(0x2255ccff), fontSize: 13)
+    let blocks = try [#"{"type":"text","text":"Ready 12"}"#, #"{"type":"field","field":"text"}"#, #"{"type":"symbol","name":"bolt.fill"}"#]
+        .map { try decode(PopupBlock.self, $0) }
+    func drawing(_ block: PopupBlock, _ transition: WidgetTransition) throws -> Drawing {
+        let context = BlockContext(fillsWidth: false, open: { _ in }, motion: BlockMotion(transition: transition), runAction: { _, _ in })
+        return try draw(PopupBlockView(block: block, inheritedStyle: style, fields: ["text": "Ready 12"], context: context))
+    }
+    for block in blocks {
+        let expected = try drawing(block, .none)
+        for transition in [WidgetTransition.fade, .roll, .numeric] {
+            let drawn = try drawing(block, transition)
+            #expect(drawn.width == expected.width && drawn.height == expected.height, "\(block.content) \(transition)")
+            #expect(drawn.difference(from: expected) <= tolerance, "\(block.content) \(transition)")
+        }
+    }
+}
+
 @Test @MainActor func onlyActiveAppBlocksRedrawWhenTheFrontmostAppChanges() async throws {
     let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).json"))
     let note = try decode(WidgetConfiguration.self, #"{"id":"note","type":"text","text":"Ready","position":"left"}"#)

@@ -432,7 +432,7 @@ Script output ignores unknown top-level fields, but styles, animations and menu 
 
 Widgets and blocks accept `animation` with `duration` in seconds and `curve`: `linear`, `easeIn`, `easeOut`, `easeInOut`, `smooth` or `spring`. Widget animation defaults to `bar.animationDuration`. Block style animations are opt-in. Progress values use a 0–1 scale, clipped to that range when drawn. A progress block can also read a numeric string from its current list row when there is no matching entry in `values`. With a matching entry in `targets`, a progress rule starts at `values[source]` and animates toward `targets[source]`; without a target it animates between readings. Reduce Motion disables these animations.
 
-Widgets and text, field and symbol blocks accept `transition`, so changed text and symbols animate instead of snapping: `fade` cross-fades, `roll` slides the new content up from below, `numeric` rolls the digits that changed (symbols fade), and `none`, the default, swaps them at once. A widget's `transition` applies to its default layout and to the text, field and symbol blocks of its `layout` and `overlay` that set none of their own. A transition uses the block's `animation`, else the widget's; in popups, the block's or 0.22 seconds. Blocks that appear or disappear, such as with `hideWhenEmpty`, don't transition. Reduce Motion turns transitions off.
+Widgets and text, field and symbol blocks accept `transition`, so changed text and symbols animate instead of snapping: `fade` cross-fades, `roll` slides the new content up from below, `numeric` rolls the digits that changed (symbols fade), and `none`, the default, swaps them at once. A widget's `transition` applies to its default layout and to the text, field and symbol blocks of its `layout` and `overlay` that set none of their own. A transition uses the block's `animation`, else the widget's; in popups, the block's or 0.22 seconds. Blocks that appear or disappear, such as with `hideWhenEmpty`, don't transition, but a widget with a `transition` fades or rolls in and out when its output's `hidden` changes, and the widgets beside it slide into place. Reduce Motion turns transitions off.
 
 ### Workspace appearance
 
@@ -655,7 +655,7 @@ Return plain text, or one JSON object:
 
 `text` is required; the other output fields are optional:
 
-- `hidden`: removes the widget when true (unless it has an error).
+- `hidden`: removes the widget when true (unless it has an error). Give the widget a `transition` to fade or roll it in and out.
 - `interval`: overrides the next polling delay in seconds; must be greater than zero. Omit it to use the configured interval.
 - `menu`: an array of `{ "title": "Issue", "detail": "In progress", "onClick": "open …" }`, displayed in a themed popup. Rows without `onClick` show information. A menu takes precedence over the widget's click command. Static widgets can also define `menu` in their configuration.
 - `value`: a graph sample, displayed on a 0–1 scale with the last 60 samples.

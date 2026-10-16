@@ -329,3 +329,23 @@ private func output(_ json: String) throws -> ScriptOutput {
     #expect(compact.style.state == "warning")
     #expect(detail.style.state == "muted")
 }
+
+@Test @MainActor func hidingAWidgetWithATransitionChangesOnlyItsPresence() async throws {
+    let store = try makeStore(##"""
+    {"widgets":[{"id":"a","type":"script","command":"true","position":"left","transition":"fade"},
+                {"id":"b","type":"script","command":"true","position":"left"}]}
+    """##)
+    let a = try #require(store.scripts["a"])
+    let first = try #require(store.presentations["a"])
+    let second = try #require(store.presentations["b"])
+    try await confirmation("a hides", expectedCount: 1) { hidden in
+        try await confirmation("b stays valid", expectedCount: 0) { invalidated in
+            withObservationTracking { _ = first.hidden } onChange: { hidden() }
+            withObservationTracking { _ = second.hidden; _ = second.style; _ = second.display } onChange: { invalidated() }
+            try a.accept(output(#"{"text":"","hidden":true}"#))
+        }
+    }
+    #expect(first.hidden)
+    try a.accept(output(#"{"text":"Back"}"#))
+    #expect(!first.hidden)
+}

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import StableBar
 
@@ -103,4 +104,62 @@ private func block(_ json: String) throws -> PopupBlock {
     editor.set(["transition": .string("spin")])
     #expect(editor.error == "widgets.note: transition: Use none, fade, roll or numeric.")
     #expect(store.configuration?.widgets[0].transition == .fade)
+}
+
+@Test func widgetsShowAndHideWithTheirTransitionUnlessMotionIsReduced() throws {
+    let animation = WidgetAnimation(curve: .smooth, duration: 0.4)
+    #expect(visibilityAnimation(.fade, animation: animation, reduceMotion: false) == animation)
+    #expect(visibilityAnimation(.roll, animation: animation, reduceMotion: false) == animation)
+    #expect(visibilityAnimation(WidgetTransition.none, animation: animation, reduceMotion: false) == nil)
+    #expect(visibilityAnimation(nil, animation: animation, reduceMotion: false) == nil)
+    #expect(visibilityAnimation(.fade, animation: animation, reduceMotion: true) == nil)
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
+    {"groups":{"pair":{}},"widgets":[
+      {"id":"a","type":"text","text":"A","position":"left","group":"pair"},
+      {"id":"b","type":"text","text":"B","position":"left","group":"pair","transition":"roll"},
+      {"id":"c","type":"text","text":"C","position":"right","transition":"fade"},
+      {"id":"d","type":"text","text":"D","position":"right"}]}
+    """#.utf8))
+    let units = BarUnit.make(widgets: configuration.widgets, groups: configuration.groups)
+    #expect(units.map(\.transition) == [.roll, .fade, WidgetTransition.none])
+}
+
+@Test func onlyAnActiveAppThatStayedInTheBarAnimatesItsResize() throws {
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
+    {"widgets":[{"id":"app","type":"activeApp","position":"left"},
+                {"id":"note","type":"text","text":"A","position":"left"}]}
+    """#.utf8))
+    let units = BarUnit.make(widgets: configuration.widgets, groups: configuration.groups)
+    let kept: [String: CGFloat] = ["widget:app": 80, "widget:note": 20]
+    let both: Set<String> = ["widget:app", "widget:note"]
+    let wider: [String: CGFloat] = ["widget:app": 120, "widget:note": 20]
+    #expect(BarUnit.animatesResize(units, measured: both, from: kept, to: wider, reduceMotion: false))
+    #expect(!BarUnit.animatesResize(units, measured: both, from: kept, to: kept, reduceMotion: false))
+    #expect(!BarUnit.animatesResize(units, measured: ["widget:note"], from: kept, to: wider, reduceMotion: false))
+    #expect(!BarUnit.animatesResize(units, measured: both, from: kept, to: ["widget:app": 80, "widget:note": 40],
+                                    reduceMotion: false))
+    #expect(!BarUnit.animatesResize(units, measured: both, from: kept, to: wider, reduceMotion: true))
+}
+
+/// The transition `ResolvedBlockMotion` hands a block's content when drawn in `environment`.
+@MainActor private func resolvedTransition(of block: PopupBlock, motion: BlockMotion,
+                                           environment: @escaping (inout EnvironmentValues) -> Void) throws -> WidgetTransition {
+    final class Seen { var transition: WidgetTransition? }
+    let seen = Seen()
+    let renderer = ImageRenderer(content: ResolvedBlockMotion(motion: motion, block: block) { transition, _ in
+        seen.transition = transition
+        return Color.clear.frame(width: 4, height: 4)
+    }.transformEnvironment(\.self, transform: environment))
+    _ = renderer.cgImage
+    return try #require(seen.transition)
+}
+
+@Test @MainActor func blocksShowNoTransitionInTheMeasuringCopy() throws {
+    let plain = try block(#"{"type":"field","field":"text"}"#)
+    let own = try block(#"{"type":"field","field":"text","transition":"roll"}"#)
+    let motion = BlockMotion(transition: .fade)
+    #expect(try resolvedTransition(of: plain, motion: motion) { _ in } == .fade)
+    #expect(try resolvedTransition(of: own, motion: motion) { _ in } == .roll)
+    #expect(try resolvedTransition(of: plain, motion: motion) { $0.measuringBarWidths = true } == WidgetTransition.none)
+    #expect(try resolvedTransition(of: own, motion: motion) { $0.measuringBarWidths = true } == WidgetTransition.none)
 }

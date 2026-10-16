@@ -58,6 +58,37 @@ enum WidgetTransition: String, Decodable, CaseIterable, Sendable {
     }
 }
 
+extension WidgetTransition {
+    /// How a widget enters and leaves the bar when its output's `hidden` changes.
+    var visibility: AnyTransition {
+        switch self {
+        case .none: .identity
+        case .fade, .numeric: .opacity
+        case .roll: .push(from: .bottom)
+        }
+    }
+}
+
+/// The animation that shows or hides a widget when its output's `hidden` changes, or nil to change
+/// it at once: without a transition, or with Reduce Motion.
+func visibilityAnimation(_ transition: WidgetTransition?, animation: WidgetAnimation, reduceMotion: Bool) -> WidgetAnimation? {
+    guard let transition, transition != .none, !reduceMotion else { return nil }
+    return animation
+}
+
+/// How a widget or unit enters and leaves the bar: with its transition, but not under Reduce Motion
+/// or in the bar's measuring copy, which never moves.
+func visibilityTransition(_ transition: WidgetTransition?, still: Bool) -> AnyTransition {
+    still ? .identity : (transition ?? WidgetTransition.none).visibility
+}
+
+extension WidgetAnimation {
+    /// Runs `changes` as one SwiftUI animation with this curve and duration.
+    @MainActor func animate(_ changes: () -> Void) {
+        withAnimation(value, changes)
+    }
+}
+
 struct WorkspaceConfiguration: Decodable, Sendable {
     enum Indicator: String, Decodable, Sendable {
         case background, underline, none
