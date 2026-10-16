@@ -11,6 +11,7 @@ struct PackagesView: View {
     @State private var storeError: String?
     @State private var downloading: String?
     @State private var additions: [String] = []
+    @State private var confirmingUninstall = false
     @State private var settings: [String: ConfigurationValue] = [:]
     @State private var secrets: [String: String] = [:]
     @State private var savedSecrets: Set<String> = []
@@ -313,6 +314,7 @@ struct PackagesView: View {
                     .font(.callout).foregroundStyle(.secondary)
                 Spacer()
                 if isInstalled {
+                    Button("Uninstall…", role: .destructive) { confirmingUninstall = true }
                     if isEnabled {
                         Button("Disable") { perform { try activate(manifest, enabled: false) } }
                     }
@@ -343,6 +345,18 @@ struct PackagesView: View {
             Button("Enable Version \(manifest.version)") { perform { try activate(manifest, enabled: true) } }
         } message: {
             Text("Compared with the enabled version, this version adds:\n\(additions.joined(separator: "\n"))")
+        }
+        .confirmationDialog("Uninstall \(manifest.name) \(manifest.version)?", isPresented: $confirmingUninstall) {
+            Button("Uninstall Version \(manifest.version)", role: .destructive) {
+                perform {
+                    try store.uninstallPackage(id: manifest.id, version: manifest.version)
+                    self.inspection = nil
+                    storeEntry = nil
+                    try loadInstalled()
+                }
+            }
+        } message: {
+            Text("This version’s files will be deleted and it will be disabled if selected. Current configuration edits will be saved. Other versions, saved settings and Keychain secrets will be kept.")
         }
     }
 
