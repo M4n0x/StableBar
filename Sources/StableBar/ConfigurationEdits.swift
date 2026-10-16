@@ -143,6 +143,36 @@ private func removing(_ keys: [String: ConfigurationValue], from object: [String
     return result
 }
 
+/// Customize's hover background rows. Once every layer has merged, a style's non-null
+/// `states.hover.background` wins over its `hoverBackground`, so a row sets the shorthand and clears
+/// the state's background at the same level: its color beats a lower layer's hover state, while an
+/// active profile's `hoverBackground` still wins.
+enum HoverBackgroundRow {
+    static func properties(_ color: ConfigurationValue) -> [String: ConfigurationValue] {
+        ["hoverBackground": color, "states": .object(["hover": .object(["background": .null])])]
+    }
+
+    /// What Reset unsets.
+    static let reset = properties(.null)
+
+    /// The path and value of the hover background the bar draws: the widget's own style first when
+    /// `id` is set, then `defaults`.
+    static func drawn(in document: [String: ConfigurationValue], widget id: String? = nil) -> (path: String, value: ConfigurationValue)? {
+        var levels = [("defaults", document["defaults"])]
+        if let id, case let .array(widgets)? = document["widgets"] {
+            for case let .object(widget) in widgets where widget["id"] == .string(id) { levels.insert(("widgets.\(id).style", widget["style"]), at: 0) }
+        }
+        for case let (path, .object(style)?) in levels {
+            if case let .object(states)? = style["states"], case let .object(hover)? = states["hover"],
+               let background = hover["background"], background != .null {
+                return ("\(path).states.hover.background", background)
+            }
+            if let background = style["hoverBackground"], background != .null { return ("\(path).hoverBackground", background) }
+        }
+        return nil
+    }
+}
+
 private func removingReferences(to id: String, in document: [String: ConfigurationValue]) throws -> [String: ConfigurationValue] {
     var document = document
     var overrides = try document["widgetOverrides"]?.decoded([String: ConfigurationValue].self) ?? [:]

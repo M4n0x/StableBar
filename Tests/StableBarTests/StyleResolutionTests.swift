@@ -167,3 +167,100 @@ private func workspace(_ json: String) throws -> WorkspaceConfiguration {
     #expect(focused.resting.background == HexColor(0x444444ff))
     #expect(focused.underline.background == HexColor(0x888888ff))
 }
+
+@Test func explicitStatesWinOverShorthandPropertyByProperty() throws {
+    let decoded = try style(##"""
+    {"hoverBackground":"#222222","hoverForeground":"#333333",
+     "states":{"hover":{"background":"#111111"},"warning":{"foreground":"#ff0000"}}}
+    """##)
+    #expect(decoded.states?["hover"] == WidgetStyle(foreground: HexColor(0x333333ff), background: HexColor(0x111111ff)))
+    #expect(decoded.states?["warning"]?.foreground == HexColor(0xff0000ff))
+    #expect(try style(#"{"states":{"hover":null}}"#).states == nil)
+    #expect(try style(#"{"states":{}}"#).states == nil)
+}
+
+@Test func themeStatesMergeWithWidgetStatesAndWinOverTheBase() throws {
+    let defaults = try style(##"{"states":{"hover":{"background":"#111111","foreground":"#222222"}}}"##)
+    let widget = try style(##"{"background":"#333333","hoverBackground":"#444444"}"##)
+    let hovered = resolveStyle([defaults, widget], states: StyleStates(hover: true))
+    #expect(hovered.background == HexColor(0x444444ff))
+    #expect(hovered.foreground == HexColor(0x222222ff))
+    let plain = try style(##"{"background":"#333333","foreground":"#555555"}"##)
+    #expect(resolveStyle([defaults, plain], states: StyleStates(hover: true)).foreground == HexColor(0x222222ff))
+    let nested = try style(##"{"states":{"focused":{"foreground":"#666666","states":{"hover":{"foreground":"#777777"}}}}}"##)
+    #expect(resolveStyle([defaults, nested], states: StyleStates(workspace: .focused, hover: true)).foreground == HexColor(0x777777ff))
+    #expect(resolveStyle([defaults, nested], states: StyleStates(hover: true)).foreground == HexColor(0x222222ff))
+}
+
+@Test func workspaceAndUnderlineStatesComeFromTheStatesMap() throws {
+    let configuration = try workspace(##"""
+    {"style":{"states":{"focused":{"foreground":"#111111"}}},"focusedStyle":{"foreground":"#222222","background":"#333333"},
+     "indicator":"underline","indicatorStyle":{"height":2,"background":"#444444","states":{"visible":{"background":"#555555"}}}}
+    """##)
+    #expect(configuration.cellStyle(.focused).resting.foreground == HexColor(0x111111ff))
+    #expect(configuration.cellStyle(.focused).resting.background == HexColor(0x333333ff))
+    #expect(configuration.cellStyle(.focused).underline.background == HexColor(0x444444ff))
+    #expect(configuration.cellStyle(.visible).underline.background == HexColor(0x555555ff))
+    #expect(configuration.cellStyle(.visible).underline.height == 2)
+}
+
+@Test func layeredStylesMergeHoverOnePropertyAtATime() throws {
+    let hover = StyleStates(hover: true)
+    let theme = try style(##"{"hoverBackground":"#222222"}"##)
+    let widget = try style(##"{"hoverForeground":"#555555"}"##)
+    let hovered = resolveStyle([theme, widget], states: hover)
+    #expect(hovered.background == HexColor(0x222222ff))
+    #expect(hovered.foreground == HexColor(0x555555ff))
+    let output = try style(##"{"hoverBackground":"#333333"}"##)
+    let overridden = resolveStyle([theme, widget, output], states: hover)
+    #expect(overridden.background == HexColor(0x333333ff))
+    #expect(overridden.foreground == HexColor(0x555555ff))
+}
+
+@Test func hoverShorthandFillsInWhatExplicitStatesLeaveUnset() throws {
+    let both = try style(##"""
+    {"hoverBackground":"#222222","hoverForeground":"#333333","states":{"hover":{"background":"#111111"}}}
+    """##)
+    let hovered = resolveStyle([both], states: StyleStates(hover: true))
+    #expect(hovered.background == HexColor(0x111111ff))
+    #expect(hovered.foreground == HexColor(0x333333ff))
+    let split = try style(##"""
+    {"hoverBackground":"#222222","hoverForeground":"#333333","states":{"hover":{"foreground":"#444444","borderColor":"#555555"}}}
+    """##)
+    let resolved = resolveStyle([split], states: StyleStates(hover: true))
+    #expect(resolved.background == HexColor(0x222222ff))
+    #expect(resolved.foreground == HexColor(0x444444ff))
+    #expect(resolved.borderColor == HexColor(0x555555ff))
+}
+
+@Test func scriptOutputStylesCarryStatesThatMergeWithTheConfiguredOnes() throws {
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data(##"""
+    {"defaults":{"states":{"hover":{"background":"#111111"}}},
+     "widgets":[{"id":"a","type":"script","command":"true","position":"left"}]}
+    """##.utf8))
+    let outputs = ["a": try output(##"{"text":"A","style":{"states":{"hover":{"foreground":"#222222"}}}}"##)]
+    let layers = widgetStyleLayers(configuration.widgets[0], defaults: configuration.defaults, widgets: configuration.widgets,
+                                   output: { outputs[$0] })
+    let hovered = resolveStyle(layers, states: StyleStates(hover: true))
+    #expect(hovered.background == HexColor(0x111111ff))
+    #expect(hovered.foreground == HexColor(0x222222ff))
+    #expect(resolveStyle(layers).foreground == nil)
+}
+
+@Test func nothingSetOnAWidgetRemovesAStateSetInDefaults() throws {
+    var loader = ConfigurationLoader()
+    let configuration = try loader.load(FileManager.default.temporaryDirectory.appending(path: "states.json"), data: Data(##"""
+    {"defaults":{"states":{"hover":{"background":"#111111"}}},
+     "templates":{"label":{"type":"text","position":"left","text":"T","style":{"states":{"hover":null}}}},
+     "widgets":[{"id":"own","type":"text","position":"left","text":"A","style":{"states":{"hover":null}}},
+                {"id":"templated","template":"label"},
+                {"id":"overridden","type":"text","position":"left","text":"C"},
+                {"id":"scripted","type":"script","command":"true","position":"left"}],
+     "widgetOverrides":{"overridden":{"style":{"states":{"hover":null}}}}}
+    """##.utf8))
+    let outputs = ["scripted": try output(#"{"text":"S","style":{"states":{"hover":null}}}"#)]
+    for widget in configuration.widgets {
+        let layers = widgetStyleLayers(widget, defaults: configuration.defaults, widgets: configuration.widgets, output: { outputs[$0] })
+        #expect(resolveStyle(layers, states: StyleStates(hover: true)).background == HexColor(0x111111ff), "\(widget.id)")
+    }
+}

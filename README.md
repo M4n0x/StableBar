@@ -142,6 +142,33 @@ Each widget can override any of these styles:
 
 Styles also accept `hoverForeground`, `height`, `paddingLeading`, `paddingTrailing`, `paddingTop`, `paddingBottom`, `offsetX`, `offsetY` and `opacity`. Side-specific padding overrides horizontal/vertical padding. `ultralight`, `thin` and `light` font weights are available too. Offsets move the drawing without moving its neighbours.
 
+### States
+
+Any style can have `states`: styles that apply over it while a state is active. A state needs only the properties that change:
+
+```json
+{
+  "defaults": {
+    "background": "#25252c",
+    "states": { "hover": { "background": "#383842" } }
+  },
+  "widgets": [
+    {
+      "id": "status", "type": "text", "text": "Ready", "position": "left",
+      "style": { "states": { "hover": { "foreground": "#69d2b0", "borderColor": "#69d2b0" } } }
+    }
+  ]
+}
+```
+
+`hover` is active while the pointer is over a bar widget, a workspace cell or a layout block, on that display only. Workspace cells also have a workspace state; see [Workspace appearance](#workspace-appearance). States apply in a fixed order, later ones winning: the workspace state, then `hover`. A state's style can have its own `states`, which refine later states while both are active: `states.focused.states.hover` styles the focused workspace under the pointer. `bar.style` and group styles have no states.
+
+`hoverBackground` and `hoverForeground` are shorthand for `states.hover.background` and `states.hover.foreground`. In each style, such as `defaults` or a widget's `style`, the two are compared after includes, packages, themes, templates, widget overrides and profiles merge, so a `states.hover.background` from any layer wins over `hoverBackground` from any layer, and likewise for the foreground; to override a lower layer's hover state, set `states.hover.background`. Customize's **Hover background** rows handle this for you: they set `hoverBackground` and set `states.hover.background` to `null` beside it, so the color you pick wins over a lower layer's hover state but not over an active profile's `hoverBackground`. A hover without a background keeps the background. In layout and popup blocks, `hover` changes the text color and the block's own background, border, padding, size, offset and opacity.
+
+A widget's states merge with those in `defaults`, and every style's states merge through includes, templates, profiles and widget overrides one state and property at a time: a widget's `states.hover.foreground` keeps the theme's `states.hover.background`. Set a state to `null` in a later layer to remove it at the same place: in `defaults` through includes, profiles and packages, and in a widget's `style` through its templates, widget overrides and package widgets. Nothing set on a widget (its `style`, a template, a widget override or script output) can remove a state set in `defaults`. A state wins over the base style, so a theme's states also show on widgets that set their own colors.
+
+The bar measures widths without `hover`, so use it for colors, borders, opacity and offsets rather than sizes.
+
 ### Theme tokens and automatic profiles
 
 Define reusable JSON values in `tokens` and reference them with a whole string such as `"@token.accent"`. Values retain their type: a token can supply a number, boolean, array, object, or string. Tokens can reference other tokens; unknown names and cycles reject the change while the current configuration keeps running. References are not interpolated inside shell commands or other strings.
@@ -364,13 +391,13 @@ Widgets and blocks accept `animation` with `duration` in seconds and `curve`: `l
 A `workspaces` widget (also accepted as `aerospace`) accepts `workspace` with:
 
 - `indicator`: `background` (default), `underline` or `none`.
-- `indicatorStyle`: underline `height`, `width`, `background`, `cornerRadius`, `offsetX`, `offsetY`.
-- `style`, `focusedStyle`, `visibleStyle`, `emptyStyle`: cell typography, foreground, width, height, horizontal/side padding and spacing. The background indicator uses the state's background or border color.
+- `indicatorStyle`: underline `height`, `width`, `background`, `cornerRadius`, `offsetX`, `offsetY`. Its `states.focused` and `states.visible` style the underline under the focused workspace and under a workspace shown on a display without focus.
+- `style`: cell typography, foreground, width, height, horizontal/side padding and spacing. Its `states` style each cell by workspace state: `focused` (the focused workspace), else `visible` (shown on a display without focus), else `empty` (no windows), so a cell has at most one. `focusedStyle`, `visibleStyle` and `emptyStyle` are shorthand for those states. The background indicator uses the state's background or border color. `hover` changes the label and app glyphs; the indicators follow the workspace state. `defaults.states` don't apply to cells.
 - `showEmpty` and `showApps`: control empty workspaces and app icons.
-- `appStyle`, `focusedAppStyle`, `visibleAppStyle`: font and foreground for app glyphs, width and height in screen points for native app icons (14 × 14 by default).
+- `appStyle`: font and foreground for app glyphs, width and height in screen points for native app icons (14 × 14 by default). `focusedAppStyle` and `visibleAppStyle` are shorthand for its `states.focused` and `states.visible`.
 - `appGlyphs`: app bundle ID or app name to text glyph. Set `appStyle.fontName` to an installed icon font to use its ligatures. A key ending in `*` matches app names that start with the rest of the key, such as `Adobe Photoshop*` for `Adobe Photoshop 2026`. Exact bundle IDs and names win over these keys, and among them the longest key wins. Use `"*"` alone for the fallback glyph; otherwise unmapped apps retain native icons.
 
-For a sliding underline, set `workspace.indicator` to `underline`, `workspace.style.height` to the bar's height, and `workspace.indicatorStyle` to `{ "height": 2, "background": "#f1efe8" }`. The widget's `animation` controls its motion.
+For a sliding underline, set `workspace.indicator` to `underline`, `workspace.style.height` to the bar's height, and `workspace.indicatorStyle` to `{ "height": 2, "background": "#f1efe8", "states": { "visible": { "background": "#f1efe866" } } }`, which dims the underline on displays without focus. The widget's `animation` controls its motion.
 
 For glyphs from [sketchybar-app-font](https://github.com/kvndrsslr/sketchybar-app-font), install the font from its releases or with `brew install --cask font-sketchybar-app-font`, then save the [sketchybar-app-font module](examples/modules/sketchybar-app-font.json) next to your configuration:
 

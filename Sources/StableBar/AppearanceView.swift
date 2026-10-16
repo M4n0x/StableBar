@@ -19,19 +19,19 @@ struct AppearanceView: View {
         let selected = theme?.enabled == true ? theme?.key : nil
         let tokens = document("tokens")
         let defaults = StyleFields(store: store, path: "defaults", values: document("defaults"),
-                                   set: { editor.change(ConfigurationEdit(action: .defaults, properties: [$0: $1])) },
-                                   unset: { unset(["defaults": .object([$0: .null])]) })
+                                   set: { editor.change(ConfigurationEdit(action: .defaults, properties: $0)) },
+                                   unset: { unset(["defaults": .object($0)]) })
         let popups = StyleFields(store: store, path: "popupDefaults", defaultsPath: "defaults",
                                  values: document("defaults").merging(document("popupDefaults")) { $1 },
-                                 set: { editor.change(ConfigurationEdit(action: .popupDefaults, properties: [$0: $1])) },
-                                 unset: { unset(["popupDefaults": .object([$0: .null])]) })
+                                 set: { editor.change(ConfigurationEdit(action: .popupDefaults, properties: $0)) },
+                                 unset: { unset(["popupDefaults": .object($0)]) })
         let bar = StyleFields(store: store, path: "bar", values: document("bar"),
-                              set: { editor.change(ConfigurationEdit(action: .bar, properties: [$0: $1])) },
-                              unset: { unset(["bar": .object([$0: .null])]) })
+                              set: { editor.change(ConfigurationEdit(action: .bar, properties: $0)) },
+                              unset: { unset(["bar": .object($0)]) })
         let barStyle = StyleFields(store: store, path: "bar.style",
                                    values: (try? document("bar")["style"]?.decoded([String: ConfigurationValue].self)) ?? [:],
-                                   set: { editor.change(ConfigurationEdit(action: .bar, properties: ["style": .object([$0: $1])])) },
-                                   unset: { unset(["bar": .object(["style": .object([$0: .null])])]) })
+                                   set: { editor.change(ConfigurationEdit(action: .bar, properties: ["style": .object($0)])) },
+                                   unset: { unset(["bar": .object(["style": .object($0)])]) })
         Form {
             Section {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
@@ -78,7 +78,7 @@ struct AppearanceView: View {
             Section("All widgets") {
                 defaults.color("Text", "foreground")
                 defaults.color("Background", "background")
-                defaults.color("Hover background", "hoverBackground")
+                defaults.hoverBackground("Hover background")
                 defaults.color("Border", "borderColor")
                 defaults.color("Shadow", "shadowColor")
                 defaults.color("Accent", "accent")

@@ -8,9 +8,11 @@
     "background": "#18212ded",
     "foreground": "#e4edf7",
     "accent": "#8bd5ca",
-    "hoverBackground": "#29384b",
     "cornerRadius": 6,
-    "fontSize": 12
+    "fontSize": 12,
+    "states": {
+      "hover": { "background": "#29384b" }
+    }
   },
   "templates": {
     "metric": {

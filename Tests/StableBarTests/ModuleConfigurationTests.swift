@@ -307,6 +307,7 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     let url = FileManager.default.temporaryDirectory.appending(path: "strict.json")
     var loader = ConfigurationLoader()
     for (json, message) in [
+        (##"{"widgets":[{"id":"clock","type":"clock","position":"right","style":{"states":{"warning":{"colour":"#ff0000"}}}}]}"##, "widgets.clock: style.states.warning.colour: Unknown property."),
         (#"{"widgets":[{"id":"clock","type":"clock","position":"right","style":{"fontsize":14}}]}"#, "widgets.clock: style.fontsize: Unknown property."),
         (#"{"widgets":[],"bar":{"heigth":30}}"#, "bar.heigth: Unknown property."),
         (#"{"widgets":[],"bar":{"displayScale":{"buildIn":0.8}}}"#, "bar.displayScale: Use builtIn or external with a positive number."),
@@ -353,4 +354,16 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     }
     #expect(try properties(.object(schema)) == Set(Configuration.CodingKeys.allCases.map(\.stringValue)
         + ["$schema", "tokens", "packages", "theme", "includes", "profiles", "profile", "widgetOrder"]))
+}
+
+@Test func examplesAndTheStarterConfigurationStayValid() throws {
+    let repository = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    var loader = ConfigurationLoader()
+    loader.themesDirectory = repository.appending(path: "Resources/themes")
+    let modular = try loader.load(repository.appending(path: "examples/modular/config.json"))
+    #expect(modular.defaults.hoverBackground == HexColor(0x29384bff))
+    _ = try loader.load(repository.appending(path: "examples/interactive/config.json"))
+    _ = try loader.load(repository.appending(path: "Resources/config.json"))
+    _ = try WidgetPackageStore(directory: repository.appending(path: "examples/packages"))
+        .inspect(repository.appending(path: "examples/packages/local-clock"))
 }

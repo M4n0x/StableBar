@@ -781,3 +781,98 @@ private let bundledThemes = URL(filePath: #filePath).deletingLastPathComponent()
     try migrateEarlierColors(root)
     #expect(try String(contentsOf: root, encoding: .utf8) == handSet)
 }
+
+@Test func statesMergeThroughModulesTemplatesTokensProfilesOverridesAndPackages() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    try writePackageFile(#"{"id":"meter","name":"Meter","version":"1","entry":"config.json"}"#, to: source.appending(path: "package.json"))
+    try writePackageFile(##"""
+    {"widgets":[{"id":"meter","type":"text","text":"Meter","position":"right","style":{"states":{"warning":{"foreground":"#111111"}}}}]}
+    """##, to: source.appending(path: "config.json"))
+    _ = try WidgetPackageStore(directory: directory.appending(path: "bar/packages")).install(source)
+    try writePackageFile(##"""
+    {"tokens":{"alert":"#222222"},
+     "defaults":{"states":{"warning":{"foreground":"@token.alert"},"hover":{"background":"#444444"}}},
+     "templates":{"label":{"type":"text","position":"left","style":{"states":{"hover":{"foreground":"#555555"}}}}}}
+    """##, to: directory.appending(path: "bar/theme.json"))
+    var loader = ConfigurationLoader()
+    let configuration = try loader.load(directory.appending(path: "bar/config.json"), data: Data(##"""
+    {"includes":["theme.json"],"packages":[{"id":"meter","version":"1"}],
+     "widgets":[{"id":"label","template":"label","text":"Label"}],
+     "profiles":[{"name":"dark","when":{"appearance":"dark"},"configuration":{"defaults":{"states":{"warning":{"background":"#666666"}}}}}],
+     "widgetOverrides":{"label":{"style":{"states":{"hover":{"background":"#777777"}}}},
+                        "meter":{"style":{"states":{"warning":{"background":"#888888"}}}}}}
+    """##.utf8), context: ConfigurationContext(appearance: "dark"))
+    #expect(configuration.defaults.states?["warning"] == WidgetStyle(foreground: HexColor(0x222222ff), background: HexColor(0x666666ff)))
+    #expect(configuration.defaults.states?["hover"]?.background == HexColor(0x444444ff))
+    let label = try #require(configuration.widgets.first { $0.id == "label" })
+    #expect(label.style.states?["hover"] == WidgetStyle(foreground: HexColor(0x555555ff), background: HexColor(0x777777ff)))
+    let meter = try #require(configuration.widgets.first { $0.id == "meter" })
+    #expect(meter.style.states?["warning"] == WidgetStyle(foreground: HexColor(0x111111ff), background: HexColor(0x888888ff)))
+}
+
+@Test func aLaterLayerRemovesAnInheritedStateWithNull() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    try writePackageFile(#"{"id":"meter","name":"Meter","version":"1","entry":"config.json"}"#, to: source.appending(path: "package.json"))
+    try writePackageFile(##"""
+    {"defaults":{"states":{"empty":{"foreground":"#555555"}}},
+     "widgets":[{"id":"meter","type":"text","text":"M","position":"right",
+                 "style":{"states":{"warning":{"foreground":"#666666"},"hover":{"foreground":"#777777"}}}}]}
+    """##, to: source.appending(path: "config.json"))
+    _ = try WidgetPackageStore(directory: directory.appending(path: "packages")).install(source)
+    try writePackageFile(##"{"defaults":{"states":{"focused":{"foreground":"#999999"}}}}"##, to: directory.appending(path: "theme.json"))
+    var loader = ConfigurationLoader()
+    let configuration = try loader.load(directory.appending(path: "config.json"), data: Data(##"""
+    {"includes":["theme.json"],"packages":[{"id":"meter","version":"1"}],
+     "defaults":{"states":{"hover":{"background":"#111111"},"warning":{"foreground":"#222222"},"focused":null,"empty":null}},
+     "templates":{"label":{"type":"text","position":"left","style":{"states":{"hover":{"foreground":"#333333"},"warning":{"foreground":"#444444"}}}}},
+     "widgets":[{"id":"a","template":"label","text":"A"},
+                {"id":"b","template":"label","text":"B","style":{"states":{"warning":null}}}],
+     "profiles":[{"name":"plain","configuration":{"defaults":{"states":{"hover":null}}}}],
+     "widgetOverrides":{"a":{"style":{"states":{"hover":null}}},"meter":{"style":{"states":{"warning":null}}}}}
+    """##.utf8))
+    #expect(configuration.defaults.states == ["warning": WidgetStyle(foreground: HexColor(0x222222ff))])
+    func states(_ id: String) throws -> [String: WidgetStyle]? {
+        try #require(configuration.widgets.first { $0.id == id }).style.states
+    }
+    #expect(try states("a") == ["warning": WidgetStyle(foreground: HexColor(0x444444ff))])
+    #expect(try states("b") == ["hover": WidgetStyle(foreground: HexColor(0x333333ff))])
+    #expect(try states("meter") == ["hover": WidgetStyle(foreground: HexColor(0x777777ff))])
+}
+
+@Test func themeStatesTakeLightAndDarkColorsAndMergeUnderLaterLayers() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let theme = directory.appending(path: "theme")
+    try writePackageFile(#"{"id":"night","name":"Night","version":"1","kind":"theme","entry":"config.json"}"#,
+                         to: theme.appending(path: "package.json"))
+    try writePackageFile(##"""
+    {"tokens":{"warning":{"light":"#aa0000","dark":"#ff4444"}},
+     "defaults":{"states":{"warning":{"foreground":"@token.warning","background":{"light":"#111111","dark":"#222222"}},
+                           "muted":{"opacity":0.5},"hover":{"background":{"light":"#333333","dark":"#444444"}}}}}
+    """##, to: theme.appending(path: "config.json"))
+    _ = try WidgetPackageStore(directory: directory.appending(path: "packages")).install(theme)
+    let root = directory.appending(path: "config.json")
+    var loader = ConfigurationLoader()
+    let configuration = try loader.load(root, data: Data(##"""
+    {"theme":{"id":"night","version":"1"},
+     "defaults":{"states":{"warning":{"background":"#555555"},"muted":null}},
+     "widgets":[{"id":"spaces","type":"workspaces","position":"left",
+                 "workspace":{"style":{"states":{"focused":{"foreground":{"light":"#666666","dark":"#777777"}}}}}}],
+     "profiles":[{"name":"p","configuration":{"defaults":{"states":{"hover":{"foreground":"#888888"}}}}}]}
+    """##.utf8))
+    #expect(configuration.defaults.states?["warning"] == WidgetStyle(foreground: HexColor(light: 0xaa0000ff, dark: 0xff4444ff),
+                                                                      background: HexColor(0x555555ff)))
+    #expect(configuration.defaults.states?["muted"] == nil)
+    #expect(configuration.defaults.states?["hover"] == WidgetStyle(foreground: HexColor(0x888888ff),
+                                                                    background: HexColor(light: 0x333333ff, dark: 0x444444ff)))
+    let cell = try #require(configuration.widgets[0].workspace).cellStyle(.focused)
+    #expect(cell.resting.foreground == HexColor(light: 0x666666ff, dark: 0x777777ff))
+    let error = #expect(throws: (any Error).self) {
+        try loader.load(root, data: Data(##"{"widgets":[],"defaults":{"states":{"warning":{"background":{"light":"#111111"}}}}}"##.utf8))
+    }
+    #expect(error.map(errorMessage) == "defaults.states.warning.background: Missing property dark.")
+}

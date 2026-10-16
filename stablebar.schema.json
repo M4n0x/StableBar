@@ -386,9 +386,39 @@
               "type": "null"
             }
           ]
+        },
+        "states": {
+          "$ref": "#/definitions/states"
         }
       },
       "description": "Widget style. Unset values inherit from defaults."
+    },
+    "states": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/style"
+              },
+              {
+                "$ref": "#/definitions/reference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "$ref": "#/definitions/reference"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Styles applied over this one while a state is active: hover, open, focused, visible, empty, or a data state such as warning."
     },
     "animation": {
       "type": "object",

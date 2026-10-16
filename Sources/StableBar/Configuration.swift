@@ -93,7 +93,7 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
         case foreground, background, hoverBackground, borderColor, accent, accentText, borderWidth, cornerRadius
         case fontName, fontSize, fontWeight, iconSize, paddingHorizontal, paddingVertical, spacing, width
         case minWidth, maxWidth, shadowRadius, shadowColor, height, paddingLeading, paddingTrailing, paddingTop
-        case paddingBottom, offsetX, offsetY, opacity, hoverForeground
+        case paddingBottom, offsetX, offsetY, opacity, hoverForeground, states
     }
 
     var hoverBackground: HexColor? { states?["hover"]?.background }
@@ -175,7 +175,8 @@ extension WidgetStyle {
         opacity = try values.decodeIfPresent(Double.self, forKey: .opacity)
         let hoverForeground = try values.decodeIfPresent(HexColor.self, forKey: .hoverForeground)
         let hoverBackground = try values.decodeIfPresent(HexColor.self, forKey: .hoverBackground)
-        states = nil
+        let explicit = try values.decodeIfPresent([String: WidgetStyle?].self, forKey: .states)?.compactMapValues { $0 }
+        states = explicit?.isEmpty == false ? explicit : nil
         if hoverForeground != nil || hoverBackground != nil {
             self = addingStates(["hover": WidgetStyle(foreground: hoverForeground, background: hoverBackground)])
         }
