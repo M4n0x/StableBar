@@ -119,7 +119,7 @@ final class WindowClearance: NSObject {
     private func schedule(_ pid: pid_t) {
         guard permissionTimer != nil, isTrusted else { return }
         pending.insert(pid)
-        guard task == nil else { return }
+        task?.cancel()
         task = Task { [weak self] in
             do {
                 repeat { try await Task.sleep(for: .milliseconds(150)) }
@@ -167,14 +167,13 @@ final class WindowClearance: NSObject {
                 guard AXUIElementIsAttributeSettable(window, kAXSizeAttribute as CFString, &resizable) == .success,
                       resizable.boolValue else { continue }
                 var size = target.size
-                guard AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &size)!) == .success,
-                      let resized = windowFrame(window) else { continue }
-                application.adjustedFrames[window] = resized
-                guard resized.height <= target.height else { continue }
+                if AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &size)!) == .success {
+                    schedule(pid)
+                }
+                continue
             }
             var position = target.origin
             AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &position)!)
-            application.adjustedFrames[window] = windowFrame(window)
         }
         application.windows = windows
         applications[pid] = application
