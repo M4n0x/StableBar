@@ -7,6 +7,7 @@ struct PackagesView: View {
     @State private var selections: [WidgetPackageSelection] = []
     @State private var inspection: WidgetPackageInspection?
     @State private var storeEntries: [PackageIndex.Entry] = []
+    @State private var storeEntry: PackageIndex.Entry?
     @State private var storeError: String?
     @State private var downloading: String?
     @State private var additions: [String] = []
@@ -31,7 +32,7 @@ struct PackagesView: View {
                                 let directory = try await packages.download(entry, from: PackageIndex.url)
                                 guard downloading == key else { return }
                                 downloading = nil
-                                perform { try select(directory) }
+                                perform { try select(directory, from: entry) }
                             } catch {
                                 guard downloading == key else { return }
                                 downloading = nil
@@ -89,7 +90,14 @@ struct PackagesView: View {
                                         }
                                     }
                                     Spacer()
-                                    if !installedVersions.isEmpty, installedVersions.allSatisfy({ entry.version.compare($0, options: .numeric) == .orderedDescending }) {
+                                    if installedVersions.contains(entry.version) {
+                                        Text("Installed")
+                                            .font(.caption.weight(.medium))
+                                            .foregroundStyle(.secondary)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.primary.opacity(0.06), in: Capsule())
+                                    } else if !installedVersions.isEmpty, installedVersions.allSatisfy({ entry.version.compare($0, options: .numeric) == .orderedDescending }) {
                                         Text("Update")
                                             .font(.caption.weight(.medium))
                                             .foregroundStyle(Color.accentColor)
@@ -196,12 +204,18 @@ struct PackagesView: View {
                             .padding(.vertical, 3)
                             .background(isEnabled ? Color.green.opacity(0.15) : Color.primary.opacity(0.06), in: Capsule())
                     }
-                    LabeledContent("Location") {
+                    LabeledContent(storeEntry == nil ? "Location" : "Source") {
                         HStack {
-                            Text(inspection.directory.path)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .textSelection(.enabled)
+                            if let storeEntry {
+                                Link(storeEntry.source.absoluteString, destination: storeEntry.source)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            } else {
+                                Text(inspection.directory.path)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .textSelection(.enabled)
+                            }
                             Button("Open", systemImage: "arrow.up.forward.app") { NSWorkspace.shared.open(inspection.directory) }
                                 .labelStyle(.iconOnly)
                                 .buttonStyle(.borderless)
@@ -294,6 +308,7 @@ struct PackagesView: View {
                         perform {
                             let installed = try packages.install(inspection.directory)
                             self.inspection = try packages.inspect(installed.directory, settings: settings)
+                            storeEntry = nil
                             try loadInstalled()
                         }
                     }
@@ -325,13 +340,14 @@ struct PackagesView: View {
         }
     }
 
-    private func select(_ directory: URL) throws {
+    private func select(_ directory: URL, from entry: PackageIndex.Entry? = nil) throws {
         let manifest = try packages.manifest(at: directory)
         let supplied = selections.first { $0.id == manifest.id && $0.version == manifest.version }?.settings ?? [:]
         let values = try manifest.values(supplied)
         let reviewed = try packages.inspect(directory, settings: values)
         settings = values
         inspection = reviewed
+        storeEntry = entry
     }
 
     private func isInstalled(_ inspection: WidgetPackageInspection) -> Bool {

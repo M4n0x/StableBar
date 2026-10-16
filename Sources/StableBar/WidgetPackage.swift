@@ -313,6 +313,7 @@ struct PackageIndex: Decodable {
         let minimumVersion: String?
         let archive: String
         let sha256: String
+        let source: URL
     }
 
     static let url = URL(string: "https://github.com/Seb-GRAF/stablebar-packages/releases/download/store/index.json")!

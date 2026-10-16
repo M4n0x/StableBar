@@ -429,8 +429,10 @@ private func writePackageFile(_ text: String, to url: URL) throws {
         ("1", String(repeating: "0", count: 64), "The archive of package clock does not match the store's checksum."),
         ("2", sha256, "The archive of package clock 2 contains a different id or version.")
     ] {
-        try writePackageFile(#"{"packages":[{"id":"clock","name":"Clock","version":"\#(version)","archive":"clock-1.tar.gz","sha256":"\#(checksum)"}]}"#,
-                             to: index)
+        try writePackageFile(#"""
+        {"packages":[{"id":"clock","name":"Clock","version":"\#(version)","archive":"clock-1.tar.gz","sha256":"\#(checksum)",
+          "source":"https://example.com/packages/clock"}]}
+        """#, to: index)
         let entry = try await PackageIndex.load(from: index).packages[0]
         let error = await #expect(throws: WidgetPackageError.self) { try await store.download(entry, from: index) }
         #expect(error?.localizedDescription == message)
