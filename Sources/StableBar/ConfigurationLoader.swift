@@ -211,20 +211,20 @@ struct ConfigurationLoader {
         let packageStore = WidgetPackageStore(directory: url.deletingLastPathComponent().appending(path: "packages"))
         var layer = ConfigurationLayer(values: ["widgets": .array([])], origins: [:])
         for selection in try base.values["packages"]?.decoded([WidgetPackageSelection].self, at: "packages") ?? [] where selection.enabled {
-            try layer.merge(readSelectedPackage(selection, from: packageStore, kind: nil))
+            try layer.merge(readSelectedPackage(selection, from: packageStore, theme: false))
         }
         if themesDirectory != nil {
             try layer.merge(readBundledTheme(WidgetPackageSelection(id: "built-in")))
         }
         if let theme = try base.values["theme"]?.decoded(WidgetPackageSelection.self, at: "theme"), theme.enabled {
-            try layer.merge(theme.version == nil ? readBundledTheme(theme) : readSelectedPackage(theme, from: packageStore, kind: .theme))
+            try layer.merge(theme.version == nil ? readBundledTheme(theme) : readSelectedPackage(theme, from: packageStore, theme: true))
         }
         try layer.merge(base)
         return try finish(layer, context: context)
     }
 
     private mutating func readSelectedPackage(_ selection: WidgetPackageSelection, from packageStore: WidgetPackageStore,
-                                              kind: WidgetPackageManifest.Kind?) throws -> ConfigurationLayer {
+                                              theme: Bool) throws -> ConfigurationLayer {
         guard let version = selection.version else { throw WidgetPackageError.missingVersion(selection.id) }
         let directory = try packageStore.directory(id: selection.id, version: version)
         dependencies.insert(directory.appending(path: "package.json"))
@@ -232,8 +232,8 @@ struct ConfigurationLoader {
         guard manifest.id == selection.id, manifest.version == version else {
             throw WidgetPackageError.manifestMismatch
         }
-        guard manifest.kind == kind else {
-            throw kind == .theme ? WidgetPackageError.notATheme(selection.id) : WidgetPackageError.themeInPackages(selection.id)
+        guard (manifest.kind == .theme) == theme else {
+            throw theme ? WidgetPackageError.notATheme(selection.id) : WidgetPackageError.themeInPackages(selection.id)
         }
         try packageStore.validateContents(at: directory)
         return try readPackage(at: directory, manifest: manifest, settings: selection.settings)
@@ -401,7 +401,11 @@ struct ConfigurationLoader {
         dependencies.insert(directory.appending(path: "package.json"))
         let entry = try packageFile(manifest.entry, inside: directory)
         var layer = try read(entry, path: [], boundary: directory)
-        if manifest.kind == .theme { try validateThemeDocument(layer.values) }
+        switch manifest.kind {
+        case .theme?: try validateThemeDocument(layer.values)
+        case .widgets?: try validateWidgetsDocument(layer.values)
+        case nil: break
+        }
         let values = try manifest.values(settings)
         layer.values = try substituteConfigurationReferences(.object(layer.values), prefix: "@setting.", values: values)
             .decoded([String: ConfigurationValue].self)

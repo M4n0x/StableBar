@@ -141,7 +141,12 @@ struct PackagesView: View {
                         }
                     }
                 }
-                if manifest.kind != .theme {
+                if manifest.kind == .widgets {
+                    Section("Commands") {
+                        Text("This package runs no commands. StableBar rejects any command in a widgets package, so it needs no command review.")
+                            .foregroundStyle(.secondary)
+                    }
+                } else if manifest.kind != .theme {
                     Section {
                         if inspection.commands.isEmpty {
                             Text("This package declares no commands.").foregroundStyle(.secondary)
