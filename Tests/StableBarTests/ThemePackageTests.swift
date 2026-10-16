@@ -333,13 +333,13 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     for (configuration, message) in [
         (#"{"environment":{"PLAYER":"Music"}}"#, "A widgets package can contain only tokens, defaults, bar, groups, profiles, widgets, templates, popups and providers, not environment."),
         (#"{"widgetOverrides":{"cpu":{"text":"CPU"}}}"#, "A widgets package can contain only tokens, defaults, bar, groups, profiles, widgets, templates, popups and providers, not widgetOverrides."),
-        (#"{"widgets":[{"id":"load","type":"script","position":"left","command":"uptime"}]}"#, "A widgets package runs no commands and cannot contain command."),
-        (#"{"providers":{"load":{"type":"stream","command":"uptime"}}}"#, "A widgets package runs no commands and cannot contain command."),
-        (#"{"templates":{"cpu":{"type":"system","position":"left","actions":{"scrollUp":"uptime"}}}}"#, "A widgets package runs no commands and cannot contain scrollUp."),
-        (#"{"popups":{"agenda":{"style":{},"layout":{"type":"text","text":"Join","onClickField":"joinCommand"}}}}"#, "A widgets package runs no commands and cannot contain onClickField."),
-        (#"{"widgets":[{"id":"cpu","type":"system","position":"left","environment":{"A":"B"}}]}"#, "A widgets package runs no commands and cannot contain environment."),
+        (#"{"widgets":[{"id":"load","type":"script","position":"left","command":"uptime"}]}"#, "A widgets package cannot contain command."),
+        (#"{"providers":{"load":{"type":"stream","command":"uptime"}}}"#, "A widgets package cannot contain command."),
+        (#"{"templates":{"cpu":{"type":"system","position":"left","actions":{"scrollUp":"uptime"}}}}"#, "A widgets package cannot contain scrollUp."),
+        (#"{"popups":{"agenda":{"style":{},"layout":{"type":"text","text":"Join","onClickField":"joinCommand"}}}}"#, "A widgets package cannot contain onClickField."),
+        (#"{"widgets":[{"id":"cpu","type":"system","position":"left","environment":{"A":"B"}}]}"#, "A widgets package cannot contain environment."),
         (#"{"profiles":[{"name":"dark","configuration":{"workspaceSource":"yabai"}}]}"#, "A widgets package can contain only tokens, defaults, bar, groups, profiles, widgets, templates, popups and providers, not workspaceSource."),
-        (#"{"profiles":[{"name":"dark","configuration":{"widgets":[{"id":"cpu","type":"system","position":"left","onClick":"uptime"}]}}]}"#, "A widgets package runs no commands and cannot contain onClick.")
+        (#"{"profiles":[{"name":"dark","configuration":{"widgets":[{"id":"cpu","type":"system","position":"left","onClick":"uptime"}]}}]}"#, "A widgets package cannot contain onClick.")
     ] {
         try writePackageFile(configuration, to: source.appending(path: "config.json"))
         let error = #expect(throws: WidgetPackageError.self) { try store.inspect(source) }

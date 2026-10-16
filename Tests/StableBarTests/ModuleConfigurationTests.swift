@@ -328,6 +328,7 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     """#.utf8))
     #expect(opening.widgets[0].open == "com.apple.iCal")
     #expect(opening.widgets[0].popup?.layout.openField == "link")
+    #expect(try loader.load(url, data: Data(#"{"widgets":[{"id":"docs","type":"text","position":"right","text":"Docs","open":"HTTPS://example.com"}]}"#.utf8)).widgets[0].open == "HTTPS://example.com")
 }
 
 @Test func schemaListsTheSamePropertiesAsTheDecoders() throws {

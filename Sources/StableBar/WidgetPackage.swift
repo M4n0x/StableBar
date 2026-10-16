@@ -125,7 +125,7 @@ enum WidgetPackageError: LocalizedError {
         case let .themeInPackages(id): "Package \(id) is a theme. Select it with the theme key instead of packages."
         case let .themeProperty(key): "A theme can contain only tokens, defaults, bar, groups and profiles, not \(key)."
         case let .widgetsProperty(key): "A widgets package can contain only tokens, defaults, bar, groups, profiles, widgets, templates, popups and providers, not \(key)."
-        case let .widgetsCommand(key): "A widgets package runs no commands and cannot contain \(key)."
+        case let .widgetsCommand(key): "A widgets package cannot contain \(key)."
         case let .missingVersion(id): "Package \(id) needs a version."
         case let .unknownTheme(id): "No theme named \(id) ships with StableBar. Add a version to select an installed theme package."
         }

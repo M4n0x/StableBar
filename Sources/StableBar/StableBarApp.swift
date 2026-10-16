@@ -32,7 +32,7 @@ struct StableBarApp {
                     print(String(decoding: try encoder.encode(inspection.manifest), as: UTF8.self))
                     switch inspection.manifest.kind {
                     case .theme?: break
-                    case .widgets?: print("This package runs no commands.")
+                    case .widgets?: print("This package contains no commands.")
                     case nil:
                         print("Commands to review before enabling:")
                         for command in inspection.commands { print(command) }

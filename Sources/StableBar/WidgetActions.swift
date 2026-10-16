@@ -29,7 +29,7 @@ enum OpenTarget {
 
     init?(_ value: String) {
         if let url = URL(string: value), let scheme = url.scheme {
-            guard ["http", "https", "mailto", "x-apple.systempreferences"].contains(scheme) else { return nil }
+            guard ["http", "https", "mailto", "x-apple.systempreferences"].contains(scheme.lowercased()) else { return nil }
             self = .url(url)
         } else if value.contains("."),
                   value.unicodeScalars.allSatisfy({ CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-").contains($0) }) {
