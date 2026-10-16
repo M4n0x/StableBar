@@ -172,7 +172,7 @@ Earlier versions saved changes in `customization` and `removedWidgets`. StableBa
 
 ### Local widget packages
 
-Open **Customize → Packages** to review a local package folder, inspect its commands and settings, and install it. Installation does not enable a package or execute its commands. Select an installed version, review its commands, adjust its settings, and enable it explicitly. Settings and the selected version are saved in the root configuration. Selecting an older installed version rolls back the pin.
+Open **Customize → Packages** to review a local package folder, inspect its commands and settings, and install it. A block with `onClickField` is listed by the field it reads its command from. Installation does not enable a package or execute its commands. Select an installed version, review its commands, adjust its settings, and enable it explicitly. Settings and the selected version are saved in the root configuration. Selecting an older installed version rolls back the pin.
 
 A package is a folder containing `package.json`, its configuration, and any scripts or assets. [examples/packages/local-clock](examples/packages/local-clock/package.json) is a working package using a bundled script. Its manifest has this shape:
 
