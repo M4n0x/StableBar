@@ -7,6 +7,7 @@ struct PackagesView: View {
     @State private var selections: [WidgetPackageSelection] = []
     @State private var inspection: WidgetPackageInspection?
     @State private var storeEntries: [PackageIndex.Entry] = []
+    @State private var additions: [String] = []
     @State private var settings: [String: ConfigurationValue] = [:]
     @State private var error: String?
 
@@ -261,7 +262,7 @@ struct PackagesView: View {
                         Button("Disable") { perform { try activate(manifest, enabled: false) } }
                     }
                     Button(isEnabled ? "Save Settings" : "Enable Version \(manifest.version)") {
-                        perform { try activate(manifest, enabled: true) }
+                        perform { try enable(inspection) }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(error != nil)
@@ -280,6 +281,12 @@ struct PackagesView: View {
             .controlSize(.large)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+        }
+        .confirmationDialog("Enable \(manifest.name) \(manifest.version)?",
+                            isPresented: Binding(get: { !additions.isEmpty }, set: { if !$0 { additions = [] } })) {
+            Button("Enable Version \(manifest.version)") { perform { try activate(manifest, enabled: true) } }
+        } message: {
+            Text("Compared with the enabled version, this version adds:\n\(additions.joined(separator: "\n"))")
         }
     }
 
@@ -314,6 +321,16 @@ struct PackagesView: View {
         installed = try packages.list()
         selections = try store.effectiveDocument["packages"]?.decoded([WidgetPackageSelection].self) ?? []
         if let theme = store.effectiveDocument["theme"] { selections.append(try theme.decoded(WidgetPackageSelection.self)) }
+    }
+
+    private func enable(_ inspection: WidgetPackageInspection) throws {
+        if let enabled = selections.first(where: { $0.id == inspection.manifest.id && $0.enabled && $0.version != inspection.manifest.version }),
+           let version = enabled.version {
+            let previous = try packages.inspect(packages.directory(id: enabled.id, version: version), settings: enabled.settings)
+            additions = inspection.additions(since: previous)
+            if !additions.isEmpty { return }
+        }
+        try activate(inspection.manifest, enabled: true)
     }
 
     private func activate(_ manifest: WidgetPackageManifest, enabled: Bool) throws {

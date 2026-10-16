@@ -445,6 +445,24 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     #expect(installed.manifest.kind == .widgets)
 }
 
+@Test func updatesListTheCommandsHostsAndPermissionsTheyAdd() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    let store = WidgetPackageStore(directory: directory.appending(path: "packages"))
+    var inspections: [WidgetPackageInspection] = []
+    for (version, actions, hosts, permissions) in [("1", "{}", #""a.example""#, #""calendars""#),
+                                                    ("2", #"{"scrollUp":"echo two"}"#, #""a.example","b.example""#, #""calendars","location""#)] {
+        try writePackageFile(#"{"id":"feed","name":"Feed","version":"\#(version)","entry":"config.json","hosts":[\#(hosts)],"permissions":[\#(permissions)]}"#,
+                             to: source.appending(path: "package.json"))
+        try writePackageFile(#"{"widgets":[{"id":"feed","type":"text","position":"left","text":"Feed","onClick":"echo one","actions":\#(actions)}]}"#,
+                             to: source.appending(path: "config.json"))
+        inspections.append(try store.install(source))
+    }
+    #expect(inspections[1].additions(since: inspections[0]) == ["Command: echo two", "Host: b.example", "Permission: Location"])
+    #expect(inspections[0].additions(since: inspections[1]).isEmpty)
+}
+
 @Test func themeAppliesAfterWidgetPackagesAndBeforeIncludesAndTheRootFile() throws {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }

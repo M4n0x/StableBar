@@ -122,6 +122,12 @@ struct WidgetPackageInspection: Sendable {
     let directory: URL
     let commands: [String]
     let screenshot: URL?
+
+    func additions(since previous: WidgetPackageInspection) -> [String] {
+        commands.filter { !previous.commands.contains($0) }.map { "Command: \($0)" }
+            + manifest.hosts.filter { !previous.manifest.hosts.contains($0) }.map { "Host: \($0)" }
+            + manifest.permissions.filter { !previous.manifest.permissions.contains($0) }.map { "Permission: \($0.rawValue.capitalized)" }
+    }
 }
 
 enum WidgetPackageError: LocalizedError {
