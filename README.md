@@ -8,7 +8,7 @@ The default configuration includes a System Settings shortcut, the active app an
 
 Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, theme, appearance, placement, clock format, and opening at login. Run it again from **Customize StableBar → General**.
 
-The starter bar needs no special permissions. Keeping windows clear of the bar requires Accessibility access for StableBar. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. A [calendar provider](#calendar) asks for Calendars access the first time it updates. AeroSpace and yabai manage their own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
+The starter bar needs no special permissions. Keeping windows clear of the bar requires Accessibility access for StableBar. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. A [calendar provider](#calendar) asks for Calendars access the first time it updates. Setup also lists any access that the data sources of your enabled widgets need, such as Calendars, with a link to its System Settings pane. AeroSpace and yabai manage their own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
 
 Setup offers the [themes](#themes) that ship with StableBar and any you have installed. Every theme has light and dark colors and follows the system's light or dark mode; choose **Light** or **Dark** to keep the bar in one appearance, which sets `bar.appearance`. Individual widget styles still take precedence. Setup preserves custom widgets, scripts, and other settings. Closing setup leaves it available on the next launch. New configurations place the bar below the macOS menu bar; existing configurations retain their position.
 
@@ -742,7 +742,7 @@ Scripts and providers expose diagnostics in **Customize → Diagnostics** and th
 
 ### Calendar
 
-A `calendar` provider reads your calendars through EventKit. It asks for Calendars access the first time it updates, not when StableBar starts. All-day events are skipped.
+A `calendar` provider reads your calendars through EventKit. It asks for Calendars access the first time it updates, not when StableBar starts, and setup lists that access whenever an enabled widget shows a calendar provider. All-day events are skipped.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -961,7 +961,7 @@ For new native widget types, add a case to `WidgetContent`, decode its settings 
 - [Yabai.swift](Sources/StableBar/Yabai.swift): yabai snapshots mapped to workspaces and screen numbers.
 - [ScriptWidget.swift](Sources/StableBar/ScriptWidget.swift): the runner that applies a data source's output, with diagnostics, retries and suspension.
 - [DataSource.swift](Sources/StableBar/DataSource.swift): the data source protocol, and the command, stream, polling and push sources.
-- [DataSourceRegistry.swift](Sources/StableBar/DataSourceRegistry.swift): each data source type, the settings it reads and how it runs.
+- [DataSourceRegistry.swift](Sources/StableBar/DataSourceRegistry.swift): each data source type, the settings it reads, how it runs and the access it needs.
 - [BuiltInEvents.swift](Sources/StableBar/BuiltInEvents.swift): the events StableBar sends itself and what `INFO` holds.
 - [BarView.swift](Sources/StableBar/BarView.swift): native rendering and selection animation.
 - [LayoutConfiguration.swift](Sources/StableBar/LayoutConfiguration.swift): groups, priority overflow and notch-aware placement.

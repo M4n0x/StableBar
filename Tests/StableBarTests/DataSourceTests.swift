@@ -891,3 +891,47 @@ private struct RelayProbe {
     try await awaitCondition { volume.output.text == "80" }
     #expect(volume.diagnostics.executionCount <= 3)
 }
+
+@Test @MainActor func setupListsThePermissionsOfTheSourcesAConfigurationRuns() throws {
+    let calendars = SourcePermission(title: "Calendars", detail: "Read upcoming events.", symbol: "calendar", privacyPane: "Privacy_Calendars")
+    let registry = DataSourceRegistry(types: DataSourceRegistry.builtIn.types.map { type in
+        var type = type
+        if type.name == "battery" || type.name == "audio" { type.permission = calendars }
+        return type
+    })
+    func configuration(_ json: String) throws -> Configuration {
+        try JSONDecoder().decode(Configuration.self, from: Data(json.utf8))
+    }
+    #expect(registry.permissions(for: try configuration(#"""
+    {"widgets":[{"id":"power","type":"battery","position":"right"},{"id":"sound","type":"audio","position":"right"},
+                {"id":"cpu","type":"system","position":"right"}]}
+    """#)) == [calendars])
+    #expect(registry.permissions(for: try configuration(#"""
+    {"widgets":[{"id":"notice","type":"script","position":"left","command":"true","events":["powerSourceChange"]}]}
+    """#)) == [calendars])
+    #expect(registry.permissions(for: try configuration(#"""
+    {"widgets":[{"id":"power","type":"battery","position":"right","enabled":false},{"id":"cpu","type":"system","position":"right"}]}
+    """#)).isEmpty)
+    #expect(registry.permissions(for: nil).isEmpty)
+    #expect(DataSourceRegistry.builtIn.types.filter { $0.permission != nil }.map(\.name) == ["calendar"])
+    let listed = ImageRenderer(content: VStack { SourcePermissionList(permissions: [calendars]) }.frame(width: 480))
+    #expect((listed.nsImage?.size.height ?? 0) > 0)
+    let empty = ImageRenderer(content: VStack { SourcePermissionList(permissions: []) }.frame(width: 480))
+    #expect((empty.nsImage?.size.height ?? 0) == 0)
+}
+
+@Test func setupListsCalendarsWheneverAConfigurationRunsACalendarProvider() throws {
+    let calendars = try #require(DataSourceRegistry.builtIn["calendar"]?.permission)
+    #expect(calendars == .calendars)
+    #expect(calendars.title == "Calendars" && calendars.symbol == "calendar" && calendars.privacyPane == "Privacy_Calendars")
+    func permissions(_ json: String) throws -> [SourcePermission] {
+        DataSourceRegistry.builtIn.permissions(for: try JSONDecoder().decode(Configuration.self, from: Data(json.utf8)))
+    }
+    #expect(try permissions(#"{"widgets":[{"id":"next","type":"calendar","position":"right"}]}"#) == [calendars])
+    #expect(try permissions(#"""
+    {"providers":{"meetings":{"type":"calendar","calendars":["Work"]}},
+     "widgets":[{"id":"work","type":"provider","provider":"meetings","position":"right"},{"id":"cpu","type":"system","position":"right"}]}
+    """#) == [calendars])
+    #expect(try permissions(#"{"widgets":[{"id":"next","type":"calendar","position":"right","enabled":false}]}"#).isEmpty)
+    #expect(try permissions(#"{"providers":{"meetings":{"type":"calendar"}},"widgets":[{"id":"cpu","type":"system","position":"right"}]}"#).isEmpty)
+}

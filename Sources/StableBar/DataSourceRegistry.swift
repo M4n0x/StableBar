@@ -2,7 +2,8 @@ import EventKit
 import Foundation
 
 /// A kind of data source that providers name in `type`: the settings it reads, how StableBar runs
-/// it and the events it sends. Adding a source means adding one entry to `DataSourceRegistry.builtIn`.
+/// it, the events it sends and the access it needs. Adding a source means adding one entry to
+/// `DataSourceRegistry.builtIn`.
 struct DataSourceType: Sendable {
     /// The `type` name in provider definitions, such as `battery`.
     var name: String
@@ -26,8 +27,30 @@ struct DataSourceType: Sendable {
     /// calendar's `EKEventStoreChanged`. While the source runs, the runner also refreshes it each
     /// time it's posted, with an event named after the type.
     var changeNotification: Notification.Name? = nil
+    /// The access the source needs. Setup lists it whenever a configuration runs this source. The
+    /// source asks macOS for it the first time it reads, and until it's granted, its output says so
+    /// rather than failing, as calendar's `No calendar access` with `fields.access` does.
+    var permission: SourcePermission? = nil
     /// Creates the source for one provider definition, with the provider's environment.
     var makeSource: @MainActor @Sendable (ProviderConfiguration, [String: String]) -> any DataSource
+}
+
+/// Access that a data source needs before it can read its data, such as Calendars.
+struct SourcePermission: Hashable, Sendable {
+    /// What setup calls it, such as `Calendars`.
+    let title: String
+    /// Why widgets need it.
+    let detail: String
+    /// The SF Symbol setup shows beside it.
+    let symbol: String
+    /// The Privacy & Security pane that grants it, such as `Privacy_Calendars`.
+    let privacyPane: String
+}
+
+extension SourcePermission {
+    static let calendars = SourcePermission(title: "Calendars",
+                                            detail: "Calendar widgets show your next meeting and today's agenda. macOS asks for access the first time one updates.",
+                                            symbol: "calendar", privacyPane: "Privacy_Calendars")
 }
 
 struct DataSourceRegistry: Sendable {
@@ -35,6 +58,14 @@ struct DataSourceRegistry: Sendable {
 
     subscript(name: String) -> DataSourceType? {
         types.first { $0.name == name }
+    }
+
+    /// The permissions that the sources a configuration runs need, each once, in registry order.
+    func permissions(for configuration: Configuration?) -> [SourcePermission] {
+        guard let configuration else { return [] }
+        let running = Set(configuration.activeProviders.compactMap { configuration.providers[$0]?.type })
+        var listed = Set<SourcePermission>()
+        return types.filter { running.contains($0.name) }.compactMap(\.permission).filter { listed.insert($0).inserted }
     }
 
     static let builtIn = DataSourceRegistry(types: [.command, .stream, .battery, .system, .network, .audio, .calendar])
@@ -75,7 +106,7 @@ extension DataSourceType {
     /// boundary.
     static let calendar = DataSourceType(name: "calendar", isNative: true, symbol: "calendar", settings: [],
                                          optionalSettings: [.calendars, .lookahead, .soon, .now], continuous: false,
-                                         changeNotification: .EKEventStoreChanged) { provider, _ in
+                                         changeNotification: .EKEventStoreChanged, permission: .calendars) { provider, _ in
         let metrics = NativeMetrics()
         return PollingSource { _ in .output(.success(metrics.calendar(provider))) }
     }
