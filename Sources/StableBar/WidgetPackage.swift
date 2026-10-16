@@ -25,6 +25,7 @@ struct WidgetPackageSetting: Codable, Sendable {
 
 struct WidgetPackageManifest: Codable, Sendable {
     enum Kind: String, Codable, Sendable { case theme, widgets }
+    enum Permission: String, Codable, Sendable { case calendars, automation, accessibility, bluetooth, location }
 
     let id: String
     let name: String
@@ -32,8 +33,18 @@ struct WidgetPackageManifest: Codable, Sendable {
     let kind: Kind?
     let entry: String
     let settings: [String: WidgetPackageSetting]
+    let description: String?
+    let author: String?
+    let repository: URL?
+    let screenshot: String?
+    let minimumVersion: String?
+    let requires: [String]
+    let permissions: [Permission]
+    let hosts: [String]
 
-    enum CodingKeys: String, CodingKey, CaseIterable { case id, name, version, kind, entry, settings }
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case id, name, version, kind, entry, settings, description, author, repository, screenshot, minimumVersion, requires, permissions, hosts
+    }
 
     init(from decoder: Decoder) throws {
         try decoder.rejectUnknownKeys(CodingKeys.self)
@@ -44,6 +55,17 @@ struct WidgetPackageManifest: Codable, Sendable {
         kind = try values.decodeIfPresent(Kind.self, forKey: .kind)
         entry = try values.decode(String.self, forKey: .entry)
         settings = try values.decodeIfPresent([String: WidgetPackageSetting].self, forKey: .settings) ?? [:]
+        description = try values.decodeIfPresent(String.self, forKey: .description)
+        author = try values.decodeIfPresent(String.self, forKey: .author)
+        repository = try values.decodeIfPresent(URL.self, forKey: .repository)
+        if let repository, repository.scheme != "https" {
+            throw DecodingError.dataCorruptedError(forKey: .repository, in: values, debugDescription: "Use an https URL.")
+        }
+        screenshot = try values.decodeIfPresent(String.self, forKey: .screenshot)
+        minimumVersion = try values.decodeIfPresent(String.self, forKey: .minimumVersion)
+        requires = try values.decodeIfPresent([String].self, forKey: .requires) ?? []
+        permissions = try values.decodeIfPresent([Permission].self, forKey: .permissions) ?? []
+        hosts = try values.decodeIfPresent([String].self, forKey: .hosts) ?? []
         try validatePackageComponent(id)
         try validatePackageComponent(version)
         for (name, setting) in settings where !setting.accepts(setting.default) {
@@ -59,6 +81,12 @@ struct WidgetPackageManifest: Codable, Sendable {
             values[name] = value
         }
         return values
+    }
+
+    func missingTools(path: String) -> [String] {
+        requires.filter { tool in
+            !path.split(separator: ":").contains { FileManager.default.isExecutableFile(atPath: "\($0)/\(tool)") }
+        }
     }
 }
 
@@ -92,6 +120,7 @@ struct WidgetPackageInspection: Sendable {
     let manifest: WidgetPackageManifest
     let directory: URL
     let commands: [String]
+    let screenshot: URL?
 }
 
 enum WidgetPackageError: LocalizedError {
@@ -110,6 +139,7 @@ enum WidgetPackageError: LocalizedError {
     case widgetsCommand(String)
     case missingVersion(String)
     case unknownTheme(String)
+    case newerVersionRequired(String, String)
 
     var errorDescription: String? {
         switch self {
@@ -128,6 +158,7 @@ enum WidgetPackageError: LocalizedError {
         case let .widgetsCommand(key): "A widgets package cannot contain \(key)."
         case let .missingVersion(id): "Package \(id) needs a version."
         case let .unknownTheme(id): "No theme named \(id) ships with StableBar. Add a version to select an installed theme package."
+        case let .newerVersionRequired(id, version): "Package \(id) needs StableBar \(version) or later."
         }
     }
 }
@@ -158,6 +189,7 @@ func packageFile(_ path: String, inside directory: URL) throws -> URL {
 
 struct WidgetPackageStore {
     let directory: URL
+    var appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
 
     func directory(id: String, version: String) throws -> URL {
         try validatePackageComponent(id)
@@ -179,9 +211,18 @@ struct WidgetPackageStore {
         }
     }
 
+    func requiresNewerApp(_ minimumVersion: String) -> Bool {
+        guard let appVersion else { return false }
+        return appVersion.compare(minimumVersion, options: .numeric) == .orderedAscending
+    }
+
     func inspect(_ source: URL, settings: [String: ConfigurationValue] = [:]) throws -> WidgetPackageInspection {
         let manifest = try manifest(at: source)
+        if let minimumVersion = manifest.minimumVersion, requiresNewerApp(minimumVersion) {
+            throw WidgetPackageError.newerVersionRequired(manifest.id, minimumVersion)
+        }
         try validateContents(at: source)
+        let screenshot = try manifest.screenshot.map { try packageFile($0, inside: source) }
         var loader = ConfigurationLoader()
         let layer = try loader.readPackage(at: source, manifest: manifest, settings: settings)
         let profiles = try layer.values["profiles"]?.decoded([ConfigurationProfile].self) ?? []
@@ -197,7 +238,7 @@ struct WidgetPackageStore {
             _ = try ConfigurationValue.object(document).decoded(Configuration.self)
             commands.formUnion(packageCommands(.object(document)))
         }
-        return WidgetPackageInspection(manifest: manifest, directory: source, commands: commands.sorted())
+        return WidgetPackageInspection(manifest: manifest, directory: source, commands: commands.sorted(), screenshot: screenshot)
     }
 
     func install(_ source: URL) throws -> WidgetPackageInspection {

@@ -30,6 +30,8 @@ struct StableBarApp {
                 } else {
                     let inspection = try action == "install" ? packages.install(source!) : packages.inspect(source!)
                     print(String(decoding: try encoder.encode(inspection.manifest), as: UTF8.self))
+                    let missing = inspection.manifest.missingTools(path: shellEnvironment.withLock { $0["PATH", default: ""] })
+                    if !missing.isEmpty { print("Not found on PATH: \(missing.joined(separator: ", "))") }
                     switch inspection.manifest.kind {
                     case .theme?: break
                     case .widgets?: print("This package contains no commands.")

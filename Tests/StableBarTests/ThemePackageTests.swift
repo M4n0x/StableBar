@@ -358,6 +358,59 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     #expect(throws: WidgetPackageError.self) { try loader.load(root, data: Data(#"{"theme":{"id":"monitor","version":"1"}}"#.utf8)) }
 }
 
+@Test func manifestsDeclareWhatAPackageNeedsAndKeepTheirScreenshotInside() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    let store = WidgetPackageStore(directory: directory.appending(path: "packages"))
+    let manifest = #"""
+    {"id":"weather","name":"Weather","version":"1","entry":"config.json","description":"Current conditions.","author":"StableBar",
+     "repository":"https://github.com/Seb-GRAF/stablebar-packages","screenshot":"screenshot.png","minimumVersion":"0.6.0",
+     "requires":["jq","gh","brew"],"permissions":["location"],"hosts":["wttr.in"]}
+    """#
+    try writePackageFile(manifest, to: source.appending(path: "package.json"))
+    try writePackageFile(#"{"widgets":[]}"#, to: source.appending(path: "config.json"))
+    try writePackageFile("image", to: source.appending(path: "screenshot.png"))
+    try writePackageFile("image", to: directory.appending(path: "outside.png"))
+    let inspection = try store.inspect(source)
+    #expect(inspection.manifest.description == "Current conditions.")
+    #expect(inspection.manifest.author == "StableBar")
+    #expect(inspection.manifest.repository == URL(string: "https://github.com/Seb-GRAF/stablebar-packages"))
+    #expect(inspection.manifest.minimumVersion == "0.6.0")
+    #expect(inspection.manifest.permissions == [.location])
+    #expect(inspection.manifest.hosts == ["wttr.in"])
+    #expect(inspection.screenshot?.path == source.appending(path: "screenshot.png").path)
+    let tools = directory.appending(path: "bin")
+    try writePackageFile("#!/bin/sh\n", to: tools.appending(path: "jq"))
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tools.appending(path: "jq").path)
+    try writePackageFile("", to: tools.appending(path: "gh"))
+    #expect(inspection.manifest.missingTools(path: "/missing:\(tools.path)") == ["gh", "brew"])
+    for (value, replacement) in [("screenshot.png", "../outside.png"), (#"["location"]"#, #"["camera"]"#), ("https://github.com", "http://github.com")] {
+        try writePackageFile(manifest.replacingOccurrences(of: value, with: replacement), to: source.appending(path: "package.json"))
+        #expect(throws: (any Error).self) { try store.inspect(source) }
+    }
+}
+
+@Test func packagesThatNeedANewerStableBarFailReviewAndInstall() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    let store = WidgetPackageStore(directory: directory.appending(path: "packages"), appVersion: "0.9.0")
+    try writePackageFile(#"{"id":"clock","name":"Clock","version":"1","entry":"config.json","minimumVersion":"0.10.0"}"#,
+                         to: source.appending(path: "package.json"))
+    try writePackageFile(#"{"widgets":[]}"#, to: source.appending(path: "config.json"))
+    let error = #expect(throws: WidgetPackageError.self) { try store.inspect(source) }
+    #expect(error?.localizedDescription == "Package clock needs StableBar 0.10.0 or later.")
+    #expect(throws: WidgetPackageError.self) { try store.install(source) }
+    _ = try WidgetPackageStore(directory: store.directory, appVersion: nil).inspect(source)
+    for version in ["0.9.0", "0.8.12"] {
+        try writePackageFile(#"{"id":"clock","name":"Clock","version":"1","entry":"config.json","minimumVersion":"\#(version)"}"#,
+                             to: source.appending(path: "package.json"))
+        _ = try store.inspect(source)
+    }
+    _ = try store.install(source)
+}
+
 @Test func themeAppliesAfterWidgetPackagesAndBeforeIncludesAndTheRootFile() throws {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }

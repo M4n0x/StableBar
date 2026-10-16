@@ -110,6 +110,9 @@ struct PackagesView: View {
                             .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(manifest.name).font(.title3.weight(.semibold))
+                            if let description = manifest.description {
+                                Text(description)
+                            }
                             Text("\(manifest.id) · Version \(manifest.version)").foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -130,6 +133,41 @@ struct PackagesView: View {
                                 .labelStyle(.iconOnly)
                                 .buttonStyle(.borderless)
                                 .help("Open folder in Finder")
+                        }
+                    }
+                    if let author = manifest.author {
+                        LabeledContent("Author", value: author)
+                    }
+                    if let repository = manifest.repository {
+                        LabeledContent("Repository") {
+                            Link(repository.absoluteString, destination: repository)
+                        }
+                    }
+                    if let screenshot = inspection.screenshot, let image = NSImage(contentsOf: screenshot) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity, maxHeight: 200)
+                    }
+                }
+                if manifest.minimumVersion != nil || !manifest.requires.isEmpty || !manifest.permissions.isEmpty || !manifest.hosts.isEmpty {
+                    Section("Requirements") {
+                        if let minimumVersion = manifest.minimumVersion {
+                            LabeledContent("StableBar", value: "\(minimumVersion) or later")
+                        }
+                        if !manifest.requires.isEmpty {
+                            LabeledContent("Tools", value: manifest.requires.joined(separator: ", "))
+                            let missing = manifest.missingTools(path: shellEnvironment.withLock { $0["PATH", default: ""] })
+                            if !missing.isEmpty {
+                                Label("Not found on your login shell’s PATH: \(missing.joined(separator: ", "))", systemImage: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        if !manifest.permissions.isEmpty {
+                            LabeledContent("Permissions", value: manifest.permissions.map(\.rawValue.capitalized).joined(separator: ", "))
+                        }
+                        if !manifest.hosts.isEmpty {
+                            LabeledContent("Hosts", value: manifest.hosts.joined(separator: ", "))
                         }
                     }
                 }
