@@ -412,9 +412,12 @@ struct WidgetView: View {
     }
 
     private func label(_ text: String, icon: String?, appearance: WidgetAppearance) -> some View {
-        HStack(spacing: appearance.spacing) {
-            if let icon { Image(systemName: icon).font(.system(size: appearance.iconSize)) }
-            if !text.isEmpty { Text(text).lineLimit(1) }
+        ZStack {
+            Text(" ").hidden()
+            HStack(spacing: appearance.spacing) {
+                if let icon { Image(systemName: icon).font(.system(size: appearance.iconSize)) }
+                if !text.isEmpty { Text(text).lineLimit(1) }
+            }
         }
     }
 }
