@@ -30,8 +30,10 @@ struct StableBarApp {
                 } else {
                     let inspection = try action == "install" ? packages.install(source!) : packages.inspect(source!)
                     print(String(decoding: try encoder.encode(inspection.manifest), as: UTF8.self))
-                    print("Commands to review before enabling:")
-                    for command in inspection.commands { print(command) }
+                    if inspection.manifest.kind != .theme {
+                        print("Commands to review before enabling:")
+                        for command in inspection.commands { print(command) }
+                    }
                 }
             case .help:
                 print(LaunchCommand.usage)

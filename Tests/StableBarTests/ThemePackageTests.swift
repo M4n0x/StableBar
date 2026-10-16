@@ -291,3 +291,81 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     }
     #expect(FileManager.default.fileExists(atPath: installed.directory.path))
 }
+
+@Test func themePackagesContainOnlyStylesAndAreSelectedOnlyAsTheTheme() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let theme = directory.appending(path: "theme")
+    let widget = directory.appending(path: "widget")
+    let store = WidgetPackageStore(directory: directory.appending(path: "packages"))
+    try writePackageFile(#"{"id":"slate","name":"Slate","version":"1","kind":"theme","entry":"config.json"}"#,
+                         to: theme.appending(path: "package.json"))
+    for configuration in [#"{"widgets":[{"id":"clock","type":"clock","position":"left"}]}"#,
+                          #"{"environment":{"PLAYER":"Music"}}"#,
+                          #"{"providers":{"load":{"type":"command","command":"uptime"}}}"#,
+                          #"{"templates":{"metric":{"type":"script","position":"left","command":"uptime"}}}"#,
+                          #"{"profiles":[{"name":"dark","configuration":{"widgetOverrides":{"clock":{"onClick":"uptime"}}}}]}"#] {
+        try writePackageFile(configuration, to: theme.appending(path: "config.json"))
+        #expect(throws: WidgetPackageError.self) { try store.inspect(theme) }
+    }
+    try writePackageFile(##"""
+    {"tokens":{"text":"#111111"},"defaults":{"foreground":"@token.text"},"bar":{"height":30},
+     "groups":{"session":{"style":{"cornerRadius":4}}},
+     "profiles":[{"name":"dark","when":{"appearance":"dark"},"configuration":{"tokens":{"text":"#eeeeee"}}}]}
+    """##, to: theme.appending(path: "config.json"))
+    #expect(try store.install(theme).commands.isEmpty)
+    try writePackageFile(#"{"id":"clock","name":"Clock","version":"1","entry":"config.json"}"#, to: widget.appending(path: "package.json"))
+    try writePackageFile(#"{"widgets":[{"id":"clock","type":"clock","position":"left"}]}"#, to: widget.appending(path: "config.json"))
+    _ = try store.install(widget)
+    var loader = ConfigurationLoader()
+    for json in [#"{"theme":{"id":"clock","version":"1"}}"#, #"{"packages":[{"id":"slate","version":"1"}]}"#] {
+        #expect(throws: WidgetPackageError.self) { try loader.load(directory.appending(path: "config.json"), data: Data(json.utf8)) }
+    }
+}
+
+@Test func themeAppliesAfterWidgetPackagesAndBeforeIncludesAndTheRootFile() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let theme = directory.appending(path: "theme")
+    let widget = directory.appending(path: "widget")
+    let store = WidgetPackageStore(directory: directory.appending(path: "packages"))
+    try writePackageFile(#"{"id":"slate","name":"Slate","version":"1","kind":"theme","entry":"config.json"}"#,
+                         to: theme.appending(path: "package.json"))
+    try writePackageFile(##"""
+    {"tokens":{"text":"#111111","textMuted":"#222222","surface":"#444444"},
+     "defaults":{"foreground":"@token.text","background":"@token.surface","fontSize":10},
+     "bar":{"height":30},
+     "profiles":[{"name":"dark","when":{"appearance":"dark"},"configuration":{"tokens":{"text":"#eeeeee"}}}]}
+    """##, to: theme.appending(path: "config.json"))
+    _ = try store.install(theme)
+    try writePackageFile(#"{"id":"status","name":"Status","version":"1","entry":"config.json"}"#, to: widget.appending(path: "package.json"))
+    try writePackageFile(##"""
+    {"tokens":{"textMuted":"#555555","badge":"#888888","surface":"#777777"},
+     "widgets":[{"id":"status","type":"text","position":"left","text":"Ready",
+                 "style":{"foreground":"@token.textMuted","background":"@token.badge"}}]}
+    """##, to: widget.appending(path: "config.json"))
+    _ = try store.install(widget)
+    try writePackageFile(##"{"tokens":{"surface":"#666666"}}"##, to: directory.appending(path: "module.json"))
+    let root = directory.appending(path: "config.json")
+    let json = ##"""
+    {"includes":["module.json"],"theme":{"id":"slate","version":"1"},"packages":[{"id":"status","version":"1"}],
+     "defaults":{"fontSize":13},
+     "widgets":[{"id":"note","type":"text","position":"right","text":"Note","style":{"foreground":"@token.textMuted"}}]}
+    """##
+    var loader = ConfigurationLoader()
+    let light = try loader.load(root, data: Data(json.utf8))
+    #expect(light.defaults.foreground == HexColor(0x111111ff))
+    #expect(light.widgets[0].style.foreground == HexColor(0x222222ff))
+    #expect(light.widgets[0].style.background == HexColor(0x888888ff))
+    #expect(light.defaults.background == HexColor(0x666666ff))
+    #expect(light.defaults.fontSize == 13)
+    #expect(light.bar.height == 30)
+    #expect(light.widgets.map(\.id) == ["status", "note"])
+    #expect(light.widgets[1].style.foreground == HexColor(0x222222ff))
+    let dark = try loader.load(root, data: Data(json.utf8), context: ConfigurationContext(appearance: "dark"))
+    #expect(dark.defaults.foreground == HexColor(0xeeeeeeff))
+    #expect(loader.activeProfiles == ["dark"])
+    let builtIn = try loader.load(root, data: Data(#"{"widgets":[]}"#.utf8))
+    #expect(builtIn.defaults.foreground == nil)
+    #expect(builtIn.bar.height == 40)
+}

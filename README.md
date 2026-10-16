@@ -6,11 +6,11 @@ The default configuration includes a System Settings shortcut, the active app an
 
 ## Install and set up
 
-Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, widget appearance, placement, clock format, and opening at login. Setup is also available from the menu-bar icon or by right-clicking the bar.
+Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, theme, widget appearance, placement, clock format, and opening at login. Setup is also available from the menu-bar icon or by right-clicking the bar.
 
 The starter bar needs no special permissions. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. A [calendar provider](#calendar) asks for Calendars access the first time it updates. AeroSpace and yabai manage their own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
 
-Widgets follow the system's light or dark mode unless you pick a fixed appearance, which sets the global widget colors; individual widget styles still take precedence. Setup preserves custom widgets, scripts, and other settings. Closing setup leaves it available on the next launch. New configurations place the bar below the macOS menu bar; existing configurations retain their position.
+Widgets follow the system's light or dark mode unless you pick a [theme](#theme-packages) or a fixed appearance. Any appearance other than **Keep current** sets the global widget colors, which take precedence over a theme's. Choosing an installed theme in setup hides the appearance choice and removes those colors from your configuration. Individual widget styles still take precedence. Setup preserves custom widgets, scripts, and other settings. Closing setup leaves it available on the next launch. New configurations place the bar below the macOS menu bar; existing configurations retain their position.
 
 ## Build and run
 
@@ -214,6 +214,36 @@ Enable an exact installed version in the root configuration:
 
 Package selections in modules merge by package ID, with later modules and the root taking precedence. Enabled packages load once before the composed modules and root properties. Root templates, tokens and widget overrides can customize them. Set `enabled` to `false` to stop loading a package; installation alone has no runtime effect. Packages cannot enable other packages. There is no network registry or automatic update process: versions remain pinned until you choose another installed version.
 
+### Theme packages
+
+A theme is a package whose `package.json` sets `"kind": "theme"`. Its configuration can contain only `tokens`, `defaults`, `bar`, `groups` and `profiles`, plus includes inside the package; profiles hold its light and dark variants. Widgets, templates, widget overrides, popups, providers, environment variables and any other key are rejected when the theme is reviewed, installed or loaded, so a theme runs no commands and needs no command review. [examples/themes/slate](examples/themes/slate/config.json) defines every token below, with a dark variant.
+
+Install a theme like any other package, then select one installed version in the root configuration:
+
+```json
+{ "theme": { "id": "slate", "version": "1.0.0" } }
+```
+
+Only one theme is active: `theme` must name a theme package, and `packages` cannot list one. `theme` accepts the same `enabled` and `settings` as a package selection. Widget packages load first, then the theme, then includes and the main file. A theme's tokens, `defaults` and `bar` settings override a widget package's, and yours override the theme's. A `profiles` array in a later layer replaces the theme's profiles, like any array. Without `theme`, StableBar uses its built-in look, which follows the system's light or dark mode.
+
+Choose a theme in setup, in **Customize → Editor → Bar**, or by enabling it in **Customize → Packages**. **Built-in** removes `theme`.
+
+Popups inherit `defaults`, and the workspace highlight uses `defaults.accent`. Themes should define these tokens so that widgets, widget packages, popups, layouts and workspace styles can use them, for example `"foreground": "@token.textMuted"`:
+
+| Token | Use |
+| --- | --- |
+| `surface` | Widget background |
+| `surfaceRaised` | Hover background and raised surfaces |
+| `text` | Primary text |
+| `textMuted` | Secondary text |
+| `accent` | Highlights, the workspace indicator and progress fills |
+| `track` | Progress and graph tracks |
+| `hairline` | Borders and dividers |
+| `warning` | Warning text or fills |
+| `critical` | Critical text or fills |
+
+A reference to a token that no layer defines is an error. A widget package should define fallback values for the shared tokens it uses, which any theme replaces; your own widgets need a theme or `tokens` of your own that define them.
+
 ### Displays and notch placement
 
 `notchLeft` ends before the notch and `notchRight` starts after it. `bar.notchSpacing` controls the gap on each side (16 by default). The notch comes from the screen's unobscured top areas; `bar.notchWidth` can override its width. On screens without a notch, `notchLeft`, `center` and `notchRight` form one centered group, measured from the visible content. Hidden groups leave no gap. With a notch, `center` remains at the screen's center and should be left empty.
@@ -354,7 +384,7 @@ StableBar --batch '[
 ]' --persist
 ```
 
-A batch validates the whole resulting configuration before replacing the running bar or writing the file. A failed batch leaves both intact. Supported edit actions are `set` (`id`, `properties`), `add` (`properties`, including `id`), `remove` (`id`), `reorder` (`ids`), `bar`/`defaults` (`properties`), `profile` (`name`, omitted for automatic), and `package` (`properties`: `id`, `version`, optional `enabled` and `settings`).
+A batch validates the whole resulting configuration before replacing the running bar or writing the file. A failed batch leaves both intact. Supported edit actions are `set` (`id`, `properties`), `add` (`properties`, including `id`), `remove` (`id`), `reorder` (`ids`), `bar`/`defaults` (`properties`), `profile` (`name`, omitted for automatic), `package` (`properties`: `id`, `version`, optional `enabled` and `settings`), and `theme` (the same `properties`, omitted for the built-in theme).
 
 - `--validate [PATH]`: compose and validate files without starting scripts.
 - `--refresh ID`: refresh a running widget. Hidden, suspended providers must first be made visible or opened in the inspector.
@@ -366,11 +396,11 @@ A batch validates the whole resulting configuration before replacing the running
 
 Open **Customize StableBar…** from the menu-bar icon or by right-clicking the bar, reopen the running app, or run `StableBar --customize`.
 
-The **Editor** lists your widgets by position; drag to reorder them. Change positions, icons, text, clock formats, colors, font size, padding and corners, or edit a widget's properties as JSON. **Bar** sets the bar's size and the default text color, background and font size. Changes apply to the bar immediately, like command-line edits without `--persist`. Undo and redo step through them, **Save** writes them to your configuration and **Discard** returns to the saved file. A change that would make the configuration invalid is rejected and its error is shown.
+The **Editor** lists your widgets by position; drag to reorder them. Change positions, icons, text, clock formats, colors, font size, padding and corners, or edit a widget's properties as JSON. **Bar** chooses the theme and sets the bar's size and the default text color, background and font size. Changes apply to the bar immediately, like command-line edits without `--persist`. Undo and redo step through them, **Save** writes them to your configuration and **Discard** returns to the saved file. A change that would make the configuration invalid is rejected and its error is shown.
 
 The **Inspector** shows the composed widget configuration, defaults, source paths, provider output, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while that inspector is visible. Closing the window restores its visibility policy.
 
-The **Packages** tab reviews local folders and their declared commands, edits typed settings, installs versions and enables a chosen version. Select an older installed version to roll back.
+The **Packages** tab reviews local folders and their declared commands, edits typed settings, installs versions and enables a chosen version. Enabling a theme makes it the active theme; themes have no commands to review. Select an older installed version to roll back.
 
 ## Built-in widgets
 

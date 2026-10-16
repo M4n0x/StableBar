@@ -24,13 +24,16 @@ struct WidgetPackageSetting: Codable, Sendable {
 }
 
 struct WidgetPackageManifest: Codable, Sendable {
+    enum Kind: String, Codable, Sendable { case theme }
+
     let id: String
     let name: String
     let version: String
+    let kind: Kind?
     let entry: String
     let settings: [String: WidgetPackageSetting]
 
-    enum CodingKeys: String, CodingKey, CaseIterable { case id, name, version, entry, settings }
+    enum CodingKeys: String, CodingKey, CaseIterable { case id, name, version, kind, entry, settings }
 
     init(from decoder: Decoder) throws {
         try decoder.rejectUnknownKeys(CodingKeys.self)
@@ -38,6 +41,7 @@ struct WidgetPackageManifest: Codable, Sendable {
         id = try values.decode(String.self, forKey: .id)
         name = try values.decode(String.self, forKey: .name)
         version = try values.decode(String.self, forKey: .version)
+        kind = try values.decodeIfPresent(Kind.self, forKey: .kind)
         entry = try values.decode(String.self, forKey: .entry)
         settings = try values.decodeIfPresent([String: WidgetPackageSetting].self, forKey: .settings) ?? [:]
         try validatePackageComponent(id)
@@ -93,6 +97,9 @@ enum WidgetPackageError: LocalizedError {
     case invalidSetting(String)
     case nestedPackages
     case manifestMismatch
+    case notATheme(String)
+    case themeInPackages(String)
+    case themeProperty(String)
 
     var errorDescription: String? {
         switch self {
@@ -104,6 +111,9 @@ enum WidgetPackageError: LocalizedError {
         case let .invalidSetting(name): "Invalid type or default for package setting: \(name)."
         case .nestedPackages: "A widget package cannot activate other packages."
         case .manifestMismatch: "The package manifest does not match its pinned id and version."
+        case let .notATheme(id): "Package \(id) is not a theme. Enable it in packages instead."
+        case let .themeInPackages(id): "Package \(id) is a theme. Select it with the theme key instead of packages."
+        case let .themeProperty(key): "A theme can contain only tokens, defaults, bar, groups and profiles, not \(key)."
         }
     }
 }
@@ -227,6 +237,15 @@ func preparePackageDocument(_ document: [String: ConfigurationValue], directory:
         })
     }
     return result
+}
+
+func validateThemeDocument(_ document: [String: ConfigurationValue]) throws {
+    for key in document.keys.sorted() where !["tokens", "defaults", "bar", "groups", "profiles"].contains(key) {
+        guard key == "widgets", document[key] == .array([]) else { throw WidgetPackageError.themeProperty(key) }
+    }
+    for profile in try document["profiles"]?.decoded([ConfigurationProfile].self) ?? [] {
+        try validateThemeDocument(profile.configuration)
+    }
 }
 
 private func packageEnvironment(_ definition: [String: ConfigurationValue], directory: URL) -> [String: ConfigurationValue] {

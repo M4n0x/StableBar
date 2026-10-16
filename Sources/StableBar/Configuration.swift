@@ -349,7 +349,7 @@ struct Configuration: Decodable, Sendable {
     enum CodingKeys: String, CodingKey, CaseIterable { case workspaceSource, bar, defaults, widgets, popups, templates, widgetOverrides, environment, providers, groups }
 
     init(from decoder: Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self, allowing: ["$schema", "tokens", "packages"])
+        try decoder.rejectUnknownKeys(CodingKeys.self, allowing: ["$schema", "tokens", "packages", "theme"])
         let values = try decoder.container(keyedBy: CodingKeys.self)
         workspaceSource = try values.decodeIfPresent(WorkspaceSource.self, forKey: .workspaceSource) ?? .aerospace
         bar = try values.decodeIfPresent(BarSettings.self, forKey: .bar) ?? BarSettings()

@@ -289,6 +289,9 @@ import Testing
     let clockResult = try JSONSerialization.jsonObject(with: clockOnly) as! [String: Any]
     #expect(clockResult["defaults"] as! NSDictionary == result["defaults"] as! NSDictionary)
     #expect(clockResult["bar"] as! NSDictionary == result["bar"] as! NSDictionary)
+    let themed = try SetupPreferences(theme: .package(id: "slate", version: "1.0.0")).applying(to: updated, menuBarHeight: 24)
+    let themedResult = try JSONSerialization.jsonObject(with: themed) as! [String: Any]
+    #expect(themedResult["defaults"] as! NSDictionary == original["defaults"] as! NSDictionary)
 }
 
 @Test func setupRejectsInvalidConfigurationBeforeEditing() {

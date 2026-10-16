@@ -94,6 +94,10 @@
       "items": {
         "$ref": "#/definitions/packageSelection"
       }
+    },
+    "theme": {
+      "$ref": "#/definitions/packageSelection",
+      "description": "Installed theme package, applied after widget packages and before includes."
     }
   },
   "definitions": {

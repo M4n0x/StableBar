@@ -341,5 +341,5 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
         #expect(try properties(definitions[name]) == Set(keys.map(\.stringValue) + (name == "widget" ? ["template"] : [])), "\(name)")
     }
     #expect(try properties(.object(schema)) == Set(Configuration.CodingKeys.allCases.map(\.stringValue)
-        + ["$schema", "tokens", "packages", "includes", "profiles", "profile", "widgetOrder"]))
+        + ["$schema", "tokens", "packages", "theme", "includes", "profiles", "profile", "widgetOrder"]))
 }
