@@ -73,7 +73,7 @@ Unknown properties are errors, so a misspelled key cannot be silently ignored. T
 - `bar`: `height`, `offset`, `inset`, `spacing`, `background`, `animationDuration` (seconds), `displayScale`, `appearance` (`light` or `dark` keeps the bar and its popups in that appearance; omit it to follow the system).
 - `defaults`: styles inherited by every widget.
 - `workspaceSource`: `aerospace` (default) or `yabai`, for workspace widgets and active-display tracking.
-- `widgets`: ordered widget definitions with unique `id`, `type`, `position` and optional `style`, `icon`, `onClick`, `menu`, `popup`.
+- `widgets`: ordered widget definitions with unique `id`, `type`, `position` and optional `style`, `icon`, `onClick` or `open`, `menu`, `popup`.
 - `position`: `left`, `notchLeft`, `center`, `notchRight` or `right`.
 - Colors: `#RRGGBB` or `#RRGGBBAA` (alpha last), or `{ "light": "#RRGGBB", "dark": "#RRGGBB" }` for a color that follows the light or dark appearance.
 - Icons: SF Symbols names.
@@ -210,6 +210,8 @@ Enable an exact installed version in the root configuration:
 ```
 
 Package selections in modules merge by package ID, with later modules and the root taking precedence. Enabled packages load once before the composed modules and root properties. Root templates, tokens and widget overrides can customize them. Set `enabled` to `false` to stop loading a package; installation alone has no runtime effect. Packages cannot enable other packages. There is no network registry or automatic update process: versions remain pinned until you choose another installed version.
+
+A package whose `package.json` sets `"kind": "widgets"` runs no commands, so it needs no command review. Its configuration can contain only `tokens`, `defaults`, `bar`, `groups`, `profiles`, `widgets`, `templates`, `popups` and `providers`, plus includes inside the package. Nowhere in it, including templates, popups, providers and profiles, can it set `command`, `onClick`, `onClickField`, `rightClick`, `middleClick`, `scrollUp`, `scrollDown`, `mouseEntered`, `mouseExited`, `onChange` or `environment`, so script widgets and `command` or `stream` providers are rejected too. Built-in widget types, native providers and [`open`](#mouse-actions) remain available. StableBar checks this when the package is reviewed, installed and loaded, and **Customize → Packages** and `--inspect-package` say that it runs no commands instead of listing them. Enable it in `packages` like any widget package. [examples/packages/system-monitor](examples/packages/system-monitor/config.json) shows CPU and memory with a popup.
 
 ### Themes
 
@@ -369,7 +371,13 @@ Script output can also set `onClick` for a state-dependent click action; popups 
 
 ### Mouse actions
 
-Keep `onClick` for the primary action. Add `actions` to any widget for additional controls:
+Keep `onClick` for the primary action. To open a URL or an app without a shell, set `open` instead: an `http`, `https`, `mailto` or `x-apple.systempreferences` URL, or an application bundle identifier. StableBar opens it through macOS. Any other value is a configuration error, and a widget cannot set both `onClick` and `open`. A popup or menu takes precedence over either.
+
+```json
+{ "id": "date", "type": "clock", "position": "right", "format": "EEE d MMM", "open": "com.apple.iCal" }
+```
+
+Add `actions` to any widget for additional controls:
 
 ```json
 "actions": {
@@ -599,7 +607,7 @@ Output:
 - `fields.phase`: `none` when no meeting starts within `lookahead`; otherwise `later`, `soon`, `now`, or `live` while the meeting runs.
 - `fields.title`, `fields.start` and `fields.end`: the meeting in progress, or else the next one. Times use your short time format.
 - `fields.minutes`: whole minutes until it starts, or until it ends while `live`, rounded up.
-- `fields.link`: the first Google Meet (`meet.google.com`), Zoom (`zoom.us`) or Teams (`teams.microsoft.com`, `teams.live.com`) HTTPS URL in the event's URL, location or notes. A link ends at the first character other than `A–Z a–z 0–9 . _ ~ % / ? = & + # : @ -`, so it never contains a quote or other shell syntax. `fields.joinCommand` is `open '<link>'` and exists only with a link; use it with `onClickField`.
+- `fields.link`: the first Google Meet (`meet.google.com`), Zoom (`zoom.us`) or Teams (`teams.microsoft.com`, `teams.live.com`) HTTPS URL in the event's URL, location or notes. A link ends at the first character other than `A–Z a–z 0–9 . _ ~ % / ? = & + # : @ -`, so it never contains a quote or other shell syntax. Use it with `openField`. `fields.joinCommand` is `open '<link>'` and exists only with a link; use it with `onClickField`.
 - `values.remaining`: before the start, the share of the `soon` lead time left; while `live`, the share of the meeting left. `targets.remaining` is the value one minute later, so a progress block with a 60-second `linear` animation shrinks smoothly.
 - `lists.today`: today's events in start order, with `title`, `start` and `end`, plus `link` and `joinCommand` when the event has a link.
 
@@ -634,13 +642,13 @@ With access, the provider updates at each minute and phase boundary and when you
               "type": "row",
               "children": [
                 { "type": "field", "field": "title" },
-                { "type": "symbol", "name": "video", "onClickField": "joinCommand", "hideWhenEmpty": "joinCommand" }
+                { "type": "symbol", "name": "video", "openField": "link", "hideWhenEmpty": "link" }
               ]
             },
             {
               "type": "list", "source": "today",
               "row": {
-                "type": "row", "onClickField": "joinCommand",
+                "type": "row", "openField": "link",
                 "children": [
                   { "type": "field", "field": "start", "style": { "width": 56 } },
                   { "type": "field", "field": "title" }
@@ -756,7 +764,7 @@ Every block accepts `style` and `alignment` (`leading`, `center`, `trailing`). F
 
 Text and field blocks can set `scrollSpeed` in points per second with a fixed `style.width`. Overflow scrolls back and forth with a pause at each end; fitting text and Reduce Motion do not scroll. `hideWhenEmpty` names a field: the block occupies no space when that field is absent or empty, which is useful for optional list-row headings and pipeline details.
 
-Display blocks can also have `onClick`, or `onClickField` to read a command from the current fields/list row. This allows a symbol button or a clickable agenda row. A popup accepts `alignment` (`leading`, `center`, `trailing`) and `offset` for placement relative to its widget. A popup's optional `animation` controls its opening/closing fold and fade. Reduce Motion keeps only the fade. Native panel animation maps `smooth` and `spring` to ease-in-out; other curves retain their names. `dismissOnAction` defaults to `true`; set it to `false` for player controls that should keep the popup open. Images load asynchronously and update when their source path changes. Use a different local filename for each cover, or supply its URL.
+Display blocks can also have `onClick`, or `onClickField` to read a command from the current fields/list row. This allows a symbol button or a clickable agenda row. To open a URL or an app without a shell, use `open`, with the values a widget accepts, or `openField` to read one from the current fields/list row; a field value that `open` would reject does nothing when clicked. A block cannot combine `onClick` or `onClickField` with `open` or `openField`. A popup accepts `alignment` (`leading`, `center`, `trailing`) and `offset` for placement relative to its widget. A popup's optional `animation` controls its opening/closing fold and fade. Reduce Motion keeps only the fade. Native panel animation maps `smooth` and `spring` to ease-in-out; other curves retain their names. `dismissOnAction` defaults to `true`; set it to `false` for player controls that should keep the popup open. Images load asynchronously and update when their source path changes. Use a different local filename for each cover, or supply its URL.
 
 Controls pass their new value in the `VALUE` environment variable with `SENDER=control.changed`. Sliders send a number when editing ends, toggles send `true` or `false`, and segmented controls send the selected option's value. Read it as `"$VALUE"` in a shell command; StableBar never inserts the value into command text. Completed actions refresh the widget's data. Controls stay open by default; set `popup.dismissOnControl` to `true` to close after a change. `dismissOnAction` still controls buttons and list rows independently.
 

@@ -1,0 +1,47 @@
+{
+  "tokens": {
+    "textMuted": { "light": "#6e6e73", "dark": "#a1a1a6" },
+    "surfaceRaised": { "light": "#ffffff", "dark": "#323438" },
+    "track": { "light": "#1d1d1f26", "dark": "#f5f5f726" }
+  },
+  "providers": {
+    "system": { "type": "system", "interval": 2 }
+  },
+  "popups": {
+    "system-monitor": {
+      "style": { "width": 240, "spacing": 8 },
+      "layout": {
+        "type": "column",
+        "children": [
+          { "type": "graph", "height": 36 },
+          {
+            "type": "row",
+            "children": [
+              { "type": "text", "text": "CPU", "style": { "foreground": "@token.textMuted" } },
+              { "type": "field", "field": "cpu", "alignment": "trailing" },
+              { "type": "text", "text": "%", "style": { "width": 14 } }
+            ]
+          },
+          { "type": "progress", "source": "cpu", "height": 4, "style": { "background": "@token.track" } },
+          {
+            "type": "row",
+            "children": [
+              { "type": "text", "text": "Memory", "style": { "foreground": "@token.textMuted" } },
+              { "type": "field", "field": "memory", "alignment": "trailing" },
+              { "type": "text", "text": "%", "style": { "width": 14 } }
+            ]
+          },
+          { "type": "progress", "source": "memory", "height": 4, "style": { "background": "@token.track" } },
+          { "type": "divider" },
+          {
+            "type": "text", "text": "Open Activity Monitor", "open": "com.apple.ActivityMonitor",
+            "style": { "paddingHorizontal": 6, "paddingVertical": 4, "cornerRadius": 6, "hoverBackground": "@token.surfaceRaised" }
+          }
+        ]
+      }
+    }
+  },
+  "widgets": [
+    { "id": "system-monitor", "type": "system", "position": "right", "popupName": "system-monitor" }
+  ]
+}
