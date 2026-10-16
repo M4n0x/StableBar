@@ -73,9 +73,21 @@ struct PopupBlockView: View {
     let inheritedStyle: WidgetStyle
     let fields: [String: String]
     let context: BlockContext
-    @State private var hovered = false
+    @State private var pointerInside: Bool
     @State private var query = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// `pointerInside` starts the block with the pointer over it; tests use it, as drawing has no pointer.
+    init(block: PopupBlock, inheritedStyle: WidgetStyle, fields: [String: String], context: BlockContext, pointerInside: Bool = false) {
+        self.block = block
+        self.inheritedStyle = inheritedStyle
+        self.fields = fields
+        self.context = context
+        _pointerInside = State(initialValue: pointerInside)
+    }
+
+    /// Whether the block shows its hover: only where it tracks hover, not in a default layout.
+    private var hovered: Bool { pointerInside && context.tracksHover }
 
     @ViewBuilder
     var body: some View {
@@ -139,7 +151,7 @@ struct PopupBlockView: View {
             }
             .offset(x: box.offsetX ?? 0, y: box.offsetY ?? 0)
             .opacity(box.opacity ?? 1)
-            .onHover { if context.tracksHover { hovered = $0 } }
+            .onHover { pointerInside = $0 }
             .animation(reduceMotion ? nil : block.animation?.value, value: box)
             .animation(reduceMotion ? nil : block.animation?.value, value: hovered)
     }

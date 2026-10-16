@@ -44,7 +44,10 @@ private func output(_ json: String) throws -> ScriptOutput {
             store.activeApp = NSRunningApplication.current
         }
     }
-    #expect(store.label(for: app).text == NSRunningApplication.current.localizedName ?? "Desktop")
+    _ = NSApplication.shared
+    let name = try #require(NSRunningApplication.current.localizedName)
+    #expect(name != "Desktop")
+    #expect(store.label(for: app).text == name)
 }
 
 @Test @MainActor func snapshotsShowWhatEveryWidgetShows() async throws {

@@ -33,21 +33,17 @@ private struct Drawing {
     }
 }
 
-/// How far a color channel may differ between two drawings that should match. A process draws its
-/// first few images one step differently on some antialiased pixels than later ones, and under load
-/// that change can come between any two drawings. Real differences are far larger.
+/// How far a color channel may differ between two drawings that should match. A process draws some
+/// antialiased pixels one step (1/255) differently when it first draws new content, and under load
+/// that change can come between any two drawings; the first graph case fails at 0 in every run. Real
+/// differences are far larger.
 private let tolerance = 1
 
-/// `content` drawn at 2×, after one drawing that is discarded to warm up the renderer. A renderer
-/// keeps the image it drew, so each drawing has its own.
+/// `content` drawn at 2×.
 @MainActor private func draw(_ content: some View) throws -> Drawing {
-    func render() -> CGImage? {
-        let renderer = ImageRenderer(content: content)
-        renderer.scale = 2
-        return renderer.cgImage
-    }
-    _ = render()
-    let image = try #require(render())
+    let renderer = ImageRenderer(content: content)
+    renderer.scale = 2
+    let image = try #require(renderer.cgImage)
     let context = try #require(CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
                                          bytesPerRow: image.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
@@ -57,15 +53,27 @@ private let tolerance = 1
                    rgba: Array(UnsafeRawBufferPointer(start: data, count: image.width * image.height * 4)))
 }
 
+/// An active-app widget's default layout, drawn with `icon` as the frontmost app's icon and `name`
+/// as its name, so the drawing doesn't depend on the apps running when the test does.
+@MainActor private func appBlocks(_ widget: StableBar.WidgetConfiguration, name: String?, icon: NSImage, style: LayoutStyle, date: Date) throws -> some View {
+    let label = widget.label(output: nil, activeApp: name, date: date)
+    let layout = try #require(widget.defaultLayout(label, output: nil, appIcon: true))
+    return PopupBlockView(block: layout,
+                          inheritedStyle: style.inherited, fields: label.fields,
+                          context: BlockContext(fillsWidth: false, open: { _ in }, states: style.states, tracksHover: style.tracksHover, appIcon: icon,
+                                                runAction: { _, _ in }))
+}
+
 @Test @MainActor func defaultLayoutsDrawExactlyLikeBuiltInWidgets() throws {
     let date = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 15, hour: 9, minute: 41)))
-    let cases: [(widget: String, output: String?, frontmost: NSRunningApplication?)] = [
+    let icon = NSWorkspace.shared.icon(forFile: "/System/Library/CoreServices/Finder.app")
+    let cases: [(widget: String, output: String?, app: String?)] = [
         (#"{"id":"w","type":"text","text":"Ready 12%","icon":"bolt","position":"left"}"#, nil, nil),
         (#"{"id":"w","type":"text","text":"Ready","icon":"","position":"left"}"#, nil, nil),
         (#"{"id":"w","type":"text","text":"","icon":"apple.logo","position":"left"}"#, nil, nil),
         (#"{"id":"w","type":"text","text":"Ready","position":"left"}"#, nil, nil),
         (#"{"id":"w","type":"clock","format":"EEE d MMM  HH:mm","icon":"clock","position":"right"}"#, nil, nil),
-        (#"{"id":"w","type":"activeApp","position":"left"}"#, nil, .current),
+        (#"{"id":"w","type":"activeApp","position":"left"}"#, nil, "Finder"),
         (#"{"id":"w","type":"activeApp","position":"left"}"#, nil, nil),
         (#"{"id":"w","type":"script","command":"true","icon":"bolt","position":"right"}"#, #"{"text":"Busy 3","icon":"hammer"}"#, nil),
         (#"{"id":"w","type":"script","command":"true","icon":"cpu","position":"right"}"#, #"{"text":"12%","value":0.12}"#, nil),
@@ -83,7 +91,7 @@ private let tolerance = 1
     for item in cases {
         let widget = try decode(WidgetConfiguration.self, item.widget)
         let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).json"))
-        store.activeApp = item.frontmost
+        store.activeApp = nil
         if let json = item.output {
             let script = ScriptWidget()
             script.output = try ScriptOutput.read(Data(json.utf8))
@@ -93,17 +101,18 @@ private let tolerance = 1
         let script = store.scripts[widget.id]
         for (index, style) in styles.enumerated() {
             let resolution = ResolvedWidgetStyle(base: resolveStyle([style, widget.style]))
-            for (hovered, open) in [(false, false), (true, true)] {
+            for (hovered, open) in [(false, false), (true, false), (false, true), (true, true)] {
                 let appearance = WidgetAppearance(resolution.style(hovered: hovered, open: open), defaults: WidgetStyle())
-                let builtIn = BuiltInLabel(content: widget.content, label: store.label(for: widget, date: date),
-                                           appIcon: widget.content == .activeApp ? store.activeApp?.icon : nil,
+                let builtIn = BuiltInLabel(content: widget.content,
+                                           label: widget.label(output: script?.output, activeApp: item.app, date: date),
+                                           appIcon: item.app == nil ? nil : icon,
                                            samples: script?.output.value == nil ? nil : script?.samples, appearance: appearance)
-                let blocks = WidgetBlocks(widget: widget, store: store,
-                                          style: resolution.layoutStyle(configured: false, hovered: hovered, open: open),
-                                          date: date, runAction: { _, _ in })
+                let layoutStyle = resolution.layoutStyle(configured: false, hovered: hovered, open: open)
+                let drawn = try item.app == nil
+                    ? draw(boxed(WidgetBlocks(widget: widget, store: store, style: layoutStyle, date: date, runAction: { _, _ in }), appearance))
+                    : draw(boxed(try appBlocks(widget, name: item.app, icon: icon, style: layoutStyle, date: date), appearance))
                 let expected = try draw(boxed(builtIn, appearance))
-                let drawn = try draw(boxed(blocks, appearance))
-                let name = "\(item.widget) with style \(index), hovered and open: \(hovered)"
+                let name = "\(item.widget) with style \(index), hovered: \(hovered), open: \(open)"
                 #expect(Double(expected.width) / 2 > appearance.paddingHorizontal * 2, "\(name) draws something")
                 #expect(drawn.width == expected.width && drawn.height == expected.height, "\(name)")
                 #expect(drawn.difference(from: expected) <= tolerance, "\(name)")
@@ -144,6 +153,23 @@ private let tolerance = 1
     #expect(script.defaultLayout(WidgetLabel(text: "…", icon: nil, fields: [:]), output: nil, appIcon: false) == nil)
     let spaces = try decode(WidgetConfiguration.self, #"{"id":"w","type":"workspaces","position":"left"}"#)
     #expect(spaces.defaultLayout(WidgetLabel(text: "", icon: nil, fields: [:]), output: nil, appIcon: false) == nil)
+}
+
+@Test @MainActor func blocksShowTheirHoverOnlyWhereTheyTrackIt() throws {
+    let resolution = ResolvedWidgetStyle(base: try decode(WidgetStyle.self, ##"""
+    {"foreground":"#2255cc","states":{"hover":{"foreground":"#cc2222"},"open":{"foreground":"#22aa44"}}}
+    """##))
+    let text = PopupBlock(content: .text("Ready"))
+    func drawing(_ style: LayoutStyle, pointerInside: Bool) throws -> Drawing {
+        let context = BlockContext(fillsWidth: false, open: { _ in }, states: style.states, tracksHover: style.tracksHover, runAction: { _, _ in })
+        return try draw(PopupBlockView(block: text, inheritedStyle: style.inherited, fields: [:], context: context, pointerInside: pointerInside))
+    }
+    let configured = resolution.layoutStyle(configured: true, hovered: false, open: false)
+    #expect(try drawing(configured, pointerInside: true).difference(from: drawing(configured, pointerInside: false)) > tolerance,
+            "A configured layout's block shows its hover")
+    let byDefault = resolution.layoutStyle(configured: false, hovered: true, open: true)
+    #expect(try drawing(byDefault, pointerInside: true).difference(from: drawing(byDefault, pointerInside: false)) <= tolerance,
+            "A default layout's block keeps the hover and open style it inherited")
 }
 
 @Test @MainActor func onlyActiveAppBlocksRedrawWhenTheFrontmostAppChanges() async throws {
