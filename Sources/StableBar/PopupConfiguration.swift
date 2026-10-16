@@ -60,13 +60,15 @@ struct PopupBlock: Decodable, Sendable {
     let styleField: String?
     let onClick: String?
     let onClickField: String?
+    let open: String?
+    let openField: String?
     let hideWhenEmpty: String?
     let scrollSpeed: Double?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case type, style, alignment, children, text, field, height, source, row, title, onClick
         case path, fit, name, animation, styleSource, styleField, onClickField, lineWidth
-        case hideWhenEmpty, scrollSpeed, min, max, step, onChange, options, searchFields
+        case hideWhenEmpty, scrollSpeed, min, max, step, onChange, options, searchFields, open, openField
     }
 
     init(content: PopupContent) {
@@ -78,6 +80,8 @@ struct PopupBlock: Decodable, Sendable {
         styleField = nil
         onClick = nil
         onClickField = nil
+        open = nil
+        openField = nil
         hideWhenEmpty = nil
         scrollSpeed = nil
     }
@@ -92,6 +96,14 @@ struct PopupBlock: Decodable, Sendable {
         styleField = try values.decodeIfPresent(String.self, forKey: .styleField)
         onClick = try values.decodeIfPresent(String.self, forKey: .onClick)
         onClickField = try values.decodeIfPresent(String.self, forKey: .onClickField)
+        open = try values.decodeIfPresent(String.self, forKey: .open)
+        openField = try values.decodeIfPresent(String.self, forKey: .openField)
+        if let open, OpenTarget(open) == nil {
+            throw DecodingError.dataCorruptedError(forKey: .open, in: values, debugDescription: "Use an http, https, mailto or x-apple.systempreferences URL, or an application bundle identifier such as com.apple.iCal.")
+        }
+        if onClick != nil || onClickField != nil, open != nil || openField != nil {
+            throw DecodingError.dataCorruptedError(forKey: .open, in: values, debugDescription: "A block cannot combine onClick or onClickField with open or openField.")
+        }
         hideWhenEmpty = try values.decodeIfPresent(String.self, forKey: .hideWhenEmpty)
         scrollSpeed = try values.decodeIfPresent(Double.self, forKey: .scrollSpeed)
         if let scrollSpeed, scrollSpeed <= 0 {

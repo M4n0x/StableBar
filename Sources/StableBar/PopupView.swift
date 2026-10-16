@@ -19,7 +19,10 @@ struct PopupView: View {
                 PopupBlockView(block: popup.layout, inheritedStyle: style,
                                fields: fields, lists: lists, samples: samples, menu: menu,
                                values: script?.output.values ?? [:], targets: script?.output.targets ?? [:],
-                               styles: script?.output.styles ?? [:], series: script?.output.series ?? [:]) { command, environment in
+                               styles: script?.output.styles ?? [:], series: script?.output.series ?? [:], open: { target in
+                    if popup.dismissOnAction { store.popup.close() }
+                    target.open()
+                }) { command, environment in
                     if environment.isEmpty ? popup.dismissOnAction : popup.dismissOnControl { store.popup.close() }
                     store.runAction(command, widget: widget,
                                     event: ScriptEvent(sender: environment.isEmpty ? "mouse.clicked" : "control.changed", environment: environment))
@@ -53,6 +56,7 @@ struct PopupBlockView: View {
     var styles: [String: WidgetStyle] = [:]
     var series: [String: [Double]] = [:]
     var fillsWidth = true
+    let open: (OpenTarget) -> Void
     let runAction: (String, [String: String]) -> Void
     @State private var hovered = false
     @State private var query = ""
@@ -90,6 +94,9 @@ struct PopupBlockView: View {
             } else if let command = block.onClickField.flatMap({ fields[$0] }) ?? block.onClick {
                 Button { runAction(command, [:]) } label: { content(style, ownStyle: ownStyle, appearance: appearance) }
                     .buttonStyle(.plain)
+            } else if let value = block.openField.flatMap({ fields[$0] }) ?? block.open {
+                Button { if let target = OpenTarget(value) { open(target) } } label: { content(style, ownStyle: ownStyle, appearance: appearance) }
+                    .buttonStyle(.plain)
             } else {
                 content(style, ownStyle: ownStyle, appearance: appearance)
             }
@@ -124,7 +131,7 @@ struct PopupBlockView: View {
                 ForEach(Array(children.enumerated()), id: \.offset) { _, child in
                     AnyView(PopupBlockView(block: child, inheritedStyle: style, fields: fields,
                                           lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, runAction: runAction))
+                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, runAction: runAction))
                 }
             }
         case let .column(children):
@@ -132,7 +139,7 @@ struct PopupBlockView: View {
                 ForEach(Array(children.enumerated()), id: \.offset) { _, child in
                     AnyView(PopupBlockView(block: child, inheritedStyle: style, fields: fields,
                                           lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, runAction: runAction))
+                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, runAction: runAction))
                 }
             }
         case let .text(text):
@@ -157,7 +164,7 @@ struct PopupBlockView: View {
                 ForEach(Array((lists[source] ?? []).enumerated()), id: \.offset) { _, fields in
                     AnyView(PopupBlockView(block: row, inheritedStyle: style, fields: fields,
                                           lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, runAction: runAction))
+                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, runAction: runAction))
                 }
             }
         case let .button(title, command):
@@ -182,7 +189,7 @@ struct PopupBlockView: View {
                 ForEach(Array(searchPopupRows(lists[source] ?? [], query: query, fields: searchFields).enumerated()), id: \.offset) { _, fields in
                     AnyView(PopupBlockView(block: row, inheritedStyle: style, fields: fields,
                                           lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, runAction: runAction))
+                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, runAction: runAction))
                 }
             }
         case .menu:

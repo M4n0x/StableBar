@@ -312,12 +312,22 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
         (#"{"widgets":[],"bar":{"displayScale":{"buildIn":0.8}}}"#, "bar.displayScale: Use builtIn or external with a positive number."),
         (#"{"widgets":[],"bar":{"displayScale":{"external":0}}}"#, "bar.displayScale: Use builtIn or external with a positive number."),
         (#"{"widgets":[],"profiles":[{"name":"dark","when":{"apperance":"dark"},"configuration":{}}]}"#, "profiles.0.when.apperance: Unknown property."),
+        (#"{"widgets":[{"id":"date","type":"clock","position":"right","open":"Calendar"}]}"#, "widgets.date: open: Use an http, https, mailto or x-apple.systempreferences URL, or an application bundle identifier such as com.apple.iCal."),
+        (#"{"widgets":[{"id":"date","type":"clock","position":"right","open":"file:///Applications/Calendar.app"}]}"#, "widgets.date: open: Use an http, https, mailto or x-apple.systempreferences URL, or an application bundle identifier such as com.apple.iCal."),
+        (#"{"widgets":[{"id":"date","type":"clock","position":"right","onClick":"open -a Calendar","open":"com.apple.iCal"}]}"#, "widgets.date: open: A widget cannot set both onClick and open."),
+        (#"{"widgets":[],"popups":{"agenda":{"style":{},"layout":{"type":"row","onClickField":"joinCommand","openField":"link","children":[]}}}}"#, "popups.agenda.layout.open: A block cannot combine onClick or onClickField with open or openField."),
         (#"{"widgets":[}"#, "The given data was not valid JSON. Unexpected character '}' around line 1, column 13.")
     ] {
         let error = #expect(throws: (any Error).self) { try loader.load(url, data: Data(json.utf8)) }
         #expect(error.map(errorMessage) == message)
     }
     #expect(try loader.load(url, data: Data(#"{"$schema":"stablebar.schema.json","widgets":[]}"#.utf8)).widgets.isEmpty)
+    let opening = try loader.load(url, data: Data(#"""
+    {"widgets":[{"id":"date","type":"clock","position":"right","open":"com.apple.iCal",
+      "popup":{"style":{},"layout":{"type":"row","openField":"link","open":"x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars","children":[]}}}]}
+    """#.utf8))
+    #expect(opening.widgets[0].open == "com.apple.iCal")
+    #expect(opening.widgets[0].popup?.layout.openField == "link")
 }
 
 @Test func schemaListsTheSamePropertiesAsTheDecoders() throws {

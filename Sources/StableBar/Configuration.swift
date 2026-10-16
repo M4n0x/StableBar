@@ -235,6 +235,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let content: WidgetContent
     let icon: String?
     let onClick: String?
+    let open: String?
     let menu: [WidgetMenuItem]?
     let popup: PopupConfiguration?
     let popupName: String?
@@ -254,7 +255,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let overflow: WidgetOverflow
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case id, position, type, icon, onClick, menu, popup, popupName, style, format, text, command, interval
+        case id, position, type, icon, onClick, open, menu, popup, popupName, style, format, text, command, interval
         case display, layout, overlay, animation, workspace, events, environment, timeout, actions, enabled, provider, group, priority, overflow
     }
 
@@ -265,6 +266,13 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
         position = try values.decode(WidgetPosition.self, forKey: .position)
         icon = try values.decodeIfPresent(String.self, forKey: .icon)
         onClick = try values.decodeIfPresent(String.self, forKey: .onClick)
+        open = try values.decodeIfPresent(String.self, forKey: .open)
+        if let open, OpenTarget(open) == nil {
+            throw DecodingError.dataCorruptedError(forKey: .open, in: values, debugDescription: "Use an http, https, mailto or x-apple.systempreferences URL, or an application bundle identifier such as com.apple.iCal.")
+        }
+        if onClick != nil, open != nil {
+            throw DecodingError.dataCorruptedError(forKey: .open, in: values, debugDescription: "A widget cannot set both onClick and open.")
+        }
         menu = try values.decodeIfPresent([WidgetMenuItem].self, forKey: .menu)
         popup = try values.decodeIfPresent(PopupConfiguration.self, forKey: .popup)
         popupName = try values.decodeIfPresent(String.self, forKey: .popupName)
