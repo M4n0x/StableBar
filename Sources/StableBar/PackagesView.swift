@@ -6,6 +6,11 @@ struct PackagesView: View {
     @State private var installed: [WidgetPackageManifest] = []
     @State private var selections: [WidgetPackageSelection] = []
     @State private var inspection: WidgetPackageInspection?
+    @State private var storeEntries: [PackageIndex.Entry] = []
+    @State private var storeEntry: PackageIndex.Entry?
+    @State private var storeError: String?
+    @State private var downloading: String?
+    @State private var additions: [String] = []
     @State private var settings: [String: ConfigurationValue] = [:]
     @State private var error: String?
 
@@ -16,12 +21,30 @@ struct PackagesView: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                List(selection: Binding(get: { inspection?.manifest.versionKey }, set: { key in
-                    if let manifest = installed.first(where: { $0.versionKey == key }) {
+                List(selection: Binding(get: { downloading ?? inspection.map { isInstalled($0) ? $0.manifest.versionKey : "store/\($0.manifest.versionKey)" } }, set: { key in
+                    if let manifest = installed.first(where: { $0.versionKey == key || "store/\($0.versionKey)" == key }) {
+                        downloading = nil
                         perform { try select(packages.directory(id: manifest.id, version: manifest.version)) }
+                    } else if let entry = storeEntries.first(where: { "store/\($0.id)/\($0.version)" == key }) {
+                        downloading = key
+                        Task {
+                            do {
+                                let directory = try await packages.download(entry, from: PackageIndex.url)
+                                guard downloading == key else { return }
+                                downloading = nil
+                                perform { try select(directory, from: entry) }
+                            } catch {
+                                guard downloading == key else { return }
+                                downloading = nil
+                                self.error = errorMessage(error)
+                            }
+                        }
                     }
                 })) {
                     Section("Installed") {
+                        if installed.isEmpty {
+                            Text("No packages installed").foregroundStyle(.secondary)
+                        }
                         ForEach(installed, id: \.versionKey) { manifest in
                             Label {
                                 HStack {
@@ -40,13 +63,68 @@ struct PackagesView: View {
                             .padding(.vertical, 2)
                         }
                     }
-                }
-                .listStyle(.sidebar)
-                .overlay {
-                    if installed.isEmpty {
-                        Text("No packages installed").foregroundStyle(.secondary)
+                    Section {
+                        if let storeError {
+                            Label(storeError, systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        ForEach(storeEntries, id: \.id) { entry in
+                            let installedVersions = installed.filter { $0.id == entry.id }.map(\.version)
+                            let tooOld = entry.minimumVersion.map(packages.requiresNewerApp) == true
+                            let kind = switch entry.kind {
+                            case .theme?: "theme"
+                            case .widgets?: "contains no commands"
+                            case nil: "runs commands"
+                            }
+                            Label {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(entry.name).lineLimit(1)
+                                        Text("\(entry.version) · \(kind)").font(.caption).foregroundStyle(.secondary)
+                                        if let description = entry.description {
+                                            Text(description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                        }
+                                        if tooOld {
+                                            Text("Requires StableBar \(entry.minimumVersion!)").font(.caption).foregroundStyle(.orange)
+                                        }
+                                    }
+                                    Spacer()
+                                    if installedVersions.contains(entry.version) {
+                                        Text("Installed")
+                                            .font(.caption.weight(.medium))
+                                            .foregroundStyle(.secondary)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.primary.opacity(0.06), in: Capsule())
+                                    } else if !installedVersions.isEmpty, installedVersions.allSatisfy({ entry.version.compare($0, options: .numeric) == .orderedDescending }) {
+                                        Text("Update")
+                                            .font(.caption.weight(.medium))
+                                            .foregroundStyle(Color.accentColor)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.accentColor.opacity(0.12), in: Capsule())
+                                    }
+                                }
+                            } icon: {
+                                Image(systemName: "arrow.down.circle")
+                            }
+                            .padding(.vertical, 2)
+                            .tag("store/\(entry.id)/\(entry.version)")
+                            .selectionDisabled(tooOld)
+                        }
+                    } header: {
+                        HStack {
+                            Text("Store")
+                            Spacer()
+                            Button("Reload Store", systemImage: "arrow.clockwise") { Task { await loadStore() } }
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
+                                .help("Reload the store")
+                        }
                     }
                 }
+                .listStyle(.sidebar)
                 Divider()
                 HStack {
                     Button("Review Package Folder…", systemImage: "folder.badge.plus", action: chooseFolder)
@@ -59,13 +137,16 @@ struct PackagesView: View {
             .frame(minWidth: 220, maxWidth: 300, maxHeight: .infinity)
 
             VStack(spacing: 0) {
-                if let inspection {
+                if downloading != nil {
+                    ProgressView("Downloading…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let inspection {
                     packageDetails(inspection)
                 } else {
                     ContentUnavailableView {
                         Label("Widget packages", systemImage: "shippingbox")
                     } description: {
-                        Text("Choose a local package folder to review its settings and commands.")
+                        Text("Choose a package from the store or a local folder to review its settings and commands.")
                     } actions: {
                         Button("Review Package Folder…", action: chooseFolder)
                     }
@@ -86,6 +167,7 @@ struct PackagesView: View {
             .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear { perform(loadInstalled) }
+        .task { await loadStore() }
         .onChange(of: store.effectiveDocument) { _, _ in perform(loadInstalled) }
         .onChange(of: settings) { _, values in
             if let inspection {
@@ -96,8 +178,7 @@ struct PackagesView: View {
 
     private func packageDetails(_ inspection: WidgetPackageInspection) -> some View {
         let manifest = inspection.manifest
-        let installedDirectory = packages.directory.appending(path: manifest.id).appending(path: manifest.version)
-        let isInstalled = inspection.directory.standardizedFileURL == installedDirectory.standardizedFileURL
+        let isInstalled = self.isInstalled(inspection)
         let isEnabled = selections.contains { $0.id == manifest.id && $0.version == manifest.version && $0.enabled }
         return VStack(spacing: 0) {
             Form {
@@ -110,6 +191,9 @@ struct PackagesView: View {
                             .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(manifest.name).font(.title3.weight(.semibold))
+                            if let description = manifest.description {
+                                Text(description)
+                            }
                             Text("\(manifest.id) · Version \(manifest.version)").foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -120,16 +204,57 @@ struct PackagesView: View {
                             .padding(.vertical, 3)
                             .background(isEnabled ? Color.green.opacity(0.15) : Color.primary.opacity(0.06), in: Capsule())
                     }
-                    LabeledContent("Location") {
+                    LabeledContent(storeEntry == nil ? "Location" : "Source") {
                         HStack {
-                            Text(inspection.directory.path)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .textSelection(.enabled)
+                            if let storeEntry {
+                                Link(storeEntry.source.absoluteString, destination: storeEntry.source)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            } else {
+                                Text(inspection.directory.path)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .textSelection(.enabled)
+                            }
                             Button("Open", systemImage: "arrow.up.forward.app") { NSWorkspace.shared.open(inspection.directory) }
                                 .labelStyle(.iconOnly)
                                 .buttonStyle(.borderless)
                                 .help("Open folder in Finder")
+                        }
+                    }
+                    if let author = manifest.author {
+                        LabeledContent("Author", value: author)
+                    }
+                    if let repository = manifest.repository {
+                        LabeledContent("Repository") {
+                            Link(repository.absoluteString, destination: repository)
+                        }
+                    }
+                    if let screenshot = inspection.screenshot, let image = NSImage(contentsOf: screenshot) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity, maxHeight: 200)
+                    }
+                }
+                if manifest.minimumVersion != nil || !manifest.requires.isEmpty || !manifest.permissions.isEmpty || !manifest.hosts.isEmpty {
+                    Section("Requirements") {
+                        if let minimumVersion = manifest.minimumVersion {
+                            LabeledContent("StableBar", value: "\(minimumVersion) or later")
+                        }
+                        if !manifest.requires.isEmpty {
+                            LabeledContent("Tools", value: manifest.requires.joined(separator: ", "))
+                            let missing = manifest.missingTools(path: shellEnvironment.withLock { $0["PATH", default: ""] })
+                            if !missing.isEmpty {
+                                Label("Not found on your login shell’s PATH: \(missing.joined(separator: ", "))", systemImage: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        if !manifest.permissions.isEmpty {
+                            LabeledContent("Permissions", value: manifest.permissions.map(\.rawValue.capitalized).joined(separator: ", "))
+                        }
+                        if !manifest.hosts.isEmpty {
+                            LabeledContent("Hosts", value: manifest.hosts.joined(separator: ", "))
                         }
                     }
                 }
@@ -174,7 +299,7 @@ struct PackagesView: View {
                         Button("Disable") { perform { try activate(manifest, enabled: false) } }
                     }
                     Button(isEnabled ? "Save Settings" : "Enable Version \(manifest.version)") {
-                        perform { try activate(manifest, enabled: true) }
+                        perform { try enable(inspection) }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(error != nil)
@@ -183,6 +308,7 @@ struct PackagesView: View {
                         perform {
                             let installed = try packages.install(inspection.directory)
                             self.inspection = try packages.inspect(installed.directory, settings: settings)
+                            storeEntry = nil
                             try loadInstalled()
                         }
                     }
@@ -194,6 +320,12 @@ struct PackagesView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
+        .confirmationDialog("Enable \(manifest.name) \(manifest.version)?",
+                            isPresented: Binding(get: { !additions.isEmpty }, set: { if !$0 { additions = [] } })) {
+            Button("Enable Version \(manifest.version)") { perform { try activate(manifest, enabled: true) } }
+        } message: {
+            Text("Compared with the enabled version, this version adds:\n\(additions.joined(separator: "\n"))")
+        }
     }
 
     private func chooseFolder() {
@@ -202,22 +334,50 @@ struct PackagesView: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Review package"
-        if panel.runModal() == .OK, let url = panel.url { perform { try select(url) } }
+        if panel.runModal() == .OK, let url = panel.url {
+            downloading = nil
+            perform { try select(url) }
+        }
     }
 
-    private func select(_ directory: URL) throws {
+    private func select(_ directory: URL, from entry: PackageIndex.Entry? = nil) throws {
         let manifest = try packages.manifest(at: directory)
         let supplied = selections.first { $0.id == manifest.id && $0.version == manifest.version }?.settings ?? [:]
         let values = try manifest.values(supplied)
         let reviewed = try packages.inspect(directory, settings: values)
         settings = values
         inspection = reviewed
+        storeEntry = entry
+    }
+
+    private func isInstalled(_ inspection: WidgetPackageInspection) -> Bool {
+        let installedDirectory = packages.directory.appending(path: inspection.manifest.id).appending(path: inspection.manifest.version)
+        return inspection.directory.standardizedFileURL == installedDirectory.standardizedFileURL
+    }
+
+    private func loadStore() async {
+        do {
+            storeEntries = try await PackageIndex.load(from: PackageIndex.url).packages
+            storeError = nil
+        } catch {
+            storeError = errorMessage(error)
+        }
     }
 
     private func loadInstalled() throws {
         installed = try packages.list()
         selections = try store.effectiveDocument["packages"]?.decoded([WidgetPackageSelection].self) ?? []
         if let theme = store.effectiveDocument["theme"] { selections.append(try theme.decoded(WidgetPackageSelection.self)) }
+    }
+
+    private func enable(_ inspection: WidgetPackageInspection) throws {
+        if let enabled = selections.first(where: { $0.id == inspection.manifest.id && $0.enabled && $0.version != inspection.manifest.version }),
+           let version = enabled.version {
+            let previous = try packages.inspect(packages.directory(id: enabled.id, version: version), settings: enabled.settings)
+            additions = inspection.additions(since: previous)
+            if !additions.isEmpty { return }
+        }
+        try activate(inspection.manifest, enabled: true)
     }
 
     private func activate(_ manifest: WidgetPackageManifest, enabled: Bool) throws {

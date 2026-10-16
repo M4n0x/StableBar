@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import StableBar
@@ -356,6 +357,114 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     let configuration = try loader.load(root, data: Data(#"{"packages":[{"id":"monitor","version":"1"}]}"#.utf8))
     #expect(configuration.widgets.map(\.id) == ["cpu"])
     #expect(throws: WidgetPackageError.self) { try loader.load(root, data: Data(#"{"theme":{"id":"monitor","version":"1"}}"#.utf8)) }
+}
+
+@Test func manifestsDeclareWhatAPackageNeedsAndKeepTheirScreenshotInside() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    let store = WidgetPackageStore(directory: directory.appending(path: "packages"))
+    let manifest = #"""
+    {"id":"weather","name":"Weather","version":"1","entry":"config.json","description":"Current conditions.","author":"StableBar",
+     "repository":"https://github.com/Seb-GRAF/stablebar-packages","screenshot":"screenshot.png","minimumVersion":"0.6.0",
+     "requires":["jq","gh","brew"],"permissions":["location"],"hosts":["wttr.in"]}
+    """#
+    try writePackageFile(manifest, to: source.appending(path: "package.json"))
+    try writePackageFile(#"{"widgets":[]}"#, to: source.appending(path: "config.json"))
+    try writePackageFile("image", to: source.appending(path: "screenshot.png"))
+    try writePackageFile("image", to: directory.appending(path: "outside.png"))
+    let inspection = try store.inspect(source)
+    #expect(inspection.manifest.description == "Current conditions.")
+    #expect(inspection.manifest.author == "StableBar")
+    #expect(inspection.manifest.repository == URL(string: "https://github.com/Seb-GRAF/stablebar-packages"))
+    #expect(inspection.manifest.minimumVersion == "0.6.0")
+    #expect(inspection.manifest.permissions == [.location])
+    #expect(inspection.manifest.hosts == ["wttr.in"])
+    #expect(inspection.screenshot?.path == source.appending(path: "screenshot.png").path)
+    let tools = directory.appending(path: "bin")
+    try writePackageFile("#!/bin/sh\n", to: tools.appending(path: "jq"))
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tools.appending(path: "jq").path)
+    try writePackageFile("", to: tools.appending(path: "gh"))
+    #expect(inspection.manifest.missingTools(path: "/missing:\(tools.path)") == ["gh", "brew"])
+    for (value, replacement) in [("screenshot.png", "../outside.png"), (#"["location"]"#, #"["camera"]"#), ("https://github.com", "http://github.com")] {
+        try writePackageFile(manifest.replacingOccurrences(of: value, with: replacement), to: source.appending(path: "package.json"))
+        #expect(throws: (any Error).self) { try store.inspect(source) }
+    }
+}
+
+@Test func packagesThatNeedANewerStableBarFailReviewAndInstall() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    let store = WidgetPackageStore(directory: directory.appending(path: "packages"), appVersion: "0.9.0")
+    try writePackageFile(#"{"id":"clock","name":"Clock","version":"1","entry":"config.json","minimumVersion":"0.10.0"}"#,
+                         to: source.appending(path: "package.json"))
+    try writePackageFile(#"{"widgets":[]}"#, to: source.appending(path: "config.json"))
+    let error = #expect(throws: WidgetPackageError.self) { try store.inspect(source) }
+    #expect(error?.localizedDescription == "Package clock needs StableBar 0.10.0 or later.")
+    #expect(throws: WidgetPackageError.self) { try store.install(source) }
+    _ = try WidgetPackageStore(directory: store.directory, appVersion: nil).inspect(source)
+    for version in ["0.9.0", "0.8.12"] {
+        try writePackageFile(#"{"id":"clock","name":"Clock","version":"1","entry":"config.json","minimumVersion":"\#(version)"}"#,
+                             to: source.appending(path: "package.json"))
+        _ = try store.inspect(source)
+    }
+    _ = try store.install(source)
+}
+
+@Test func storePackagesInstallFromTheIndexOnlyWhenTheirArchiveMatches() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    let store = WidgetPackageStore(directory: directory.appending(path: "packages"))
+    try writePackageFile(#"{"id":"clock","name":"Clock","version":"1","kind":"widgets","entry":"config.json"}"#,
+                         to: source.appending(path: "package.json"))
+    try writePackageFile(#"{"widgets":[{"id":"clock","type":"clock","position":"right"}]}"#, to: source.appending(path: "config.json"))
+    let archive = directory.appending(path: "store/clock-1.tar.gz")
+    try FileManager.default.createDirectory(at: archive.deletingLastPathComponent(), withIntermediateDirectories: true)
+    _ = try await runCommand("/usr/bin/tar", arguments: ["-czf", archive.path, "-C", source.path, "."])
+    let sha256 = SHA256.hash(data: try Data(contentsOf: archive)).map { String(format: "%02x", $0) }.joined()
+    let index = directory.appending(path: "store/index.json")
+    for (version, checksum, message) in [
+        ("1", String(repeating: "0", count: 64), "The archive of package clock does not match the store's checksum."),
+        ("2", sha256, "The archive of package clock 2 contains a different id or version.")
+    ] {
+        try writePackageFile(#"""
+        {"packages":[{"id":"clock","name":"Clock","version":"\#(version)","archive":"clock-1.tar.gz","sha256":"\#(checksum)",
+          "source":"https://example.com/packages/clock"}]}
+        """#, to: index)
+        let entry = try await PackageIndex.load(from: index).packages[0]
+        let error = await #expect(throws: WidgetPackageError.self) { try await store.download(entry, from: index) }
+        #expect(error?.localizedDescription == message)
+    }
+    try writePackageFile(#"""
+    {"packages":[{"id":"agent","name":"Agent","version":"1","kind":"plugin","archive":"agent-1.tar.gz","sha256":"\#(sha256)"},
+      {"id":"clock","name":"Clock","version":"1","kind":"widgets","archive":"clock-1.tar.gz","sha256":"\#(sha256)",
+      "source":"https://example.com/packages/clock","rating":5}],"updated":"2026-10-16"}
+    """#, to: index)
+    let packages = try await PackageIndex.load(from: index).packages
+    #expect(packages.map(\.id) == ["clock"])
+    let installed = try store.install(try await store.download(packages[0], from: index))
+    #expect(installed.directory == directory.appending(path: "packages/clock/1"))
+    #expect(installed.manifest.kind == .widgets)
+}
+
+@Test func updatesListTheCommandsHostsAndPermissionsTheyAdd() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    let store = WidgetPackageStore(directory: directory.appending(path: "packages"))
+    var inspections: [WidgetPackageInspection] = []
+    for (version, actions, hosts, permissions) in [("1", "{}", #""a.example""#, #""calendars""#),
+                                                    ("2", #"{"scrollUp":"echo two"}"#, #""a.example","b.example""#, #""calendars","location""#)] {
+        try writePackageFile(#"{"id":"feed","name":"Feed","version":"\#(version)","entry":"config.json","hosts":[\#(hosts)],"permissions":[\#(permissions)]}"#,
+                             to: source.appending(path: "package.json"))
+        try writePackageFile(#"{"widgets":[{"id":"feed","type":"text","position":"left","text":"Feed","onClick":"echo one","actions":\#(actions)}]}"#,
+                             to: source.appending(path: "config.json"))
+        inspections.append(try store.install(source))
+    }
+    #expect(inspections[1].additions(since: inspections[0]) == ["Command: echo two", "Host: b.example", "Permission: Location"])
+    #expect(inspections[0].additions(since: inspections[1]).isEmpty)
 }
 
 @Test func themeAppliesAfterWidgetPackagesAndBeforeIncludesAndTheRootFile() throws {
