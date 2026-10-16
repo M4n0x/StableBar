@@ -1,7 +1,7 @@
 import Foundation
 
 struct ConfigurationEdit: Codable, Sendable {
-    enum Action: String, Codable { case set, add, remove, reorder, bar, defaults, tokens, unset, profile, profiles, package, theme }
+    enum Action: String, Codable { case set, add, remove, reorder, bar, defaults, popupDefaults, tokens, unset, profile, profiles, package, theme }
     let action: Action
     var id: String?
     var properties: [String: ConfigurationValue]?
@@ -63,7 +63,7 @@ struct ConfigurationEdit: Codable, Sendable {
                 root["widgetOrder"] = .array(ids!.map(ConfigurationValue.string))
             }
             widgetIDs = order
-        case .bar, .defaults, .tokens:
+        case .bar, .defaults, .popupDefaults, .tokens:
             let key = action.rawValue
             root[key] = .object(try requiredProperties()).overriding(root[key] ?? .object([:]))
         case .unset:

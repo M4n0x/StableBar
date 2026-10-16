@@ -9,7 +9,7 @@ let themeTokens: [(name: String, title: String)] = [
 struct AppearanceView: View {
     let editor: ConfigurationEditor
     @State private var themes: [ThemeChoice] = []
-    @State private var swatches: [String: [String: HexColor]] = [:]
+    @State private var looks: [String: Configuration] = [:]
     @State private var fontFamilies = NSFontManager.shared.availableFontFamilies
 
     private var store: BarStore { editor.store }
@@ -21,17 +21,25 @@ struct AppearanceView: View {
         let defaults = StyleFields(store: store, path: "defaults", values: document("defaults"),
                                    set: { editor.change(ConfigurationEdit(action: .defaults, properties: [$0: $1])) },
                                    unset: { unset(["defaults": .object([$0: .null])]) })
+        let popups = StyleFields(store: store, path: "popupDefaults", defaultsPath: "defaults",
+                                 values: document("defaults").merging(document("popupDefaults")) { $1 },
+                                 set: { editor.change(ConfigurationEdit(action: .popupDefaults, properties: [$0: $1])) },
+                                 unset: { unset(["popupDefaults": .object([$0: .null])]) })
         let bar = StyleFields(store: store, path: "bar", values: document("bar"),
                               set: { editor.change(ConfigurationEdit(action: .bar, properties: [$0: $1])) },
                               unset: { unset(["bar": .object([$0: .null])]) })
+        let barStyle = StyleFields(store: store, path: "bar.style",
+                                   values: (try? document("bar")["style"]?.decoded([String: ConfigurationValue].self)) ?? [:],
+                                   set: { editor.change(ConfigurationEdit(action: .bar, properties: ["style": .object([$0: $1])])) },
+                                   unset: { unset(["bar": .object(["style": .object([$0: .null])])]) })
         Form {
             Section {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
-                    ThemeCard(title: "Built-in", colors: swatches[""] ?? [:], isSelected: selected == nil) {
+                    ThemeCard(title: "Built-in", look: looks[""], isSelected: selected == nil) {
                         editor.change(ConfigurationEdit(action: .theme))
                     }
                     ForEach(themes, id: \.key) { choice in
-                        ThemeCard(title: choice.title, colors: swatches[choice.key] ?? [:], isSelected: selected == choice.key) {
+                        ThemeCard(title: choice.title, look: looks[choice.key], isSelected: selected == choice.key) {
                             editor.change(ConfigurationEdit(action: .theme, properties: choice.selection))
                         }
                     }
@@ -72,16 +80,30 @@ struct AppearanceView: View {
                 defaults.color("Background", "background")
                 defaults.color("Hover background", "hoverBackground")
                 defaults.color("Border", "borderColor")
+                defaults.color("Shadow", "shadowColor")
                 defaults.color("Accent", "accent")
+                defaults.color("Accent text", "accentText")
                 defaults.font(fontFamilies)
                 defaults.weight()
                 defaults.number("Font size", "fontSize", default: 12)
                 defaults.number("Horizontal padding", "paddingHorizontal", default: 10)
+                defaults.number("Vertical padding", "paddingVertical", default: 6)
                 defaults.number("Corner radius", "cornerRadius", default: 14)
             }
+            Section("Popups") {
+                popups.color("Background", "background")
+                popups.color("Border", "borderColor")
+                popups.color("Shadow", "shadowColor")
+                popups.weight()
+            }
             Section("Bar") {
+                barStyle.color("Background", "background")
+                barStyle.color("Border", "borderColor")
+                barStyle.number("Border width", "borderWidth", default: 0)
+                barStyle.number("Corner radius", "cornerRadius", default: 0)
                 bar.number("Height", "height", default: 40)
                 bar.number("Offset from top", "offset", default: 0)
+                bar.number("Margin", "margin", default: 0)
                 bar.number("Side inset", "inset", default: 12)
                 bar.number("Spacing", "spacing", default: 8)
             }
@@ -125,24 +147,18 @@ struct AppearanceView: View {
 
     private func loadThemes() {
         themes = themeChoices(packages: store.configurationURL.deletingLastPathComponent().appending(path: "packages"))
-        let builtIn = bundledThemesDirectory.map { tokenColors(at: $0.appending(path: "built-in")) } ?? [:]
-        swatches = [:]
-        swatches[""] = builtIn
-        for theme in themes { swatches[theme.key] = builtIn.merging(tokenColors(at: theme.directory)) { $1 } }
+        var loader = ConfigurationLoader()
+        looks = [:]
+        looks[""] = try? loader.load(store.configurationURL, data: Data("{}".utf8))
+        for theme in themes {
+            looks[theme.key] = try? loader.load(store.configurationURL, data: JSONEncoder().encode(["theme": ConfigurationValue.object(theme.selection)]))
+        }
     }
-}
-
-private func tokenColors(at directory: URL) -> [String: HexColor] {
-    var loader = ConfigurationLoader()
-    guard let manifest = try? WidgetPackageStore(directory: directory).manifest(at: directory),
-          let layer = try? loader.readPackage(at: directory, manifest: manifest, settings: [:]),
-          case let .object(tokens) = layer.values["tokens"] else { return [:] }
-    return tokens.compactMapValues { try? substituteConfigurationReferences($0, prefix: "@token.", values: tokens).decoded(HexColor.self) }
 }
 
 private struct ThemeCard: View {
     let title: String
-    let colors: [String: HexColor]
+    let look: Configuration?
     let isSelected: Bool
     let select: () -> Void
 
@@ -171,14 +187,33 @@ private struct ThemeCard: View {
     }
 
     private var preview: some View {
-        HStack(spacing: 5) {
-            Circle().fill(colors["accent"]?.color ?? .clear).frame(width: 7, height: 7)
-            Text("Mon 9:41").font(.system(size: 11, weight: .medium)).foregroundStyle(colors["text"]?.color ?? .primary)
+        ZStack(alignment: .top) {
+            Color(nsColor: .underPageBackgroundColor)
+            if let look {
+                let tile = WidgetAppearance(look.defaults, defaults: WidgetStyle())
+                let bar = look.bar.style
+                HStack(spacing: tile.spacing) {
+                    Circle().fill(tile.accent).frame(width: 7, height: 7)
+                    Text("9:41")
+                }
+                .font(tile.font)
+                .foregroundStyle(tile.foreground)
+                .padding(.horizontal, tile.paddingHorizontal)
+                .padding(.vertical, tile.paddingVertical)
+                .background(tile.background, in: RoundedRectangle(cornerRadius: tile.cornerRadius))
+                .overlay {
+                    RoundedRectangle(cornerRadius: tile.cornerRadius).strokeBorder(tile.borderColor, lineWidth: tile.borderWidth)
+                }
+                .shadow(color: tile.shadowColor, radius: tile.shadowRadius, y: 1)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background((bar.background ?? look.bar.background).color, in: RoundedRectangle(cornerRadius: bar.cornerRadius ?? 0))
+                .overlay(alignment: .bottom) {
+                    (bar.borderColor?.color ?? .clear).frame(height: bar.borderWidth ?? 0)
+                }
+                .padding(look.bar.margin)
+                .frame(height: look.bar.height)
+            }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(colors["surface"]?.color ?? .clear, in: Capsule())
-        .frame(maxWidth: .infinity, minHeight: 44)
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .frame(height: 56)
     }
 }
