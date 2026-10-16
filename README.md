@@ -180,7 +180,7 @@ A data state says what a widget's data means, such as a battery running low, so 
 | `active` | On or in progress, such as charging or recording |
 | `muted` | Off or quiet, such as muted audio |
 
-Other names work too. `hover`, `open`, `focused`, `visible` and `empty` are StableBar's own, so output `state` with one of those names is ignored. Define each state once in `defaults.states`:
+Other names work too. `hover`, `open`, `focused`, `visible` and `empty` are StableBar's own, so output `state` with one of those names, or an empty one, is ignored. Define each state once in `defaults.states`:
 
 ```json
 "defaults": {

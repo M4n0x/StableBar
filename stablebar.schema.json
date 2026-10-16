@@ -1030,7 +1030,8 @@
           "$ref": "#/definitions/ruleCondition"
         },
         "state": {
-          "$ref": "#/definitions/string",
+          "type": "string",
+          "minLength": 1,
           "description": "Data state to set, such as warning, critical, active or muted."
         }
       }

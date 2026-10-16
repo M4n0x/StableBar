@@ -351,6 +351,13 @@ private func rules(_ json: String) throws -> [StyleRule] {
     #expect(try state(#"{"text":"","values":{"percent":0.15},"state":"open"}"#) == "warning")
 }
 
+@Test func anEmptyOutputStateCountsAsNoStateSoRulesStillApply() throws {
+    let battery = try rules(#"[{"when":{"value":"percent","below":0.2},"state":"warning"}]"#)
+    #expect(dataState(try output(#"{"text":"","values":{"percent":0.15},"state":""}"#), rules: battery) == "warning")
+    #expect(dataState(try output(#"{"text":"","values":{"percent":0.5},"state":""}"#), rules: battery) == nil)
+    #expect(dataState(try output(#"{"text":"x","state":""}"#)) == nil)
+}
+
 @Test func invalidRulesNameTheirProblem() throws {
     let url = FileManager.default.temporaryDirectory.appending(path: "rules.json")
     var loader = ConfigurationLoader()
@@ -363,6 +370,8 @@ private func rules(_ json: String) throws -> [StyleRule] {
         (#"{"when":{"value":"percent"},"state":"warning"}"#, "widgets.power: rules.0.when: \(comparison)"),
         (#"{"when":{"value":"percent","below":0.2},"state":"hover"}"#,
          "widgets.power: rules.0.state: hover is set by StableBar. Use a data state such as warning."),
+        (#"{"when":{"value":"percent","below":0.2},"state":""}"#,
+         "widgets.power: rules.0.state: A rule's state must not be empty. Use a data state such as warning."),
         (#"{"when":{"value":"percent","below":0.2},"state":"warning","color":"red"}"#, "widgets.power: rules.0.color: Unknown property.")
     ] {
         let json = #"{"widgets":[{"id":"power","type":"battery","position":"right","rules":["# + rule + "]}]}"

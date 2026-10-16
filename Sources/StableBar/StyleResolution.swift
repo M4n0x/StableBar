@@ -133,11 +133,11 @@ extension PopupBlock {
     }
 }
 
-/// A widget's data state: its output's `state` when that is a string other than a reserved name,
-/// otherwise the state of the first rule that matches the output.
+/// A widget's data state: its output's `state` when that is a non-empty string other than a reserved
+/// name, otherwise the state of the first rule that matches the output.
 func dataState(_ output: ScriptOutput?, rules: [StyleRule] = []) -> String? {
     guard let output else { return nil }
-    if case let .string(name)? = output.state, !StyleStates.reservedNames.contains(name) { return name }
+    if case let .string(name)? = output.state, !name.isEmpty, !StyleStates.reservedNames.contains(name) { return name }
     return rules.first { $0.when.matches(output) }?.state
 }
 
@@ -153,6 +153,10 @@ struct StyleRule: Decodable, Equatable, Sendable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         when = try values.decode(RuleCondition.self, forKey: .when)
         state = try values.decode(String.self, forKey: .state)
+        guard !state.isEmpty else {
+            throw DecodingError.dataCorruptedError(forKey: .state, in: values,
+                                                   debugDescription: "A rule's state must not be empty. Use a data state such as warning.")
+        }
         guard !StyleStates.reservedNames.contains(state) else {
             throw DecodingError.dataCorruptedError(forKey: .state, in: values,
                                                    debugDescription: "\(state) is set by StableBar. Use a data state such as warning.")

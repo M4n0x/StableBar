@@ -277,6 +277,31 @@ private func output(_ json: String) throws -> ScriptOutput {
     #expect(snapshot["state"] == .string("warning"))
 }
 
+@Test @MainActor func snapshotsReportNoStateForAnEmptyOutputState() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appending(path: "config.json")
+    try Data(#"""
+    {"widgets":[{"id":"power","type":"script","position":"right","interval":null,
+      "command":"printf '{\"text\":\"Idle\",\"state\":\"\"}'"}]}
+    """#.utf8).write(to: url)
+    let store = BarStore(configurationURL: url)
+    defer { store.stop() }
+    store.reloadConfiguration()
+    for _ in 0..<100 {
+        if store.scripts["power"]?.output.text == "Idle" { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(store.scripts["power"]?.output.text == "Idle")
+    #expect(store.presentations["power"]?.style.state == nil)
+    guard case let .object(snapshot) = try store.snapshot(id: "power") else {
+        Issue.record("Expected an object snapshot")
+        return
+    }
+    #expect(snapshot["state"] == .null)
+}
+
 @Test @MainActor func rulesRunWhenOutputArrivesForEachWidgetOfASharedProvider() async throws {
     let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).json"))
     store.configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
