@@ -4,7 +4,7 @@
     ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
     ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
     ["@semantic-release/changelog", { "changelogTitle": "# Changelog" }],
-    ["@semantic-release/exec", { "prepareCmd": "./scripts/set-version.sh ${nextRelease.version}" }],
+    ["@semantic-release/exec", { "prepareCmd": "./scripts/set-version.sh ${nextRelease.version} $GITHUB_RUN_NUMBER" }],
     ["@semantic-release/git", { "assets": ["CHANGELOG.md", "Resources/Info.plist"] }],
     "@semantic-release/github"
   ]
