@@ -444,10 +444,13 @@ struct Configuration: Decodable, Sendable {
         var ids = Set<String>()
         for widget in widgets {
             let style = widget.style.inheriting(defaults)
-            if let min = style.minWidth, min < 0 { throw CommandFailure(message: "minWidth must be nonnegative.") }
-            if let max = style.maxWidth, max < 0 { throw CommandFailure(message: "maxWidth must be nonnegative.") }
-            if let min = style.minWidth, let max = style.maxWidth, min > max {
-                throw CommandFailure(message: "minWidth must not exceed maxWidth.")
+            let states = (style.states ?? [:]).sorted { $0.key < $1.key }.map { $0.value.inheriting(style) }
+            for checked in [style] + states {
+                if let min = checked.minWidth, min < 0 { throw CommandFailure(message: "minWidth must be nonnegative.") }
+                if let max = checked.maxWidth, max < 0 { throw CommandFailure(message: "maxWidth must be nonnegative.") }
+                if let min = checked.minWidth, let max = checked.maxWidth, min > max {
+                    throw CommandFailure(message: "minWidth must not exceed maxWidth.")
+                }
             }
             if let group = widget.group {
                 guard groups[group] != nil else { throw CommandFailure(message: "Unknown group: \(group).") }

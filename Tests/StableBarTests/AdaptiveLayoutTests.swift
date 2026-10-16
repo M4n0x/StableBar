@@ -173,3 +173,24 @@ import Testing
     """#.utf8)
     #expect(throws: CommandFailure.self) { try JSONDecoder().decode(Configuration.self, from: negative) }
 }
+
+@Test func widthConstraintsInsideStatesAreCheckedOverTheBaseStyle() throws {
+    func decode(defaults: String = "{}", style: String) throws -> Configuration {
+        try JSONDecoder().decode(Configuration.self, from: Data(#"""
+        {"defaults":\#(defaults),"widgets":[{"id":"title","type":"text","text":"Title","position":"left","style":\#(style)}]}
+        """#.utf8))
+    }
+    let order = "minWidth must not exceed maxWidth."
+    for (defaults, style, message) in [
+        ("{}", #"{"maxWidth":40,"states":{"hover":{"minWidth":100}}}"#, order),
+        ("{}", #"{"minWidth":100,"states":{"warning":{"maxWidth":40}}}"#, order),
+        (#"{"states":{"hover":{"maxWidth":40}}}"#, #"{"minWidth":100}"#, order),
+        ("{}", #"{"states":{"hover":{"minWidth":-5}}}"#, "minWidth must be nonnegative."),
+        ("{}", #"{"states":{"open":{"maxWidth":-1}}}"#, "maxWidth must be nonnegative.")
+    ] {
+        let error = #expect(throws: CommandFailure.self) { try decode(defaults: defaults, style: style) }
+        #expect(error?.message == message, "\(style)")
+    }
+    let valid = try decode(style: #"{"minWidth":50,"maxWidth":100,"states":{"hover":{"minWidth":60,"maxWidth":90},"warning":{"maxWidth":70}}}"#)
+    #expect(valid.widgets[0].style.states?["hover"]?.minWidth == 60)
+}
