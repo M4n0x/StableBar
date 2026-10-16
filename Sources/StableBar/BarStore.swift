@@ -11,6 +11,7 @@ final class BarStore: NSObject {
     var activeDisplayID = 1
     var scripts: [String: ScriptWidget] = [:]
     let workspaceStore = WorkspaceStore()
+    let windowClearance = WindowClearance()
     let popup = WidgetPopup()
     let configurationURL: URL
     var onConfigurationChange: (() -> Void)?
@@ -430,6 +431,7 @@ final class BarStore: NSObject {
 
     func stop() {
         popup.close()
+        windowClearance.stop()
         reloadTask?.cancel()
         configurationWatcher.stop()
         workspaceStore.stop()

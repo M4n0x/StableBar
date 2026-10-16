@@ -1,0 +1,10 @@
+{
+  "bar": {
+    "height": 40,
+    "offset": 28,
+    "keepWindowsClear": true
+  },
+  "widgets": [
+    { "id": "clock", "type": "clock", "position": "right" }
+  ]
+}

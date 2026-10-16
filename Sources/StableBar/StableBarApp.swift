@@ -142,7 +142,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func sleeping() { store.setSleeping(true) }
+    @objc private func sleeping() {
+        store.setSleeping(true)
+        store.windowClearance.stop()
+    }
 
     @objc private func woke() {
         store.setSleeping(false)
@@ -153,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func updatePanels() {
         guard let config = store.configuration else { return }
         let screens = NSScreen.screens
+        var clearanceDisplays: [WindowClearanceDisplay] = []
         let ids = screens.map { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as! NSNumber).uint32Value }
         for (id, panel) in panels where !ids.contains(id) {
             panel.close()
@@ -185,7 +189,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             panel.setFrame(NSRect(x: screen.frame.minX, y: top - config.bar.offset - height,
                                   width: screen.frame.width, height: height), display: true)
             panel.orderFrontRegardless()
+            clearanceDisplays.append(WindowClearanceDisplay(frame: screen.frame, visibleFrame: screen.visibleFrame,
+                                                            barFrame: panel.frame, desktopTop: screens[0].frame.maxY))
         }
+        store.windowClearance.update(enabled: config.bar.keepWindowsClear, displays: clearanceDisplays)
     }
 
     func menuWillOpen(_ menu: NSMenu) {

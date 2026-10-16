@@ -325,6 +325,7 @@ struct BarSettings: Decodable, Sendable {
     var height = 40.0
     var displayScale: [String: Double] = [:]
     var offset = 0.0
+    var keepWindowsClear = false
     var inset = 12.0
     var spacing = 8.0
     var background = HexColor(0x00000000)
@@ -335,7 +336,7 @@ struct BarSettings: Decodable, Sendable {
     var appearance: BarAppearance?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case height, displayScale, offset, inset, spacing, background, animationDuration, notchWidth, notchSpacing, style, appearance
+        case height, displayScale, offset, keepWindowsClear, inset, spacing, background, animationDuration, notchWidth, notchSpacing, style, appearance
     }
 
     init() {}
@@ -349,6 +350,7 @@ struct BarSettings: Decodable, Sendable {
             throw DecodingError.dataCorruptedError(forKey: .displayScale, in: values, debugDescription: "Use builtIn or external with a positive number.")
         }
         offset = try values.decodeIfPresent(Double.self, forKey: .offset) ?? offset
+        keepWindowsClear = try values.decodeIfPresent(Bool.self, forKey: .keepWindowsClear) ?? keepWindowsClear
         inset = try values.decodeIfPresent(Double.self, forKey: .inset) ?? inset
         spacing = try values.decodeIfPresent(Double.self, forKey: .spacing) ?? spacing
         background = try values.decodeIfPresent(HexColor.self, forKey: .background) ?? background

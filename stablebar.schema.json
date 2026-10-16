@@ -1067,6 +1067,10 @@
         "offset": {
           "$ref": "#/definitions/number"
         },
+        "keepWindowsClear": {
+          "$ref": "#/definitions/boolean",
+          "description": "Move ordinary windows below the bar using Accessibility access. Disabled by default."
+        },
         "inset": {
           "$ref": "#/definitions/number"
         },
