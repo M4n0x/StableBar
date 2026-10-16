@@ -12,7 +12,7 @@ struct BarView: View {
         Group {
             if let config = store.configuration {
                 let scale = CGFloat(config.bar.scale(for: display))
-                let style = resolveStyle(barStyleLayers(config.bar.style, widgets: config.widgets, output: { store.scripts[$0]?.output }))
+                let style = store.barStyle
                 let notch = display.notch.map { range in
                     let range: ClosedRange<CGFloat> = ((range.lowerBound - config.bar.margin) / scale)...((range.upperBound - config.bar.margin) / scale)
                     return config.bar.notchWidth.map { width in
@@ -22,13 +22,13 @@ struct BarView: View {
                 }
                 let activeID = store.workspaceStore.workspaces.first(where: \.isFocused)?.monitor ?? store.activeDisplayID
                 let widgets = config.widgets.filter { widget in
-                    let output = store.scripts[widget.id]?.output
+                    let presentation = store.presentations[widget.id]
                     if widget.content == .workspaces && widget.layout == nil && store.workspaceStore.error == nil
                         && store.workspaceStore.workspaces(on: display.id, showEmpty: widget.workspace?.showEmpty == true).isEmpty {
                         return false
                     }
-                    return widget.enabled && (output?.display ?? widget.display).includes(display, activeID: activeID)
-                        && (output?.hidden != true || store.scripts[widget.id]?.error != nil)
+                    return widget.enabled && (presentation?.display ?? widget.display).includes(display, activeID: activeID)
+                        && presentation?.hidden != true
                 }
                 let units = BarUnit.make(widgets: widgets, groups: config.groups)
                 GeometryReader { geometry in
@@ -250,8 +250,7 @@ struct WidgetView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var resolution: ResolvedWidgetStyle {
-        ResolvedWidgetStyle(base: resolveStyle(widgetStyleLayers(widget, defaults: defaults, widgets: store.configuration?.widgets ?? [],
-                                                                 output: { store.scripts[$0]?.output })))
+        store.presentations[widget.id]?.style ?? ResolvedWidgetStyle(base: resolveStyle([defaults, widget.style]))
     }
 
     var body: some View {

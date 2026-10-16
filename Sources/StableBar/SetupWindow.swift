@@ -276,6 +276,7 @@ struct SetupView: View {
             var loader = ConfigurationLoader()
             preview.configuration = try loader.load(store.configurationURL, data: data, context: store.context)
             preview.scripts = store.scripts
+            preview.preparePresentations()
             preview.workspaceStore.workspaces = store.workspaceStore.workspaces
             error = nil
         } catch {
