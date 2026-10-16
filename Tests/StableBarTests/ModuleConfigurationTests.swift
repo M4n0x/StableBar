@@ -384,3 +384,40 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     _ = try WidgetPackageStore(directory: repository.appending(path: "examples/packages"))
         .inspect(repository.appending(path: "examples/packages/local-clock"))
 }
+
+@Test func schemaListsTheRegisteredSourceTypes() throws {
+    let url = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appending(path: "stablebar.schema.json")
+    let schema = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: url))
+    func typeNames(_ definition: String) -> Set<String> {
+        guard case let .object(definitions)? = schema["definitions"], case let .object(object)? = definitions[definition],
+              case let .object(properties)? = object["properties"], case let .object(type)? = properties["type"],
+              case let .array(choices)? = type["anyOf"], case let .object(names)? = choices.first,
+              case let .array(values)? = names["enum"] else { return [] }
+        return Set(values.compactMap { if case let .string(name) = $0 { name } else { nil } })
+    }
+    let registry = DataSourceRegistry.builtIn
+    #expect(typeNames("provider") == Set(registry.types.map(\.name)))
+    #expect(typeNames("widget") == Set(["aerospace", "workspaces", "activeApp", "clock", "text", "script", "provider", "spacer"]
+        + registry.types.filter(\.isNative).map(\.name)))
+    #expect(registry.types.allSatisfy { Set($0.settings + $0.optionalSettings).isSubset(of: ProviderConfiguration.CodingKeys.allCases) })
+}
+
+@Test func unknownSourceTypesNameTheirPath() throws {
+    let url = FileManager.default.temporaryDirectory.appending(path: "sources.json")
+    var loader = ConfigurationLoader()
+    for (json, message) in [
+        (#"{"providers":{"machine":{"type":"sytem"}},"widgets":[]}"#, "providers.machine.type: Unknown provider type."),
+        (#"{"providers":{"feed":{"type":"stream"}},"widgets":[]}"#, "providers.feed: Missing property command."),
+        (#"{"widgets":[{"id":"disk","type":"disk","position":"right"}]}"#, "widgets.disk: type: Unknown widget type."),
+        (#"{"widgets":[{"id":"disk","type":"provider","provider":"disk","position":"right"}]}"#, "Unknown provider: disk."),
+        (#"{"widgets":[],"profiles":[{"name":"work","configuration":{"providers":{"machine":{"type":"command"}}}}]}"#,
+         "providers.machine: Missing property command.")
+    ] {
+        let error = #expect(throws: (any Error).self) { try loader.load(url, data: Data(json.utf8)) }
+        #expect(error.map(errorMessage) == message)
+    }
+    let configuration = try loader.load(url, data: Data(#"{"providers":{"machine":{"type":"system","interval":2}},"widgets":[]}"#.utf8))
+    #expect(configuration.providers["machine"]?.type == "system")
+    #expect(configuration.providers["machine"]?.command == nil)
+}

@@ -591,7 +591,7 @@ Changes in these sections apply to the bar immediately, like command-line edits 
 
 **Packages** reviews local folders and [store](#store) packages and their declared commands, edits typed settings, installs versions and enables a chosen version. Enabling a theme makes it the active theme; themes have no commands to review. Select an older installed version to roll back, or **Uninstall…** to remove one.
 
-**Diagnostics** shows the composed widget configuration, defaults, source paths, what the widget shows (its `text`, `icon`, `fields` and `temporaryFields`), provider output and data state, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while Diagnostics is visible. Closing the window restores its visibility policy.
+**Diagnostics** shows the composed widget configuration, defaults, source paths, what the widget shows (its `text`, `icon`, `fields` and `temporaryFields`), provider output and data state, the provider's data source and the events it sends, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while Diagnostics is visible. Closing the window restores its visibility policy.
 
 ## Built-in widgets
 
@@ -956,6 +956,7 @@ For new native widget types, add a case to `WidgetContent`, decode its settings 
 - [Yabai.swift](Sources/StableBar/Yabai.swift): yabai snapshots mapped to workspaces and screen numbers.
 - [ScriptWidget.swift](Sources/StableBar/ScriptWidget.swift): the runner that applies a data source's output, with diagnostics, retries and suspension.
 - [DataSource.swift](Sources/StableBar/DataSource.swift): the data source protocol, and the command, stream and polling sources.
+- [DataSourceRegistry.swift](Sources/StableBar/DataSourceRegistry.swift): each data source type, the settings it reads and how it runs.
 - [BuiltInEvents.swift](Sources/StableBar/BuiltInEvents.swift): the events StableBar sends itself and what `INFO` holds.
 - [BarView.swift](Sources/StableBar/BarView.swift): native rendering and selection animation.
 - [LayoutConfiguration.swift](Sources/StableBar/LayoutConfiguration.swift): groups, priority overflow and notch-aware placement.

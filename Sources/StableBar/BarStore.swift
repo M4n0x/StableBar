@@ -1,5 +1,4 @@
 import AppKit
-import EventKit
 import Observation
 
 @MainActor @Observable
@@ -14,6 +13,7 @@ final class BarStore: NSObject {
     let windowClearance = WindowClearance()
     let popup = WidgetPopup()
     let configurationURL: URL
+    let registry: DataSourceRegistry
     var onConfigurationChange: (() -> Void)?
     var onCustomize: (() -> Void)?
     var effectiveDocument: [String: ConfigurationValue] = [:]
@@ -36,12 +36,12 @@ final class BarStore: NSObject {
     private var reloadTask: Task<Void, Never>?
     private var eventObservers: [NSObjectProtocol] = []
     private var reloadObserver: NSObjectProtocol?
-    private var calendarObserver: NSObjectProtocol?
     private var actions: [UUID: Task<Void, Never>] = [:]
     private var actionTails: [String: (id: UUID, task: Task<Void, Never>)] = [:]
 
-    init(configurationURL: URL = LaunchCommand.configurationURL) {
+    init(configurationURL: URL = LaunchCommand.configurationURL, registry: DataSourceRegistry = .builtIn) {
         self.configurationURL = configurationURL
+        self.registry = registry
         super.init()
         configurationWatcher.onChange = { [weak self] in self?.scheduleReload() }
     }
@@ -52,9 +52,6 @@ final class BarStore: NSObject {
             forName: LaunchCommand.reloadNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.reloadConfiguration() }
             }
-        calendarObserver = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshCalendars() }
-        }
         workspaceStore.onWorkspaceChange = { [weak self] in
             guard let self else { return }
             popup.close()
@@ -225,7 +222,7 @@ final class BarStore: NSObject {
             var environment = next.environment
             environment["NAME"] = name
             environment["CONFIG_DIR"] = configurationURL.deletingLastPathComponent().path
-            script.start(provider: next.providers[name]!, environment: environment)
+            script.start(provider: next.providers[name]!, registry: registry, environment: environment)
             providers[name] = script
         }
         for widget in next.widgets where widget.enabled {
@@ -404,6 +401,11 @@ final class BarStore: NSObject {
                 result["state"] = presentations[id]?.style.state.map(ConfigurationValue.string) ?? .null
                 result["temporaryFields"] = presentations[id]?.temporaryFields
                     .map { ConfigurationValue.object($0.mapValues(ConfigurationValue.string)) } ?? .null
+                if let name = configuration?.widgets.first(where: { $0.id == id })?.providerName,
+                   let provider = configuration?.providers[name], let type = registry[provider.type] {
+                    result["source"] = .object(["provider": .string(name), "type": .string(type.name), "push": .bool(type.continuous),
+                                                "events": .array(type.events.map { .string($0.rawValue) })])
+                }
             }
             return .object(result)
         }
@@ -436,12 +438,6 @@ final class BarStore: NSObject {
                refreshed.insert(ObjectIdentifier(script)).inserted {
                 script.refresh(ScriptEvent(sender: event, environment: environment))
             }
-        }
-    }
-
-    private func refreshCalendars() {
-        for (name, provider) in providers where configuration!.providers[name]!.type == .calendar {
-            provider.refresh(ScriptEvent(sender: "calendar"))
         }
     }
 
@@ -495,8 +491,6 @@ final class BarStore: NSObject {
         for observer in eventObservers { DistributedNotificationCenter.default().removeObserver(observer) }
         if let reloadObserver { DistributedNotificationCenter.default().removeObserver(reloadObserver) }
         reloadObserver = nil
-        if let calendarObserver { NotificationCenter.default.removeObserver(calendarObserver) }
-        calendarObserver = nil
         eventObservers.removeAll()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }

@@ -75,18 +75,7 @@ final class NativeMetrics {
         return store
     }()
 
-    func sample(_ provider: ProviderConfiguration) throws -> ScriptOutput {
-        switch provider.type {
-        case .battery: return try battery()
-        case .network: return try networkRates()
-        case .system: return try system()
-        case .audio: return try audio()
-        case .calendar: return calendar(provider)
-        case .command, .stream: preconditionFailure("Command providers do not use native metrics.")
-        }
-    }
-
-    private func battery() throws -> ScriptOutput {
+    func battery() throws -> ScriptOutput {
         guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
               let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else {
             throw CommandFailure(message: "Could not read power sources.")
@@ -109,7 +98,7 @@ final class NativeMetrics {
         return ScriptOutput(text: "AC", icon: "powerplug", fields: ["state": "ac", "present": "false"])
     }
 
-    private func calendar(_ provider: ProviderConfiguration) -> ScriptOutput {
+    func calendar(_ provider: ProviderConfiguration) -> ScriptOutput {
         let store = eventStore
         let access = EKEventStore.authorizationStatus(for: .event)
         guard access == .fullAccess else {
@@ -146,7 +135,7 @@ final class NativeMetrics {
         return fields
     }
 
-    private func system() throws -> ScriptOutput {
+    func system() throws -> ScriptOutput {
         let host = mach_host_self()
         defer { mach_port_deallocate(mach_task_self_, host) }
         var load = host_cpu_load_info()
@@ -177,7 +166,7 @@ final class NativeMetrics {
                             values: ["cpu": usage, "memory": used / total, "memoryUsed": used, "memoryTotal": total])
     }
 
-    private func networkRates() throws -> ScriptOutput {
+    func networkRates() throws -> ScriptOutput {
         var query: [Int32] = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0]
         var size = 0
         guard sysctl(&query, UInt32(query.count), nil, &size, nil, 0) == 0 else {
@@ -215,7 +204,7 @@ final class NativeMetrics {
                             values: ["download": download, "upload": upload])
     }
 
-    private func audio() throws -> ScriptOutput {
+    func audio() throws -> ScriptOutput {
         var defaultAddress = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
                                                         mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var device = AudioDeviceID(0)

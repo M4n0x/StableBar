@@ -1,3 +1,4 @@
+import EventKit
 import Foundation
 import Observation
 import os
@@ -238,4 +239,167 @@ private func awaitCondition(_ condition: () -> Bool) async throws {
     try await awaitCondition { script.diagnostics.failureCount == 3 }
     #expect(script.error == "Still offline")
     #expect(updates == 2)
+}
+
+private func writeTemporaryConfiguration(_ json: String) throws -> URL {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let url = directory.appending(path: "config.json")
+    try Data(json.utf8).write(to: url)
+    return url
+}
+
+@Test @MainActor func snapshotsNameTheDataSourceOfProviderWidgets() async throws {
+    let url = try writeTemporaryConfiguration(#"""
+    {"widgets":[{"id":"cpu","type":"system","position":"right"},{"id":"label","type":"text","text":"A","position":"left"}]}
+    """#)
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let store = BarStore(configurationURL: url)
+    defer { store.stop() }
+    store.reloadConfiguration()
+    guard case let .object(cpu) = try store.snapshot(id: "cpu") else {
+        Issue.record("Expected an object snapshot")
+        return
+    }
+    #expect(cpu["source"] == .object(["provider": .string("system"), "type": .string("system"), "push": .bool(false),
+                                      "events": .array([])]))
+    guard case let .object(label) = try store.snapshot(id: "label") else {
+        Issue.record("Expected an object snapshot")
+        return
+    }
+    #expect(label["source"] == nil)
+}
+
+@Test @MainActor func editsAddAndRejectSourceTypesThroughTheRegistry() throws {
+    let url = try writeTemporaryConfiguration(#"{"widgets":[]}"#)
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let store = BarStore(configurationURL: url)
+    defer { store.stop() }
+    store.reloadConfiguration()
+    try store.applyEdits([ConfigurationEdit(action: .add, properties: ["id": .string("cpu"), "type": .string("system"),
+                                                                        "position": .string("right")])], persist: false)
+    #expect(store.configuration?.widgets.first?.content == .provider("system"))
+    let error = #expect(throws: (any Error).self) {
+        try store.applyEdits([ConfigurationEdit(action: .add, properties: ["id": .string("disk"), "type": .string("disk"),
+                                                                            "position": .string("right")])], persist: false)
+    }
+    #expect(error.map(errorMessage) == "widgets.disk: type: Unknown widget type.")
+}
+
+@Test @MainActor func aStoreStartsItsProvidersFromItsOwnRegistry() async throws {
+    let sources = FakeSources()
+    let fake = DataSourceType(name: "system", isNative: true, symbol: "cpu", settings: [], continuous: true) { _, _ in sources.make() }
+    let url = try writeTemporaryConfiguration(#"{"widgets":[{"id":"cpu","type":"system","position":"right"}]}"#)
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let store = BarStore(configurationURL: url, registry: DataSourceRegistry(types: [fake]))
+    defer { store.stop() }
+    store.reloadConfiguration()
+    try await awaitCondition { sources.made.first?.emit != nil }
+    let source = try #require(sources.made.first)
+    #expect(source.refreshes == ["startup"])
+    guard case let .object(cpu) = try store.snapshot(id: "cpu") else {
+        Issue.record("Expected an object snapshot")
+        return
+    }
+    #expect(cpu["source"] == .object(["provider": .string("system"), "type": .string("system"), "push": .bool(true),
+                                      "events": .array([])]))
+    source.emit?(.output(.success(ScriptOutput(text: "from the fake"))))
+    try await awaitCondition { store.scripts["cpu"]?.output.text == "from the fake" }
+}
+
+@Test func calendarIsANativeSourceWithItsOwnSettings() throws {
+    let calendar = try #require(DataSourceRegistry.builtIn["calendar"])
+    #expect(calendar.isNative)
+    #expect(!calendar.continuous)
+    #expect(calendar.symbol == "calendar")
+    #expect(calendar.settings.isEmpty)
+    #expect(calendar.optionalSettings == [.calendars, .lookahead, .soon, .now])
+    #expect(calendar.changeNotification == .EKEventStoreChanged)
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
+    {"providers":{"meetings":{"type":"calendar","calendars":["Work"],"lookahead":12,"soon":10,"now":2}},
+     "widgets":[{"id":"next","type":"calendar","position":"right"},{"id":"work","type":"provider","provider":"meetings","position":"right"}]}
+    """#.utf8))
+    #expect(configuration.widgets.map(\.content) == [.provider("calendar"), .provider("meetings")])
+    let defaults = try #require(configuration.providers["calendar"])
+    #expect(defaults == ProviderConfiguration(type: "calendar"))
+    #expect(defaults.calendars.isEmpty && defaults.lookahead == 24 && defaults.soon == 15 && defaults.now == 5)
+    let meetings = try #require(configuration.providers["meetings"])
+    #expect(meetings.calendars == ["Work"] && meetings.lookahead == 12 && meetings.soon == 10 && meetings.now == 2)
+}
+
+@Test @MainActor func aNativeReadingSetsItsOwnNextInterval() async throws {
+    let reading = DataSourceType(name: "calendar", isNative: true, symbol: "calendar", settings: [], continuous: false) { _, _ in
+        PollingSource { _ in .output(.success(ScriptOutput(text: "Standup", interval: 0.05))) }
+    }
+    let provider = try JSONDecoder().decode(ProviderConfiguration.self, from: Data(#"{"type":"calendar","interval":60}"#.utf8))
+    let script = ScriptWidget()
+    defer { script.stop() }
+    script.start(provider: provider, registry: DataSourceRegistry(types: [reading]))
+    try await awaitCondition { script.diagnostics.executionCount >= 3 }
+    #expect(script.diagnostics.lastEvent == "routine")
+    #expect(script.output.text == "Standup")
+}
+
+@Test @MainActor func aSourceRefreshesOnItsChangeNotificationWhileItRuns() async throws {
+    let changed = Notification.Name("StableBarTests.change.\(UUID().uuidString)")
+    let sources = FakeSources()
+    let watched = DataSourceType(name: "calendar", isNative: true, symbol: "calendar", settings: [], continuous: false,
+                                 changeNotification: changed) { _, _ in sources.make() }
+    let script = ScriptWidget()
+    defer { script.stop() }
+    func refreshes() -> [String] { sources.made.flatMap(\.refreshes) }
+    func finishRun() async throws {
+        let source = try #require(sources.made.last)
+        source.emit?(.output(.success(ScriptOutput(text: "Standup"))))
+        source.emit?(.finished)
+        try await awaitCondition { !script.diagnostics.running && script.diagnostics.nextDelay == 5 }
+    }
+    script.start(provider: ProviderConfiguration(type: "calendar"), registry: DataSourceRegistry(types: [watched]))
+    try await awaitCondition { refreshes() == ["startup"] }
+    try await finishRun()
+    NotificationCenter.default.post(name: changed, object: nil)
+    try await awaitCondition { refreshes() == ["startup", "calendar"] }
+    try await finishRun()
+    script.suspend()
+    NotificationCenter.default.post(name: changed, object: nil)
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(refreshes() == ["startup", "calendar"])
+    script.resume()
+    try await awaitCondition { refreshes() == ["startup", "calendar", "resume"] }
+    try await finishRun()
+    NotificationCenter.default.post(name: changed, object: nil)
+    try await awaitCondition { refreshes() == ["startup", "calendar", "resume", "calendar"] }
+    script.stop()
+    NotificationCenter.default.post(name: changed, object: nil)
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(refreshes() == ["startup", "calendar", "resume", "calendar"])
+}
+
+@Test @MainActor func calendarWidgetsShowTheirSourceLikeAnyOther() async throws {
+    let registry = DataSourceRegistry(types: DataSourceRegistry.builtIn.types.map { type in
+        var type = type
+        if type.name == "calendar" { type.makeSource = { _, _ in PollingSource { _ in .output(.success(ScriptOutput(text: "Standup"))) } } }
+        return type
+    })
+    let url = try writeTemporaryConfiguration(#"{"widgets":[{"id":"meeting","type":"calendar","position":"right"}]}"#)
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let store = BarStore(configurationURL: url, registry: registry)
+    defer { store.stop() }
+    store.reloadConfiguration()
+    try await awaitCondition { store.scripts["meeting"]?.output.text == "Standup" }
+    guard case let .object(meeting) = try store.snapshot(id: "meeting") else {
+        Issue.record("Expected an object snapshot")
+        return
+    }
+    #expect(meeting["source"] == .object(["provider": .string("calendar"), "type": .string("calendar"), "push": .bool(false),
+                                          "events": .array([])]))
+}
+
+@Test @MainActor func aProviderWhoseTypeIsNotRegisteredReportsAnError() {
+    let script = ScriptWidget()
+    defer { script.stop() }
+    script.start(provider: ProviderConfiguration(type: "disk"), registry: DataSourceRegistry(types: [.command]))
+    #expect(script.error == "Unknown data source type: disk.")
+    #expect(script.output.text == "…")
+    #expect(script.diagnostics.executionCount == 0)
 }

@@ -31,6 +31,15 @@ struct SourceSchedule: Equatable, Sendable {
     /// Runs stay open and the source sends updates as they happen, like a stream or a native
     /// listener. A refresh restarts the run.
     var continuous = false
+    /// A notification that refreshes the source while it runs, such as calendar's
+    /// `EKEventStoreChanged`.
+    var change: SourceChange? = nil
+}
+
+/// A notification that refreshes a source, and the event that refresh sends.
+struct SourceChange: Equatable, Sendable {
+    var notification: Notification.Name
+    var event: String
 }
 
 /// Adapts a one-shot reading, such as a command or CPU usage, to a source: each refresh reads once

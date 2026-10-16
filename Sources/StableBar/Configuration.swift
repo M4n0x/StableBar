@@ -325,7 +325,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
             }
             content = .script(command: try values.decode(String.self, forKey: .command), interval: interval)
         case let type:
-            guard ProviderType(rawValue: type)?.isNative == true else {
+            guard DataSourceRegistry.builtIn[type]?.isNative == true else {
                 throw DecodingError.dataCorruptedError(forKey: .type, in: values, debugDescription: "Unknown widget type.")
             }
             content = .provider(type)
@@ -337,6 +337,14 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
                 throw DecodingError.dataCorruptedError(forKey: .rules, in: values, debugDescription: "Rules need a script or provider widget.")
             }
         }
+    }
+}
+
+extension WidgetConfiguration {
+    /// The provider this widget shows: the one it names, or the native type it is.
+    var providerName: String? {
+        if case let .provider(name) = content { return name }
+        return nil
     }
 }
 
@@ -436,8 +444,8 @@ struct Configuration: Decodable, Sendable {
         var providers = try values.decodeIfPresent([String: ProviderConfiguration].self, forKey: .providers) ?? [:]
         for widget in widgets {
             if case let .provider(name) = widget.content, providers[name] == nil {
-                guard let type = ProviderType(rawValue: name), type.isNative else { throw CommandFailure(message: "Unknown provider: \(name).") }
-                providers[name] = ProviderConfiguration(type: type)
+                guard DataSourceRegistry.builtIn[name]?.isNative == true else { throw CommandFailure(message: "Unknown provider: \(name).") }
+                providers[name] = ProviderConfiguration(type: name)
             }
         }
         self.providers = providers

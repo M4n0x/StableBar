@@ -109,6 +109,7 @@ final class ScriptWidget {
     private var makeSource: (@MainActor () -> any DataSource)?
     private var source: (any DataSource)?
     private var schedule = SourceSchedule()
+    private var changeObserver: (any NSObjectProtocol)?
 
     func start(command: String, interval: Double?, timeout: Double = 10, environment: [String: String] = [:]) {
         start(schedule: SourceSchedule(interval: interval)) {
@@ -116,23 +117,24 @@ final class ScriptWidget {
         }
     }
 
-    func start(provider: ProviderConfiguration, environment: [String: String] = [:]) {
+    func start(provider: ProviderConfiguration, registry: DataSourceRegistry = .builtIn, environment: [String: String] = [:]) {
         var variables = environment.merging(provider.environment) { _, value in value }
         variables["NAME"] = environment["NAME"]
         variables["CONFIG_DIR"] = environment["CONFIG_DIR"]
-        start(schedule: SourceSchedule(interval: provider.interval, continuous: provider.type == .stream)) {
-            switch provider.type {
-            case .command: return PollingSource.command(provider.command!, timeout: provider.timeout, environment: variables)
-            case .stream: return StreamSource(command: provider.command!, environment: variables)
-            default:
-                let metrics = NativeMetrics()
-                return PollingSource { _ in .output(Result { try metrics.sample(provider) }) }
-            }
+        guard let type = registry[provider.type] else {
+            stop()
+            error = "Unknown data source type: \(provider.type)."
+            return
+        }
+        let change = type.changeNotification.map { SourceChange(notification: $0, event: type.name) }
+        start(schedule: SourceSchedule(interval: provider.interval, continuous: type.continuous, change: change)) {
+            type.makeSource(provider, variables)
         }
     }
 
     /// Runs the source that `makeSource` creates. A fresh instance runs at startup, on resume and
-    /// when a refresh restarts a continuous source.
+    /// when a refresh restarts a continuous source. While it runs, the schedule's `change`
+    /// notification refreshes it.
     func start(schedule: SourceSchedule, source makeSource: @escaping @MainActor () -> any DataSource) {
         stop()
         self.schedule = schedule
@@ -146,6 +148,11 @@ final class ScriptWidget {
         let schedule = schedule
         self.source = source
         diagnostics.suspended = false
+        if let change = schedule.change, changeObserver == nil {
+            changeObserver = NotificationCenter.default.addObserver(forName: change.notification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refresh(ScriptEvent(sender: change.event)) }
+            }
+        }
         let (stream, events) = AsyncStream<ScriptEvent>.makeStream(bufferingPolicy: .bufferingNewest(1))
         self.events = events
         events.yield(firstEvent)
@@ -270,10 +277,12 @@ final class ScriptWidget {
         timer?.cancel()
         events?.finish()
         source?.stop()
+        if let changeObserver { NotificationCenter.default.removeObserver(changeObserver) }
         task = nil
         timer = nil
         events = nil
         source = nil
+        changeObserver = nil
         diagnostics.running = false
         diagnostics.nextDelay = nil
     }
