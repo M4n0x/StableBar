@@ -729,10 +729,17 @@
           ]
         },
         "appGlyphs": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            {
+              "$ref": "#/definitions/reference"
+            }
+          ]
         },
         "showEmpty": {
           "$ref": "#/definitions/boolean"

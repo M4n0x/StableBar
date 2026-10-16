@@ -192,6 +192,20 @@ import Testing
     #expect(try #require(renderer.nsImage).size.width == expandedWidth)
 }
 
+@Test func appGlyphsMatchExactKeysThenTheLongestPrefixThenTheFallback() {
+    let glyphs = ["com.apple.finder": ":finder:", "Adobe Photoshop": ":photoshop:", "Adobe*": ":adobe:",
+                  "Adobe Photoshop*": ":photoshop_versions:", "*": ":default:"]
+    func glyph(_ name: String, _ bundleID: String) -> String? {
+        appGlyph(for: WorkspaceApp(workspace: "1", name: name, bundleID: bundleID), in: glyphs)
+    }
+    #expect(glyph("Finder", "com.apple.finder") == ":finder:")
+    #expect(glyph("Adobe Photoshop", "com.adobe.Photoshop") == ":photoshop:")
+    #expect(glyph("Adobe Photoshop 2026", "com.adobe.Photoshop.2026") == ":photoshop_versions:")
+    #expect(glyph("Adobe Bridge 2026", "com.adobe.bridge14") == ":adobe:")
+    #expect(glyph("Safari", "com.apple.Safari") == ":default:")
+    #expect(appGlyph(for: WorkspaceApp(workspace: "1", name: "Safari", bundleID: "com.apple.Safari"), in: ["Adobe*": ":adobe:"]) == nil)
+}
+
 @Test func notchGroupsStayOutsideAnOffCenterNotch() {
     let layout = BarLayout(inset: 12, spacing: 8, notchSpacing: 16, notch: 720...940)
     let x = layout.origins(width: 1728, sizes: [180, 260, 0, 200, 340])
