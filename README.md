@@ -168,7 +168,7 @@ Setup, the editor and the command line save changes into the main file's ordinar
 
 When every widget comes from the main file's `widgets` array, reordering changes that array. Otherwise the order is saved in `widgetOrder`: listed IDs come first, unlisted widgets keep their relative order, and IDs that are not currently present, such as widgets of an inactive profile, are skipped.
 
-Earlier versions saved changes in `customization` and `removedWidgets`. StableBar converts those keys into the ordinary ones the next time it starts.
+Earlier versions saved changes in `customization` and `removedWidgets`. StableBar converts those keys into the ordinary ones the next time it starts. Earlier versions also wrote setup's appearance colors and the starter configuration's accent into `defaults`, where they hid any theme. The first time this version starts, StableBar replaces setup's Light and Dark colors with `bar.appearance`, removes the `null` widget colors that setup's Automatic choice wrote, since `null` now means no color, and removes the starter's `#007aff` accent. Colors you set yourself stay.
 
 ### Local widget packages
 

@@ -72,6 +72,10 @@ final class BarStore: NSObject {
                 try data.write(to: configurationURL, options: .atomic)
             }
             try migrateConfigurationFile(configurationURL)
+            if !UserDefaults.standard.bool(forKey: "migratedEarlierColors") {
+                try migrateEarlierColors(configurationURL)
+                UserDefaults.standard.set(true, forKey: "migratedEarlierColors")
+            }
             reloadConfiguration()
         } catch {
             configurationError = errorMessage(error)

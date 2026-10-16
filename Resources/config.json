@@ -6,9 +6,6 @@
     "inset": 12,
     "spacing": 8
   },
-  "defaults": {
-    "accent": "#007aff"
-  },
   "widgets": [
     {
       "id": "system",

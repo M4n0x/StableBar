@@ -473,3 +473,35 @@ private let bundledThemes = URL(filePath: #filePath).deletingLastPathComponent()
     }
     #expect(error.map(errorMessage) == "bar.appearance: Cannot initialize BarAppearance from invalid String value auto")
 }
+
+@Test func colorsThatSetupAndTheStarterWroteNoLongerHideATheme() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = directory.appending(path: "config.json")
+    let dark = ##""foreground":"#f5f5f7ff","background":"#242629ee","hoverBackground":"#36383cff","borderColor":"#ffffff1f","shadowColor":"#00000040""##
+    let light = ##""foreground":"#1d1d1fff","background":"#f8f8faed","hoverBackground":"#ffffffff","borderColor":"#ffffffb3","shadowColor":"#00000014""##
+    let automatic = #""foreground":null,"background":null,"hoverBackground":null,"borderColor":null,"shadowColor":null"#
+    let changedAfterAutomatic = ##""foreground":"#ff8800ff","background":null,"hoverBackground":null,"borderColor":null,"shadowColor":null"##
+    for (defaults, bar, migrated) in [
+        ("{\(dark),\"accent\":\"#007aff\",\"fontSize\":13}", ConfigurationValue.object(["height": .number(40), "appearance": .string("dark")]),
+         ConfigurationValue.object(["fontSize": .number(13)])),
+        ("{\(light)}", .object(["height": .number(40), "appearance": .string("light")]), nil),
+        ("{\(automatic),\"accent\":\"#007aff\"}", .object(["height": .number(40)]), nil),
+        ("{\(changedAfterAutomatic)}", .object(["height": .number(40)]), .object(["foreground": .string("#ff8800ff")]))
+    ] {
+        try writePackageFile(#"{"theme":{"id":"slate"},"bar":{"height":40},"defaults":\#(defaults),"widgets":[]}"#, to: root)
+        try migrateEarlierColors(root)
+        let saved = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: root))
+        #expect(saved["bar"] == bar)
+        #expect(saved["defaults"] == migrated)
+        var loader = ConfigurationLoader()
+        loader.themesDirectory = bundledThemes
+        let configuration = try loader.load(root)
+        #expect(configuration.defaults.background == HexColor(light: 0xf4f5f7ed, dark: 0x23272eee))
+        #expect(configuration.defaults.accent == HexColor(light: 0x3a6ea5ff, dark: 0x5b8ac4ff))
+    }
+    let handSet = ##"{"bar":{"height":40},"defaults":{"foreground":"#abcdefff","background":"#242629ee","hoverBackground":"#36383cff","borderColor":"#ffffff1f","shadowColor":"#00000040","accent":"#ff8800"},"widgets":[]}"##
+    try writePackageFile(handSet, to: root)
+    try migrateEarlierColors(root)
+    #expect(try String(contentsOf: root, encoding: .utf8) == handSet)
+}

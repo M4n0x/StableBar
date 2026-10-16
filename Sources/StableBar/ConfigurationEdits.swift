@@ -156,6 +156,29 @@ func migrateConfigurationFile(_ url: URL) throws {
     try configurationData(root, editing: original).write(to: url, options: .atomic)
 }
 
+private let earlierSetupColors: [(appearance: String, colors: [String: ConfigurationValue])] = [
+    ("light", ["foreground": .string("#1d1d1fff"), "background": .string("#f8f8faed"), "hoverBackground": .string("#ffffffff"),
+               "borderColor": .string("#ffffffb3"), "shadowColor": .string("#00000014")]),
+    ("dark", ["foreground": .string("#f5f5f7ff"), "background": .string("#242629ee"), "hoverBackground": .string("#36383cff"),
+              "borderColor": .string("#ffffff1f"), "shadowColor": .string("#00000040")])
+]
+
+func migrateEarlierColors(_ url: URL) throws {
+    let original = try Data(contentsOf: url)
+    var root = try JSONDecoder().decode([String: ConfigurationValue].self, from: original)
+    guard case var .object(defaults) = root["defaults"] else { return }
+    if defaults["accent"] == .string("#007aff") { defaults["accent"] = nil }
+    for (appearance, colors) in earlierSetupColors where colors.allSatisfy({ defaults[$0.key] == $0.value }) {
+        for key in colors.keys { defaults[key] = nil }
+        var ids: [String] = []
+        root = try ConfigurationEdit(action: .bar, properties: ["appearance": .string(appearance)]).applying(to: root, widgetIDs: &ids)
+    }
+    for (key, value) in defaults where value == .null && earlierSetupColors.contains(where: { $0.colors[key] != nil }) { defaults[key] = nil }
+    guard root["defaults"] != .object(defaults) else { return }
+    root["defaults"] = defaults.isEmpty ? nil : .object(defaults)
+    try configurationData(root, editing: original).write(to: url, options: .atomic)
+}
+
 func configurationData(_ document: [String: ConfigurationValue]) throws -> Data {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
