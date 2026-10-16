@@ -4,7 +4,7 @@ import Foundation
 struct WidgetPackageSetting: Codable, Sendable {
     let type: String
     let title: String?
-    let `default`: ConfigurationValue
+    let `default`: ConfigurationValue?
 
     enum CodingKeys: String, CodingKey, CaseIterable { case type, title, `default` }
 
@@ -13,12 +13,12 @@ struct WidgetPackageSetting: Codable, Sendable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         type = try values.decode(String.self, forKey: .type)
         title = try values.decodeIfPresent(String.self, forKey: .title)
-        `default` = try values.decode(ConfigurationValue.self, forKey: .default)
+        `default` = try values.decodeIfPresent(ConfigurationValue.self, forKey: .default)
     }
 
-    func accepts(_ value: ConfigurationValue) -> Bool {
+    func accepts(_ value: ConfigurationValue?) -> Bool {
         switch (type, value) {
-        case ("string", .string), ("number", .number), ("bool", .bool): true
+        case ("string", .string?), ("number", .number?), ("bool", .bool?), ("secret", nil): true
         default: false
         }
     }
@@ -75,7 +75,7 @@ struct WidgetPackageManifest: Codable, Sendable {
     }
 
     func values(_ supplied: [String: ConfigurationValue]) throws -> [String: ConfigurationValue] {
-        var values = settings.mapValues(\.default)
+        var values = settings.compactMapValues(\.default)
         for (name, value) in supplied {
             guard let setting = settings[name] else { throw WidgetPackageError.unknownSetting(name) }
             guard setting.accepts(value) else { throw WidgetPackageError.invalidSetting(name) }
@@ -151,6 +151,7 @@ enum WidgetPackageError: LocalizedError {
     case downloadFailed(String, Int)
     case checksumMismatch(String)
     case archiveMismatch(String, String)
+    case misplacedSecret(String)
 
     var errorDescription: String? {
         switch self {
@@ -174,6 +175,7 @@ enum WidgetPackageError: LocalizedError {
         case let .downloadFailed(url, status): "Downloading \(url) failed with HTTP status \(status)."
         case let .checksumMismatch(id): "The archive of package \(id) does not match the store's checksum."
         case let .archiveMismatch(id, version): "The archive of package \(id) \(version) contains a different id or version."
+        case let .misplacedSecret(reference): "\(reference) can be used only as a whole environment value of a widget or provider that its own package defines."
         }
     }
 }
@@ -421,6 +423,20 @@ private func rejectCommandKeys(_ value: ConfigurationValue) throws {
             try rejectCommandKeys(object[key]!)
         }
     case let .array(array): try array.forEach(rejectCommandKeys)
+    default: break
+    }
+}
+
+func validateSecretReferences(_ value: ConfigurationValue, package id: String, path: [String] = []) throws {
+    switch value {
+    case let .string(string) where string.hasPrefix("@secret."):
+        guard string.hasPrefix("@secret.\(id)/"), path.count == 4, ["widgets", "providers"].contains(path[0]), path[2] == "environment" else {
+            throw WidgetPackageError.misplacedSecret(string)
+        }
+    case let .object(object):
+        for (key, child) in object { try validateSecretReferences(child, package: id, path: path + [key]) }
+    case let .array(array):
+        for (index, child) in array.enumerated() { try validateSecretReferences(child, package: id, path: path + [String(index)]) }
     default: break
     }
 }

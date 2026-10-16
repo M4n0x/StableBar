@@ -12,6 +12,8 @@ struct PackagesView: View {
     @State private var downloading: String?
     @State private var additions: [String] = []
     @State private var settings: [String: ConfigurationValue] = [:]
+    @State private var secrets: [String: String] = [:]
+    @State private var savedSecrets: Set<String> = []
     @State private var error: String?
 
     private var packages: WidgetPackageStore {
@@ -261,8 +263,24 @@ struct PackagesView: View {
                 if !manifest.settings.isEmpty {
                     Section("Settings") {
                         ForEach(manifest.settings.keys.sorted(), id: \.self) { name in
-                            PackageSettingField(title: manifest.settings[name]!.title ?? name,
-                                                value: Binding(get: { settings[name]! }, set: { settings[name] = $0 }))
+                            if manifest.settings[name]!.type == "secret" {
+                                let isSaved = savedSecrets.contains(name) && secrets[name] == nil
+                                LabeledContent(manifest.settings[name]!.title ?? name) {
+                                    HStack {
+                                        SecureField(manifest.settings[name]!.title ?? name,
+                                                    text: Binding(get: { secrets[name, default: ""] }, set: { secrets[name] = $0 }),
+                                                    prompt: Text(isSaved ? "Saved" : "Not set"))
+                                            .labelsHidden()
+                                        if isSaved {
+                                            Button("Remove") { secrets[name] = "" }
+                                                .buttonStyle(.borderless)
+                                        }
+                                    }
+                                }
+                            } else {
+                                PackageSettingField(title: manifest.settings[name]!.title ?? name,
+                                                    value: Binding(get: { settings[name]! }, set: { settings[name] = $0 }))
+                            }
                         }
                     }
                 }
@@ -346,6 +364,8 @@ struct PackagesView: View {
         let values = try manifest.values(supplied)
         let reviewed = try packages.inspect(directory, settings: values)
         settings = values
+        secrets = [:]
+        savedSecrets = Set(manifest.settings.filter { $0.value.type == "secret" && packageSecretIsSaved("\(manifest.id)/\($0.key)") }.keys)
         inspection = reviewed
         storeEntry = entry
     }
@@ -386,6 +406,13 @@ struct PackagesView: View {
             "enabled": .bool(enabled), "settings": .object(settings)
         ])
         try store.applyEdits([edit], persist: true)
+        if enabled {
+            for (name, value) in secrets {
+                try savePackageSecret(value, account: "\(manifest.id)/\(name)")
+                if value.isEmpty { savedSecrets.remove(name) } else { savedSecrets.insert(name) }
+            }
+            secrets = [:]
+        }
         try loadInstalled()
     }
 

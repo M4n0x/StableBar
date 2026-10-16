@@ -406,9 +406,13 @@ struct ConfigurationLoader {
         case .widgets?: try validateWidgetsDocument(layer.values)
         case nil: break
         }
-        let values = try manifest.values(settings)
+        var values = try manifest.values(settings)
+        for (name, setting) in manifest.settings where setting.type == "secret" {
+            values[name] = .string("@secret.\(manifest.id)/\(name)")
+        }
         layer.values = try substituteConfigurationReferences(.object(layer.values), prefix: "@setting.", values: values)
             .decoded([String: ConfigurationValue].self)
+        try validateSecretReferences(.object(layer.values), package: manifest.id)
         layer.values = try preparePackageDocument(layer.values, directory: directory)
         return layer
     }
