@@ -15,7 +15,7 @@ struct ScriptEvent: Sendable {
     }
 }
 
-struct WidgetMenuItem: Decodable, Sendable {
+struct WidgetMenuItem: Decodable, Equatable, Sendable {
     let title: String
     var detail: String?
     var onClick: String?
@@ -31,7 +31,7 @@ struct WidgetMenuItem: Decodable, Sendable {
     }
 }
 
-struct ScriptOutput: Decodable, Sendable {
+struct ScriptOutput: Decodable, Equatable, Sendable {
     var text: String
     var icon: String?
     var color: HexColor?
@@ -231,21 +231,26 @@ final class ScriptWidget {
         diagnostics.cpuTime += result.cpuTime
     }
 
+    /// Applies a source's new output. Only what changed is assigned, so an update that repeats the
+    /// current output invalidates no views; its `value` still adds a graph sample, and its `temporary`
+    /// still reaches the store, so it can show again after it ran out.
     func accept(_ next: ScriptOutput) throws {
         if let interval = next.interval, !interval.isFinite || interval <= 0 {
             throw CommandFailure(message: "A script interval must be greater than zero.")
         }
-        output = next
-        output.series = output.series?.mapValues { Array($0.suffix(60)) }
-        if let value = output.value {
-            samples.append(value)
-            if samples.count > 60 { samples.removeFirst() }
+        var next = next
+        next.series = next.series?.mapValues { Array($0.suffix(60)) }
+        let changed = next != output || error != nil
+        if next != output { output = next }
+        if let value = next.value {
+            let history = Array((samples + [value]).suffix(60))
+            if history != samples { samples = history }
         }
-        error = nil
+        if error != nil { error = nil }
         diagnostics.lastUpdated = Date()
         Self.acceptedOutputs += 1
         outputNumber = Self.acceptedOutputs
-        onUpdate?()
+        if changed || next.temporary != nil { onUpdate?() }
     }
 
     func refresh(_ event: ScriptEvent) {
