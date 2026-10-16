@@ -264,9 +264,19 @@ struct PackagesView: View {
                     Section("Settings") {
                         ForEach(manifest.settings.keys.sorted(), id: \.self) { name in
                             if manifest.settings[name]!.type == "secret" {
-                                SecureField(manifest.settings[name]!.title ?? name,
-                                            text: Binding(get: { secrets[name, default: ""] }, set: { secrets[name] = $0 }),
-                                            prompt: Text(savedSecrets.contains(name) ? "Saved" : "Not set"))
+                                let isSaved = savedSecrets.contains(name) && secrets[name] == nil
+                                LabeledContent(manifest.settings[name]!.title ?? name) {
+                                    HStack {
+                                        SecureField(manifest.settings[name]!.title ?? name,
+                                                    text: Binding(get: { secrets[name, default: ""] }, set: { secrets[name] = $0 }),
+                                                    prompt: Text(isSaved ? "Saved" : "Not set"))
+                                            .labelsHidden()
+                                        if isSaved {
+                                            Button("Remove") { secrets[name] = "" }
+                                                .buttonStyle(.borderless)
+                                        }
+                                    }
+                                }
                             } else {
                                 PackageSettingField(title: manifest.settings[name]!.title ?? name,
                                                     value: Binding(get: { settings[name]! }, set: { settings[name] = $0 }))
