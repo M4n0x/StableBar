@@ -209,9 +209,36 @@ Enable an exact installed version in the root configuration:
 }
 ```
 
-Package selections in modules merge by package ID, with later modules and the root taking precedence. Enabled packages load once before the composed modules and root properties. Root templates, tokens and widget overrides can customize them. Set `enabled` to `false` to stop loading a package; installation alone has no runtime effect. Packages cannot enable other packages. There is no network registry or automatic update process: versions remain pinned until you choose another installed version.
+Package selections in modules merge by package ID, with later modules and the root taking precedence. Enabled packages load once before the composed modules and root properties. Root templates, tokens and widget overrides can customize them. Set `enabled` to `false` to stop loading a package; installation alone has no runtime effect. Packages cannot enable other packages. StableBar never updates a package by itself: versions remain pinned until you choose another installed version, and the [store](#store) only tells you about newer ones.
 
 A package whose `package.json` sets `"kind": "widgets"` contains no commands, so it needs no command review. Its configuration can contain only `tokens`, `defaults`, `bar`, `groups`, `profiles`, `widgets`, `templates`, `popups` and `providers`, plus includes inside the package. Nowhere in it, including templates, popups, providers and profiles, can it set `command`, `onClick`, `onClickField`, `rightClick`, `middleClick`, `scrollUp`, `scrollDown`, `mouseEntered`, `mouseExited`, `onChange` or `environment`, so script widgets and `command` or `stream` providers are rejected too. Built-in widget types, native providers and [`open`](#mouse-actions) remain available, and built-in widgets keep their own behaviour: a `workspaces` widget still talks to AeroSpace or yabai. StableBar checks this when the package is reviewed, installed and loaded, and **Customize → Packages** and `--inspect-package` say that it contains no commands instead of listing them. Enable it in `packages` like any widget package. [examples/packages/system-monitor](examples/packages/system-monitor/config.json) shows CPU and memory with a popup.
+
+### Store
+
+**Customize → Packages** lists the packages of the [StableBar store](https://github.com/Seb-GRAF/stablebar-packages) under **Store**, with each one's version, description and kind: a theme, a package that contains no commands, or one that runs commands. Select one to download it, check it and review it like a local folder, then choose **Install Version …**. Installing does not enable it. A package that needs a newer StableBar shows the version it requires and cannot be installed. The list loads when you open the tab; reload it with the button beside **Store**. On the command line, give `--install-package` a package ID instead of a folder:
+
+```sh
+StableBar --install-package nord
+```
+
+A store package whose version is newer than every version you have installed is marked **Update**. Install it and enable the new version; the old one stays installed, so you can roll back. When the new version runs commands, contacts hosts or uses macOS permissions that the enabled version does not, StableBar lists them and asks before enabling it.
+
+Every store package is open source in [stablebar-packages](https://github.com/Seb-GRAF/stablebar-packages), and that repository's CI builds and publishes the archives, not the package's author. Themes and packages that contain no commands are published once they pass CI. A maintainer reads every version of a package that runs commands before it is published. StableBar downloads the index and the archives over HTTPS and checks each archive against the SHA-256 in the index before reviewing it.
+
+These optional `package.json` keys describe a package, and the review shows them:
+
+| Key | Meaning |
+| --- | --- |
+| `description` | One sentence for the store and the review |
+| `author` | Person, organization or handle |
+| `repository` | `https` URL of the package's source |
+| `screenshot` | Path inside the package to a PNG or JPEG |
+| `minimumVersion` | Oldest StableBar version that can run it, such as `0.6.0`. An older StableBar refuses to review or install it. |
+| `requires` | Command-line tools needed on the login shell's PATH, such as `jq` or `gh`. The review names the ones it cannot find. |
+| `permissions` | macOS permissions: `calendars`, `automation`, `accessibility`, `bluetooth` or `location` |
+| `hosts` | Hostnames the package contacts, such as `api.github.com` |
+
+StableBar shows `requires`, `permissions` and `hosts` but does not enforce them. For store packages, a maintainer checks them against the code.
 
 ### Themes
 
@@ -427,7 +454,7 @@ A batch validates the whole resulting configuration before replacing the running
 - `--refresh ID`: refresh a running widget. Hidden, suspended providers must first be made visible or opened in **Customize → Diagnostics**.
 - `--trigger EVENT [KEY=VALUE ...]`: send an event. Without `--config`, this broadcasts to all subscribed bars for compatibility; with `--config`, it targets that configuration.
 - `--reload`: reload configuration; without `--config`, notify all running bars.
-- `--packages`, `--inspect-package PATH`, `--install-package PATH`, `--enable-package ID VERSION [--persist]`: review and manage local packages. Installation does not enable commands. Package selections belong in the root file or its includes; use profile widget overrides to hide package widgets contextually.
+- `--packages`, `--inspect-package PATH`, `--install-package PATH|ID`, `--enable-package ID VERSION [--persist]`: review and manage packages. `--install-package` installs a folder, or a package from the [store](#store) when its argument is not a folder. Installation does not enable commands. Package selections belong in the root file or its includes; use profile widget overrides to hide package widgets contextually.
 
 ### Customize
 
@@ -445,7 +472,7 @@ Changes in these sections apply to the bar immediately, like command-line edits 
 
 **Profiles** edits [profiles](#theme-tokens-and-automatic-profiles) and chooses automatic matching or a pinned profile.
 
-**Packages** reviews local folders and their declared commands, edits typed settings, installs versions and enables a chosen version. Enabling a theme makes it the active theme; themes have no commands to review. Select an older installed version to roll back.
+**Packages** reviews local folders and [store](#store) packages and their declared commands, edits typed settings, installs versions and enables a chosen version. Enabling a theme makes it the active theme; themes have no commands to review. Select an older installed version to roll back.
 
 **Diagnostics** shows the composed widget configuration, defaults, source paths, provider output, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while Diagnostics is visible. Closing the window restores its visibility policy.
 
@@ -801,7 +828,7 @@ For new native widget types, add a case to `WidgetContent`, decode its settings 
 - [RuntimeControl.swift](Sources/StableBar/RuntimeControl.swift): local request/reply control endpoint.
 - [ConfigurationEditor.swift](Sources/StableBar/ConfigurationEditor.swift): preview, undo/redo and validated persistence.
 - [NativeMetrics.swift](Sources/StableBar/NativeMetrics.swift): public macOS metric sources.
-- [WidgetPackage.swift](Sources/StableBar/WidgetPackage.swift): local package inspection, installation and version selection.
+- [WidgetPackage.swift](Sources/StableBar/WidgetPackage.swift): package inspection, installation, store downloads and version selection.
 - [Workspaces.swift](Sources/StableBar/Workspaces.swift): AeroSpace subscriptions, yabai refreshes and workspace actions.
 - [Yabai.swift](Sources/StableBar/Yabai.swift): yabai snapshots mapped to workspaces and screen numbers.
 - [ScriptWidget.swift](Sources/StableBar/ScriptWidget.swift): custom widget output and refresh tasks.
