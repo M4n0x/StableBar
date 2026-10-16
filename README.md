@@ -8,7 +8,7 @@ The default configuration includes a System Settings shortcut, the active app an
 
 Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, theme, appearance, placement, clock format, and opening at login. Run it again from **Customize StableBar → General**.
 
-The starter bar needs no special permissions. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. A [calendar provider](#calendar) asks for Calendars access the first time it updates. AeroSpace and yabai manage their own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
+The starter bar needs no special permissions. Keeping windows clear of the bar requires Accessibility access for StableBar. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. A [calendar provider](#calendar) asks for Calendars access the first time it updates. AeroSpace and yabai manage their own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
 
 Setup offers the [themes](#themes) that ship with StableBar and any you have installed. Every theme has light and dark colors and follows the system's light or dark mode; choose **Light** or **Dark** to keep the bar in one appearance, which sets `bar.appearance`. Individual widget styles still take precedence. Setup preserves custom widgets, scripts, and other settings. Closing setup leaves it available on the next launch. New configurations place the bar below the macOS menu bar; existing configurations retain their position.
 
@@ -58,7 +58,11 @@ StableBar sits at the top edge of each display. `bar.offset` moves it down from 
 
 ### Keeping windows clear of the bar
 
-macOS gives apps no way to reserve screen space, so windows can extend under the bar, as they do with SketchyBar. With AeroSpace, set `gaps.outer.top` in `~/.aerospace.toml` to the bar's height (40 by default), plus any `bar.offset` beyond the menu bar; AeroSpace accepts per-monitor values. yabai users can set `external_bar`. Without a tiling window manager, windows placed at the top of the screen sit partly under the bar.
+macOS provides no public API for a custom bar to reserve screen space. Without a tiling window manager, enable **Customize → Appearance → Windows → Keep windows clear of StableBar** (`bar.keepWindowsClear`, off by default) and allow StableBar in **System Settings → Privacy & Security → Accessibility**. StableBar then moves overlapping ordinary windows below the bar and reduces their height when needed to keep them above the Dock. It follows each display's bar height, offset and scale, and waits until you finish dragging before adjusting a window. See [the window clearance example](examples/window-clearance/config.json).
+
+Native fullscreen windows, minimized windows and dialogs are left alone. Some apps do not expose movable or resizable windows, or enforce a minimum size that cannot fit; StableBar cannot keep those clear. Disabling the option stops adjustments and leaves windows where they are. Revoking Accessibility access pauses adjustments; granting it resumes them. A locally rebuilt, ad-hoc signed app may need to be authorized again.
+
+Leave this option off when another window manager controls your gaps. With AeroSpace, set `gaps.outer.top` in `~/.aerospace.toml` to the bar's height (40 by default), plus any `bar.offset` beyond the menu bar; AeroSpace accepts per-monitor values. yabai users can set `external_bar`.
 
 ## Layout and style
 

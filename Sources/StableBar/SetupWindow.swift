@@ -205,7 +205,7 @@ struct SetupView: View {
                     Image(systemName: "rectangle.3.group").font(.title2).frame(width: 28)
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Window manager · Optional").font(.headline)
-                        Text("Workspace widgets use AeroSpace or yabai. Grant Accessibility access to your window manager in its own setup. To keep windows clear of the bar, set \(Text("gaps.outer.top = \(String(format: "%g", store.configuration?.bar.height ?? 40))").monospaced()) in AeroSpace's configuration, or use yabai's external_bar setting.")
+                        Text("Without a window manager, enable Keep windows clear of StableBar in Customize → Appearance and grant StableBar Accessibility access. For AeroSpace, set \(Text("gaps.outer.top = \(String(format: "%g", store.configuration?.bar.height ?? 40))").monospaced()) in its configuration, or use yabai's external_bar setting. Grant your window manager access in its own setup.")
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)

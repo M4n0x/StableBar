@@ -1,6 +1,60 @@
 import Foundation
+import CoreGraphics
 import Testing
 @testable import StableBar
+
+@Test func windowClearanceMovesOnlyOverlappingWindowsAndShrinksToTheDock() {
+    let display = WindowClearanceDisplay(frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+        visibleFrame: CGRect(x: 0, y: 60, width: 1440, height: 812),
+        barFrame: CGRect(x: 0, y: 832, width: 1440, height: 40), desktopTop: 900)
+    let small = CGRect(x: 150, y: 28, width: 600, height: 400)
+    let moved = CGRect(x: 150, y: 68, width: 600, height: 400)
+    #expect(frameBelowBar(small, displays: [display]) == moved)
+    #expect(frameBelowBar(moved, displays: [display]) == nil)
+    #expect(frameBelowBar(CGRect(x: 0, y: 28, width: 1440, height: 812), displays: [display])
+            == CGRect(x: 0, y: 68, width: 1440, height: 772))
+    #expect(frameBelowBar(CGRect(x: 100, y: 150, width: 700, height: 800), displays: [display]) == nil)
+    #expect(frameBelowBar(CGRect(x: 1600, y: 0, width: 500, height: 400), displays: [display]) == nil)
+}
+
+@Test func windowClearanceUsesTheDisplayWithMostOfTheWindowAndKeepsItsHorizontalPosition() {
+    let main = WindowClearanceDisplay(frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+        visibleFrame: CGRect(x: 0, y: 60, width: 1440, height: 802),
+        barFrame: CGRect(x: 0, y: 822, width: 1440, height: 40), desktopTop: 900)
+    let left = WindowClearanceDisplay(frame: CGRect(x: -1920, y: -180, width: 1920, height: 1080),
+        visibleFrame: CGRect(x: -1870, y: -180, width: 1870, height: 1052),
+        barFrame: CGRect(x: -1920, y: 812, width: 1920, height: 60), desktopTop: 900)
+    #expect(frameBelowBar(CGRect(x: -500, y: 28, width: 800, height: 700), displays: [main, left])
+            == CGRect(x: -500, y: 88, width: 800, height: 700))
+    #expect(frameBelowBar(CGRect(x: -200, y: 38, width: 800, height: 802), displays: [main, left])
+            == CGRect(x: -200, y: 78, width: 800, height: 762))
+}
+
+@Test func windowClearanceHandlesDisplaysAboveAndBelowThePrimaryDisplay() {
+    let above = WindowClearanceDisplay(frame: CGRect(x: 0, y: 900, width: 1440, height: 900),
+        visibleFrame: CGRect(x: 0, y: 900, width: 1440, height: 872),
+        barFrame: CGRect(x: 0, y: 1732, width: 1440, height: 40), desktopTop: 900)
+    let below = WindowClearanceDisplay(frame: CGRect(x: 0, y: -900, width: 1440, height: 900),
+        visibleFrame: CGRect(x: 0, y: -900, width: 1440, height: 872),
+        barFrame: CGRect(x: 0, y: -68, width: 1440, height: 40), desktopTop: 900)
+    #expect(frameBelowBar(CGRect(x: 100, y: -872, width: 800, height: 872), displays: [above, below])
+            == CGRect(x: 100, y: -832, width: 800, height: 832))
+    #expect(frameBelowBar(CGRect(x: 100, y: 928, width: 800, height: 872), displays: [above, below])
+            == CGRect(x: 100, y: 968, width: 800, height: 832))
+}
+
+@Test func windowClearanceDoesNotMoveWindowsWhenTheBarIsOutsideTheUsableScreen() {
+    let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+    let visible = CGRect(x: 0, y: 60, width: 1440, height: 802)
+    let window = CGRect(x: 100, y: 38, width: 800, height: 802)
+    for bar in [CGRect(x: 0, y: 878, width: 1440, height: 22),
+                CGRect(x: 0, y: -40, width: 1440, height: 40),
+                CGRect(x: 0, y: 20, width: 1440, height: 40)] {
+        #expect(frameBelowBar(window, displays: [WindowClearanceDisplay(frame: screen, visibleFrame: visible,
+            barFrame: bar, desktopTop: 900)]) == nil)
+    }
+    #expect(frameBelowBar(window, displays: []) == nil)
+}
 
 @Test func adaptiveLayoutKeepsHighPriorityWidgetsAndReservesOverflowSpace() {
     let planner = AdaptiveBarPlanner(inset: 10, spacing: 8, notchSpacing: 16, notch: nil)
