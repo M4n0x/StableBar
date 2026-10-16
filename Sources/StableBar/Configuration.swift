@@ -2,31 +2,60 @@ import AppKit
 import SwiftUI
 
 struct HexColor: Decodable, Equatable, Sendable {
-    let rgba: UInt32
+    let light: UInt32
+    let dark: UInt32
+
+    enum CodingKeys: String, CodingKey, CaseIterable { case light, dark }
 
     init(_ rgba: UInt32) {
-        self.rgba = rgba
+        light = rgba
+        dark = rgba
+    }
+
+    init(light: UInt32, dark: UInt32) {
+        self.light = light
+        self.dark = dark
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-        let string = try container.decode(String.self)
+        if let string = try? container.decode(String.self) {
+            let rgba = try HexColor.rgba(string, in: container)
+            light = rgba
+            dark = rgba
+        } else {
+            try decoder.rejectUnknownKeys(CodingKeys.self)
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            light = try HexColor.rgba(values.decode(String.self, forKey: .light), in: container)
+            dark = try HexColor.rgba(values.decode(String.self, forKey: .dark), in: container)
+        }
+    }
+
+    private static func rgba(_ string: String, in container: SingleValueDecodingContainer) throws -> UInt32 {
         let hex = string.dropFirst()
         guard string.hasPrefix("#"), [6, 8].contains(hex.count),
               let value = UInt32(hex, radix: 16) else {
             throw DecodingError.dataCorruptedError(in: container, debugDescription: "Use #RRGGBB or #RRGGBBAA for colors.")
         }
-        rgba = hex.count == 6 ? (value << 8) | 0xff : value
+        return hex.count == 6 ? (value << 8) | 0xff : value
     }
 
     var color: Color {
+        guard light != dark else { return HexColor.color(light) }
+        let light = light, dark = dark
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            let rgba = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+            return NSColor(srgbRed: CGFloat(rgba >> 24) / 255, green: CGFloat((rgba >> 16) & 0xff) / 255,
+                           blue: CGFloat((rgba >> 8) & 0xff) / 255, alpha: CGFloat(rgba & 0xff) / 255)
+        })
+    }
+
+    private static func color(_ rgba: UInt32) -> Color {
         Color(.sRGB, red: Double(rgba >> 24) / 255,
               green: Double((rgba >> 16) & 0xff) / 255,
               blue: Double((rgba >> 8) & 0xff) / 255,
               opacity: Double(rgba & 0xff) / 255)
     }
-
-    var hex: String { String(format: "#%08x", rgba) }
 }
 
 struct WidgetStyle: Decodable, Equatable, Sendable {
@@ -136,19 +165,12 @@ extension WidgetStyle {
         opacity = try values.decodeIfPresent(Double.self, forKey: .opacity)
         hoverForeground = try values.decodeIfPresent(HexColor.self, forKey: .hoverForeground)
     }
-
-    static let light = WidgetStyle(foreground: HexColor(0x1d1d1fff), background: HexColor(0xf8f8faed), hoverBackground: HexColor(0xffffffff),
-                                   borderColor: HexColor(0xffffffb3), shadowColor: HexColor(0x00000014))
-    static let dark = WidgetStyle(foreground: HexColor(0xf5f5f7ff), background: HexColor(0x242629ee), hoverBackground: HexColor(0x36383cff),
-                                  borderColor: HexColor(0xffffff1f), shadowColor: HexColor(0x00000040))
 }
 
-private func systemColor(_ color: KeyPath<WidgetStyle, HexColor?>) -> Color {
-    Color(nsColor: NSColor(name: nil) { appearance in
-        let style = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? WidgetStyle.dark : WidgetStyle.light
-        return NSColor(style[keyPath: color]!.color)
-    })
-}
+let fontWeights: [(name: String, weight: Font.Weight)] = [
+    ("ultralight", .ultraLight), ("thin", .thin), ("light", .light), ("regular", .regular),
+    ("medium", .medium), ("semibold", .semibold), ("bold", .bold)
+]
 
 struct WidgetAppearance {
     let foreground: Color
@@ -170,11 +192,11 @@ struct WidgetAppearance {
     let shadowColor: Color
 
     init(_ style: WidgetStyle, defaults: WidgetStyle) {
-        foreground = (style.foreground ?? defaults.foreground)?.color ?? systemColor(\.foreground)
+        foreground = (style.foreground ?? defaults.foreground)?.color ?? .primary
         hoverForeground = (style.hoverForeground ?? defaults.hoverForeground)?.color ?? foreground
-        background = (style.background ?? defaults.background)?.color ?? systemColor(\.background)
-        hoverBackground = (style.hoverBackground ?? defaults.hoverBackground)?.color ?? systemColor(\.hoverBackground)
-        borderColor = (style.borderColor ?? defaults.borderColor)?.color ?? systemColor(\.borderColor)
+        background = (style.background ?? defaults.background)?.color ?? .clear
+        hoverBackground = (style.hoverBackground ?? defaults.hoverBackground)?.color ?? background
+        borderColor = (style.borderColor ?? defaults.borderColor)?.color ?? .clear
         accent = (style.accent ?? defaults.accent ?? HexColor(0xf7821bff)).color
         accentText = (style.accentText ?? defaults.accentText ?? HexColor(0xffffffff)).color
         borderWidth = style.borderWidth ?? defaults.borderWidth ?? 1
@@ -185,19 +207,10 @@ struct WidgetAppearance {
         spacing = style.spacing ?? defaults.spacing ?? 6
         width = (style.width ?? defaults.width).map { CGFloat($0) }
         shadowRadius = style.shadowRadius ?? defaults.shadowRadius ?? 2
-        shadowColor = (style.shadowColor ?? defaults.shadowColor)?.color ?? systemColor(\.shadowColor)
+        shadowColor = (style.shadowColor ?? defaults.shadowColor)?.color ?? .clear
         let size = style.fontSize ?? defaults.fontSize ?? 12
         let name = style.fontName ?? defaults.fontName ?? "system"
-        let weight: Font.Weight
-        switch style.fontWeight ?? defaults.fontWeight ?? "medium" {
-        case "ultralight": weight = .ultraLight
-        case "thin": weight = .thin
-        case "light": weight = .light
-        case "regular": weight = .regular
-        case "semibold": weight = .semibold
-        case "bold": weight = .bold
-        default: weight = .medium
-        }
+        let weight = fontWeights.first { $0.name == style.fontWeight ?? defaults.fontWeight }?.weight ?? .medium
         font = name == "system" ? .system(size: size, weight: weight) : .custom(name, size: size).weight(weight)
     }
 }
@@ -294,6 +307,12 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     }
 }
 
+enum BarAppearance: String, Decodable, Sendable {
+    case light, dark
+
+    var colorScheme: ColorScheme { self == .dark ? .dark : .light }
+}
+
 struct BarSettings: Decodable, Sendable {
     var height = 40.0
     var displayScale: [String: Double] = [:]
@@ -305,9 +324,10 @@ struct BarSettings: Decodable, Sendable {
     var notchWidth: Double?
     var notchSpacing = 16.0
     var style = WidgetStyle()
+    var appearance: BarAppearance?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case height, displayScale, offset, inset, spacing, background, animationDuration, notchWidth, notchSpacing, style
+        case height, displayScale, offset, inset, spacing, background, animationDuration, notchWidth, notchSpacing, style, appearance
     }
 
     init() {}
@@ -328,6 +348,7 @@ struct BarSettings: Decodable, Sendable {
         notchWidth = try values.decodeIfPresent(Double.self, forKey: .notchWidth)
         notchSpacing = try values.decodeIfPresent(Double.self, forKey: .notchSpacing) ?? notchSpacing
         style = try values.decodeIfPresent(WidgetStyle.self, forKey: .style) ?? style
+        appearance = try values.decodeIfPresent(BarAppearance.self, forKey: .appearance)
     }
 
     func scale(for display: BarDisplay) -> Double {

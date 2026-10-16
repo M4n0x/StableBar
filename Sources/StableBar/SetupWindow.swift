@@ -47,9 +47,8 @@ struct SetupView: View {
             || directory == FileManager.default.homeDirectoryForCurrentUser.appending(path: "Applications", directoryHint: .isDirectory)
     }
 
-    private var themes: [WidgetPackageManifest] {
-        ((try? WidgetPackageStore(directory: store.configurationURL.deletingLastPathComponent().appending(path: "packages")).list()) ?? [])
-            .filter { $0.kind == .theme }
+    private var themes: [ThemeChoice] {
+        themeChoices(packages: store.configurationURL.deletingLastPathComponent().appending(path: "packages"))
     }
 
     private var menuBarHeight: Double {
@@ -102,7 +101,7 @@ struct SetupView: View {
                     Button("Set up later", action: close)
                 }
                 Spacer()
-                Text(step == 2 ? "You can revisit setup from the bar’s menu." : "Changes apply when you finish.")
+                Text(step == 2 ? "You can run setup again from Customize StableBar → General." : "Changes apply when you finish.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button(step == 2 ? "Start StableBar" : "Continue") {
@@ -160,15 +159,13 @@ struct SetupView: View {
                 Picker("Theme", selection: $preferences.theme) {
                     Text("Keep current").tag(SetupPreferences.Theme.current)
                     Text("Built-in").tag(SetupPreferences.Theme.builtIn)
-                    ForEach(themes, id: \.versionKey) {
-                        Text("\($0.name) · \($0.version)").tag(SetupPreferences.Theme.package(id: $0.id, version: $0.version))
+                    ForEach(themes, id: \.key) {
+                        Text($0.title).tag(SetupPreferences.Theme.package(id: $0.manifest.id, version: $0.isBundled ? nil : $0.manifest.version))
                     }
                 }
                 .pickerStyle(.menu)
-                if preferences.theme == .current || preferences.theme == .builtIn {
-                    Picker("Appearance", selection: $preferences.appearance) {
-                        ForEach(SetupPreferences.Appearance.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
+                Picker("Appearance", selection: $preferences.appearance) {
+                    ForEach(SetupPreferences.Appearance.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 Picker("Placement", selection: $preferences.placement) {
                     ForEach(SetupPreferences.Placement.allCases, id: \.self) { Text($0.rawValue).tag($0) }

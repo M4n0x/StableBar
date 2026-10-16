@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct InspectorView: View {
+struct DiagnosticsView: View {
     let store: BarStore
     @State private var selectedID = ""
     @State private var event = "manual"

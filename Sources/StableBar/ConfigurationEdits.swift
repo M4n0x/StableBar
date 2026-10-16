@@ -1,7 +1,7 @@
 import Foundation
 
 struct ConfigurationEdit: Codable, Sendable {
-    enum Action: String, Codable { case set, add, remove, reorder, bar, defaults, profile, profiles, package, theme }
+    enum Action: String, Codable { case set, add, remove, reorder, bar, defaults, tokens, unset, profile, profiles, package, theme }
     let action: Action
     var id: String?
     var properties: [String: ConfigurationValue]?
@@ -12,6 +12,7 @@ struct ConfigurationEdit: Codable, Sendable {
     func validateTargets(in widgetIDs: [String]) throws {
         switch action {
         case .set, .remove: _ = try target(in: widgetIDs)
+        case .unset where id != nil: _ = try target(in: widgetIDs)
         case .add:
             let widget = try requiredProperties()
             guard let id = try widget["id"]?.decoded(String.self), !widgetIDs.contains(id) else {
@@ -62,9 +63,20 @@ struct ConfigurationEdit: Codable, Sendable {
                 root["widgetOrder"] = .array(ids!.map(ConfigurationValue.string))
             }
             widgetIDs = order
-        case .bar, .defaults:
+        case .bar, .defaults, .tokens:
             let key = action.rawValue
             root[key] = .object(try requiredProperties()).overriding(root[key] ?? .object([:]))
+        case .unset:
+            let properties = try requiredProperties()
+            if let id {
+                if try !changeDefinition(id, in: &root, { widgets, index in widgets[index] = removing(properties, from: widgets[index]) }) {
+                    let override = removing(properties, from: try overrides[id]?.decoded([String: ConfigurationValue].self) ?? [:])
+                    overrides[id] = override.isEmpty ? nil : .object(override)
+                    root["widgetOverrides"] = overrides.isEmpty ? nil : .object(overrides)
+                }
+            } else {
+                root = removing(properties, from: root)
+            }
         case .profile:
             root["profile"] = name.map(ConfigurationValue.string) ?? .null
         case .profiles:
@@ -116,6 +128,21 @@ private func changeDefinition(_ id: String, in document: inout [String: Configur
     return false
 }
 
+private func removing(_ keys: [String: ConfigurationValue], from object: [String: ConfigurationValue]) -> [String: ConfigurationValue] {
+    var result = object
+    for (key, value) in keys {
+        if case let .object(nested) = value, !nested.isEmpty {
+            if case let .object(current) = result[key] {
+                let remaining = removing(nested, from: current)
+                result[key] = remaining.isEmpty ? nil : .object(remaining)
+            }
+        } else {
+            result[key] = nil
+        }
+    }
+    return result
+}
+
 private func removingReferences(to id: String, in document: [String: ConfigurationValue]) throws -> [String: ConfigurationValue] {
     var document = document
     var overrides = try document["widgetOverrides"]?.decoded([String: ConfigurationValue].self) ?? [:]
@@ -153,6 +180,29 @@ func migrateConfigurationFile(_ url: URL) throws {
     }
     var ids: [String] = []
     for edit in edits { root = try edit.applying(to: root, widgetIDs: &ids) }
+    try configurationData(root, editing: original).write(to: url, options: .atomic)
+}
+
+private let earlierSetupColors: [(appearance: String, colors: [String: ConfigurationValue])] = [
+    ("light", ["foreground": .string("#1d1d1fff"), "background": .string("#f8f8faed"), "hoverBackground": .string("#ffffffff"),
+               "borderColor": .string("#ffffffb3"), "shadowColor": .string("#00000014")]),
+    ("dark", ["foreground": .string("#f5f5f7ff"), "background": .string("#242629ee"), "hoverBackground": .string("#36383cff"),
+              "borderColor": .string("#ffffff1f"), "shadowColor": .string("#00000040")])
+]
+
+func migrateEarlierColors(_ url: URL) throws {
+    let original = try Data(contentsOf: url)
+    var root = try JSONDecoder().decode([String: ConfigurationValue].self, from: original)
+    guard case var .object(defaults) = root["defaults"] else { return }
+    if defaults["accent"] == .string("#007aff") { defaults["accent"] = nil }
+    for (appearance, colors) in earlierSetupColors where colors.allSatisfy({ defaults[$0.key] == $0.value }) {
+        for key in colors.keys { defaults[key] = nil }
+        var ids: [String] = []
+        root = try ConfigurationEdit(action: .bar, properties: ["appearance": .string(appearance)]).applying(to: root, widgetIDs: &ids)
+    }
+    for (key, value) in defaults where value == .null && earlierSetupColors.contains(where: { $0.colors[key] != nil }) { defaults[key] = nil }
+    guard root["defaults"] != .object(defaults) else { return }
+    root["defaults"] = defaults.isEmpty ? nil : .object(defaults)
     try configurationData(root, editing: original).write(to: url, options: .atomic)
 }
 

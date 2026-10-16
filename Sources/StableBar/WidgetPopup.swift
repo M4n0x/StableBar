@@ -55,6 +55,7 @@ final class WidgetPopup {
         panel.autorecalculatesKeyViewLoop = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
+        panel.appearance = store.configuration?.bar.appearance.flatMap { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) }
         panel.contentView = host
         self.panel = panel
         widgetID = widget.id

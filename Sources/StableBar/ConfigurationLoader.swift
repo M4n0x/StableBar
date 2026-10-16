@@ -122,11 +122,17 @@ func expandWidgetTemplate(_ definition: [String: ConfigurationValue],
 struct ConfigurationOrigin: Equatable, Sendable, CustomStringConvertible {
     let file: String
     var detail = ""
+    var token: String?
+    var tokenSource = ""
 
-    var description: String { detail.isEmpty ? file : "\(file) \(detail)" }
+    var description: String {
+        [file, detail, token.map { "→ token \($0) (\(tokenSource))" } ?? ""].filter { !$0.isEmpty }.joined(separator: " ")
+    }
 
     func appending(_ text: String) -> ConfigurationOrigin {
-        ConfigurationOrigin(file: file, detail: detail.isEmpty ? text : "\(detail) \(text)")
+        var origin = self
+        origin.detail = detail.isEmpty ? text : "\(detail) \(text)"
+        return origin
     }
 }
 
@@ -177,7 +183,10 @@ func configurationOrigins(_ value: ConfigurationValue, source: ConfigurationOrig
     return origins
 }
 
+let bundledThemesDirectory = Bundle.main.url(forResource: "themes", withExtension: nil)
+
 struct ConfigurationLoader {
+    var themesDirectory = bundledThemesDirectory
     private(set) var dependencies: Set<URL> = []
     private(set) var document: [String: ConfigurationValue] = [:]
     private(set) var origins: [String: ConfigurationOrigin] = [:]
@@ -204,8 +213,11 @@ struct ConfigurationLoader {
         for selection in try base.values["packages"]?.decoded([WidgetPackageSelection].self, at: "packages") ?? [] where selection.enabled {
             try layer.merge(readSelectedPackage(selection, from: packageStore, kind: nil))
         }
+        if themesDirectory != nil {
+            try layer.merge(readBundledTheme(WidgetPackageSelection(id: "built-in")))
+        }
         if let theme = try base.values["theme"]?.decoded(WidgetPackageSelection.self, at: "theme"), theme.enabled {
-            try layer.merge(readSelectedPackage(theme, from: packageStore, kind: .theme))
+            try layer.merge(theme.version == nil ? readBundledTheme(theme) : readSelectedPackage(theme, from: packageStore, kind: .theme))
         }
         try layer.merge(base)
         return try finish(layer, context: context)
@@ -213,10 +225,11 @@ struct ConfigurationLoader {
 
     private mutating func readSelectedPackage(_ selection: WidgetPackageSelection, from packageStore: WidgetPackageStore,
                                               kind: WidgetPackageManifest.Kind?) throws -> ConfigurationLayer {
-        let directory = try packageStore.directory(id: selection.id, version: selection.version)
+        guard let version = selection.version else { throw WidgetPackageError.missingVersion(selection.id) }
+        let directory = try packageStore.directory(id: selection.id, version: version)
         dependencies.insert(directory.appending(path: "package.json"))
         let manifest = try packageStore.manifest(at: directory)
-        guard manifest.id == selection.id, manifest.version == selection.version else {
+        guard manifest.id == selection.id, manifest.version == version else {
             throw WidgetPackageError.manifestMismatch
         }
         guard manifest.kind == kind else {
@@ -226,8 +239,23 @@ struct ConfigurationLoader {
         return try readPackage(at: directory, manifest: manifest, settings: selection.settings)
     }
 
+    private mutating func readBundledTheme(_ selection: WidgetPackageSelection) throws -> ConfigurationLayer {
+        guard let themesDirectory, FileManager.default.fileExists(atPath: themesDirectory.appending(path: "\(selection.id)/package.json").path) else {
+            throw WidgetPackageError.unknownTheme(selection.id)
+        }
+        let directory = themesDirectory.appending(path: selection.id)
+        let manifest = try WidgetPackageStore(directory: themesDirectory).manifest(at: directory)
+        return try readPackage(at: directory, manifest: manifest, settings: selection.settings)
+    }
+
     mutating func finish(_ input: ConfigurationLayer, context: ConfigurationContext) throws -> [String: ConfigurationValue] {
         var layer = input
+        var context = context
+        if case let .object(bar) = layer.values["bar"], let appearance = bar["appearance"],
+           case let .string(name) = try substituteConfigurationReferences(appearance, prefix: "@token.",
+                                                                          values: layer.values["tokens"]?.decoded([String: ConfigurationValue].self) ?? [:]) {
+            context.appearance = name
+        }
         activeProfiles = []
         profiles = try layer.values["profiles"]?.decoded([ConfigurationProfile].self, at: "profiles") ?? []
         matchesApps = profiles.contains { $0.when?.app != nil }
@@ -309,7 +337,10 @@ struct ConfigurationLoader {
         case let .string(reference) where reference.hasPrefix("@token."):
             let name = String(reference.dropFirst(7))
             let resolved = try substituteConfigurationReferences(value, prefix: "@token.", values: tokens)
-            return configurationOrigins(resolved, source: source.appending("→ token \(name) (\(origins["tokens.\(name)"]!))"), path: path)
+            var origin = source
+            origin.token = name
+            origin.tokenSource = origins["tokens.\(name)"]!.description
+            return configurationOrigins(resolved, source: origin, path: path)
         case let .object(object):
             var result: [String: ConfigurationOrigin] = [:]
             for (key, child) in object {

@@ -72,6 +72,10 @@ final class BarStore: NSObject {
                 try data.write(to: configurationURL, options: .atomic)
             }
             try migrateConfigurationFile(configurationURL)
+            if !UserDefaults.standard.bool(forKey: "migratedEarlierColors") {
+                try migrateEarlierColors(configurationURL)
+                UserDefaults.standard.set(true, forKey: "migratedEarlierColors")
+            }
             reloadConfiguration()
         } catch {
             configurationError = errorMessage(error)
@@ -299,7 +303,7 @@ final class BarStore: NSObject {
         case .refresh:
             guard let id = request.id, let script = scripts[id] else { throw CommandFailure(message: "Refresh requires a running widget id.") }
             guard !script.diagnostics.suspended else {
-                throw CommandFailure(message: "Widget is suspended. Open it in the inspector or make a consumer visible before refreshing.")
+                throw CommandFailure(message: "Widget is suspended. Open it in Diagnostics or make a consumer visible before refreshing.")
             }
             script.refresh(ScriptEvent(sender: "manual"))
         case .trigger:

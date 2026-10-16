@@ -10,11 +10,11 @@ final class CustomizationWindow: NSObject, NSWindowDelegate {
         self.store = store
         store.setInspectorOpen(true)
         if window == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1040, height: 740),
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1080, height: 760),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
             window.title = "Customize StableBar"
             window.delegate = self
-            window.minSize = NSSize(width: 800, height: 580)
+            window.minSize = NSSize(width: 900, height: 600)
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(rootView: CustomizationView(store: store))
             window.center()
@@ -27,15 +27,142 @@ final class CustomizationWindow: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) { store?.setInspectorOpen(false) }
 }
 
+private enum CustomizationSection: String, CaseIterable, Identifiable {
+    case general = "General", appearance = "Appearance", widgets = "Widgets", profiles = "Profiles", packages = "Packages", diagnostics = "Diagnostics"
+
+    var id: Self { self }
+
+    var symbol: String {
+        switch self {
+        case .general: "gearshape"
+        case .appearance: "paintpalette"
+        case .widgets: "square.grid.2x2"
+        case .profiles: "person.crop.square"
+        case .packages: "shippingbox"
+        case .diagnostics: "stethoscope"
+        }
+    }
+}
+
 private struct CustomizationView: View {
+    let store: BarStore
+    @State private var editor: ConfigurationEditor
+    @State private var section: CustomizationSection? = .appearance
+
+    init(store: BarStore) {
+        self.store = store
+        _editor = State(initialValue: ConfigurationEditor(store: store))
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            List(CustomizationSection.allCases, selection: $section) { section in
+                Label(section.rawValue, systemImage: section.symbol)
+            }
+            .listStyle(.sidebar)
+            .frame(width: 180)
+            Divider()
+            VStack(spacing: 0) {
+                switch section ?? .appearance {
+                case .general: GeneralView(store: store)
+                case .appearance: AppearanceView(editor: editor)
+                case .widgets: WidgetsView(editor: editor)
+                case .profiles: ProfilesView(editor: editor)
+                case .packages: PackagesView(store: store)
+                case .diagnostics: DiagnosticsView(store: store)
+                }
+                if [.appearance, .widgets, .profiles].contains(section ?? .appearance) {
+                    if let error = editor.error ?? store.configurationError {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.callout)
+                            .foregroundStyle(.red)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(.red.opacity(0.1))
+                    }
+                    Divider()
+                    footer
+                }
+            }
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 10) {
+            ControlGroup {
+                Button("Undo", systemImage: "arrow.uturn.backward", action: editor.undo)
+                    .keyboardShortcut("z").disabled(editor.undoSteps.isEmpty).help("Undo")
+                Button("Redo", systemImage: "arrow.uturn.forward", action: editor.redo)
+                    .keyboardShortcut("z", modifiers: [.command, .shift]).disabled(editor.redoSteps.isEmpty).help("Redo")
+            }
+            .labelStyle(.iconOnly)
+            .fixedSize()
+            Group {
+                if store.sessionEdits.isEmpty {
+                    Text("All changes saved")
+                } else {
+                    Text("^[\(store.sessionEdits.count) unsaved change](inflect: true)")
+                }
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            Spacer()
+            Button("Discard", action: editor.discard).disabled(store.sessionEdits.isEmpty)
+            Button("Save", action: editor.save)
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut("s")
+                .disabled(store.sessionEdits.isEmpty)
+        }
+        .controlSize(.large)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+}
+
+private struct GeneralView: View {
     let store: BarStore
 
     var body: some View {
-        TabView {
-            ConfigurationEditorView(store: store).tabItem { Label("Editor", systemImage: "slider.horizontal.3") }
-            InspectorView(store: store).tabItem { Label("Inspector", systemImage: "stethoscope") }
-            PackagesView(store: store).tabItem { Label("Packages", systemImage: "shippingbox") }
+        Form {
+            Section {
+                LabeledContent("File") {
+                    Text(store.configurationURL.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+                HStack {
+                    Button("Open File", action: store.openConfiguration)
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([store.configurationURL]) }
+                    Spacer()
+                    Button("Reload", action: store.reloadConfiguration)
+                }
+            } header: {
+                Text("Configuration")
+            } footer: {
+                Text("StableBar applies saved changes on its own. Reload reads the files again.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            Section {
+                LabeledContent {
+                    Button("Set Up StableBar…") { NSApp.sendAction(#selector(AppDelegate.showSetup), to: NSApp.delegate, from: nil) }
+                } label: {
+                    Text("Setup")
+                    Text("Theme, appearance, placement, clock format and opening at login.")
+                }
+            }
+            Section("Workspaces") {
+                LabeledContent(store.workspaceStore.source.title) {
+                    Button("Reconnect", action: store.workspaceStore.start)
+                }
+                if let error = store.workspaceStore.error {
+                    Text(error).foregroundStyle(.red).textSelection(.enabled)
+                }
+            }
         }
+        .formStyle(.grouped)
     }
 }
 
@@ -97,60 +224,26 @@ private let newWidgets: [WidgetContent] = [
     .script(command: "date +%H:%M", interval: 30), .spacer
 ]
 
-private struct ConfigurationEditorView: View {
-    let store: BarStore
-    @State private var editor: ConfigurationEditor
+private struct WidgetsView: View {
+    @Bindable var editor: ConfigurationEditor
     @State private var advanced = "{}"
-    @State private var showsBar = false
-    @State private var showsProfiles = false
-    @Environment(\.colorScheme) private var colorScheme
+    @State private var fontFamilies = NSFontManager.shared.availableFontFamilies
 
-    init(store: BarStore) {
-        self.store = store
-        _editor = State(initialValue: ConfigurationEditor(store: store))
-    }
-
+    private var store: BarStore { editor.store }
     private var widgets: [WidgetConfiguration] { store.configuration?.widgets ?? [] }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("Edit", selection: $showsProfiles) {
-                Text("Widgets").tag(false)
-                Text("Profiles").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 220)
-            .padding(12)
-            Divider()
-            if showsProfiles {
-                ProfilesView(editor: editor)
-            } else {
-                HSplitView {
-                    sidebar.frame(minWidth: 210, maxWidth: 280)
-                    Group {
-                        if let widget = widgets.first(where: { $0.id == editor.selectedID }) {
-                            inspector(widget)
-                        } else {
-                            ContentUnavailableView("Select a widget", systemImage: "sidebar.left",
-                                                   description: Text("Choose a widget to change how it looks and where it sits."))
-                        }
-                    }
-                    .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
+        HSplitView {
+            sidebar.frame(minWidth: 210, maxWidth: 280)
+            Group {
+                if let widget = widgets.first(where: { $0.id == editor.selectedID }) {
+                    inspector(widget)
+                } else {
+                    ContentUnavailableView("Select a widget", systemImage: "sidebar.left",
+                                           description: Text("Choose a widget to change how it looks and where it sits."))
                 }
             }
-            if let error = editor.error ?? store.configurationError {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(.red.opacity(0.1))
-            }
-            Divider()
-            footer
+            .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
         }
         .onChange(of: editor.selected, initial: true) {
             var properties = editor.selected
@@ -218,10 +311,6 @@ private struct ConfigurationEditorView: View {
                 .help("Remove the selected widget")
                 .disabled(editor.selectedID == nil)
                 Spacer()
-                Button("Bar", systemImage: "rectangle.topthird.inset.filled") { showsBar = true }
-                    .help("Theme, bar size and default widget style")
-                    .popover(isPresented: $showsBar) { barSettings }
-                    .padding(.trailing, 6)
             }
             .buttonStyle(.borderless)
             .padding(4)
@@ -229,7 +318,10 @@ private struct ConfigurationEditorView: View {
     }
 
     private func inspector(_ widget: WidgetConfiguration) -> some View {
-        Form {
+        let style = StyleFields(store: store, path: "widgets.\(widget.id).style", defaultsPath: "defaults", values: editor.selectedStyle,
+                                set: { editor.set(["style": .object([$0: $1])]) },
+                                unset: { editor.change(ConfigurationEdit(action: .unset, id: widget.id, properties: ["style": .object([$0: .null])])) })
+        return Form {
             Section {
                 HStack(spacing: 12) {
                     Image(systemName: widget.content.symbol)
@@ -268,19 +360,20 @@ private struct ConfigurationEditorView: View {
                     TextField("Date format", text: string("format", fallback: "EEE d MMM HH:mm"))
                 }
             }
-            Section("Appearance") {
-                colorPicker("Text color", value: editor.selectedStyle["foreground"], fallback: builtInStyle.foreground!) {
-                    editor.set(["style": .object(["foreground": .string($0)])])
-                }
-                colorPicker("Background", value: editor.selectedStyle["background"], fallback: builtInStyle.background!) {
-                    editor.set(["style": .object(["background": .string($0)])])
-                }
-                ForEach([("Font size", "fontSize", 12.0), ("Horizontal padding", "paddingHorizontal", 10), ("Corner radius", "cornerRadius", 14)],
-                        id: \.1) { title, key, fallback in
-                    numberField(title, value: editor.selectedStyle[key], fallback: fallback) {
-                        editor.set(["style": .object([key: .number($0)])])
-                    }
-                }
+            Section("Colors") {
+                style.color("Text", "foreground")
+                style.color("Background", "background")
+                style.color("Hover background", "hoverBackground")
+                style.color("Border", "borderColor")
+                style.color("Accent", "accent")
+            }
+            Section("Text and shape") {
+                style.font(fontFamilies)
+                style.weight()
+                style.number("Font size", "fontSize", default: 12)
+                style.number("Horizontal padding", "paddingHorizontal", default: 10)
+                style.number("Corner radius", "cornerRadius", default: 14)
+                style.number("Border width", "borderWidth", default: 1)
             }
             Section {
                 DisclosureGroup("Advanced properties") {
@@ -310,92 +403,33 @@ private struct ConfigurationEditorView: View {
         .formStyle(.grouped)
     }
 
-    private var barSettings: some View {
-        var bar: [String: ConfigurationValue] = [:]
-        var defaults: [String: ConfigurationValue] = [:]
-        if case let .object(object) = store.effectiveDocument["bar"] { bar = object }
-        if case let .object(object) = store.effectiveDocument["defaults"] { defaults = object }
-        let themes = ((try? WidgetPackageStore(directory: store.configurationURL.deletingLastPathComponent().appending(path: "packages")).list()) ?? [])
-            .filter { $0.kind == .theme }
-        let theme = try? store.effectiveDocument["theme"]?.decoded(WidgetPackageSelection.self)
-        let selected = themes.first { $0.id == theme?.id && $0.version == theme?.version && theme?.enabled == true }
-        return Form {
-            Section("Theme") {
-                Picker("Theme", selection: Binding(get: { selected?.versionKey }, set: { key in
-                    editor.change(ConfigurationEdit(action: .theme, properties: themes.first { $0.versionKey == key }.map {
-                        ["id": .string($0.id), "version": .string($0.version)]
-                    }))
-                })) {
-                    Text("Built-in").tag(String?.none)
-                    ForEach(themes, id: \.versionKey) { Text("\($0.name) · \($0.version)").tag(Optional($0.versionKey)) }
-                }
-            }
-            Section("Bar") {
-                ForEach([("Height", "height", 40.0), ("Offset from top", "offset", 0), ("Side inset", "inset", 12), ("Spacing", "spacing", 8)],
-                        id: \.1) { title, key, fallback in
-                    numberField(title, value: bar[key], fallback: fallback) {
-                        editor.change(ConfigurationEdit(action: .bar, properties: [key: .number($0)]))
-                    }
-                }
-            }
-            Section("All widgets") {
-                colorPicker("Text color", value: defaults["foreground"], fallback: builtInStyle.foreground!) {
-                    editor.change(ConfigurationEdit(action: .defaults, properties: ["foreground": .string($0)]))
-                }
-                colorPicker("Background", value: defaults["background"], fallback: builtInStyle.background!) {
-                    editor.change(ConfigurationEdit(action: .defaults, properties: ["background": .string($0)]))
-                }
-                numberField("Font size", value: defaults["fontSize"], fallback: 12) {
-                    editor.change(ConfigurationEdit(action: .defaults, properties: ["fontSize": .number($0)]))
-                }
-            }
-        }
-        .formStyle(.grouped)
-        .frame(width: 340)
-    }
-
-    private var footer: some View {
-        HStack(spacing: 10) {
-            ControlGroup {
-                Button("Undo", systemImage: "arrow.uturn.backward", action: editor.undo)
-                    .keyboardShortcut("z").disabled(editor.undoSteps.isEmpty).help("Undo")
-                Button("Redo", systemImage: "arrow.uturn.forward", action: editor.redo)
-                    .keyboardShortcut("z", modifiers: [.command, .shift]).disabled(editor.redoSteps.isEmpty).help("Redo")
-            }
-            .labelStyle(.iconOnly)
-            .fixedSize()
-            Group {
-                if store.sessionEdits.isEmpty {
-                    Text("All changes saved")
-                } else {
-                    Text("^[\(store.sessionEdits.count) unsaved change](inflect: true)")
-                }
-            }
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            Spacer()
-            Button("Discard", action: editor.discard).disabled(store.sessionEdits.isEmpty)
-            Button("Save", action: editor.save)
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut("s")
-                .disabled(store.sessionEdits.isEmpty)
-        }
-        .controlSize(.large)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-    }
-
     private func string(_ key: String, fallback: String = "") -> Binding<String> {
         Binding(get: { if case let .string(value) = editor.selected[key] { value } else { fallback } },
                 set: { editor.set([key: .string($0)]) })
     }
+}
 
-    private func numberField(_ title: String, value: ConfigurationValue?, fallback: Double, set: @escaping (Double) -> Void) -> some View {
-        let displayed: Double
-        if case let .number(number) = value { displayed = number }
-        else { displayed = fallback }
-        let binding = Binding(get: { displayed }, set: { if $0 != displayed { set($0) } })
-        return LabeledContent(title) {
+@MainActor
+struct StyleFields {
+    let store: BarStore
+    let path: String
+    var defaultsPath: String?
+    let values: [String: ConfigurationValue]
+    let set: (String, ConfigurationValue) -> Void
+    let unset: (String) -> Void
+
+    func color(_ title: String, _ key: String) -> some View {
+        row(title, key) { origin in
+            let color = try? values[key]?.decoded(HexColor.self)
+            TokenPicker(token: origin?.token, color: color ?? HexColor(0)) { set(key, $0) }
+            ColorWells(color: color) { set(key, $0) }
+        }
+    }
+
+    func number(_ title: String, _ key: String, default fallback: Double) -> some View {
+        row(title, key) { _ in
+            let value = if case let .number(number) = values[key] { number } else { fallback }
+            let binding = Binding(get: { value }, set: { if $0 != value { set(key, .number($0)) } })
             HStack(spacing: 6) {
                 TextField(title, value: binding, format: .number)
                     .labelsHidden()
@@ -407,16 +441,140 @@ private struct ConfigurationEditorView: View {
         }
     }
 
-    private var builtInStyle: WidgetStyle { colorScheme == .dark ? .dark : .light }
+    func font(_ families: [String]) -> some View {
+        row("Font", "fontName") { _ in
+            let name = if case let .string(name) = values["fontName"] { name } else { "system" }
+            Picker("Font", selection: Binding(get: { name }, set: { set("fontName", .string($0)) })) {
+                Text("System").tag("system")
+                Divider()
+                ForEach(name == "system" || families.contains(name) ? families : [name] + families, id: \.self) { Text($0).tag($0) }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 220)
+        }
+    }
 
-    private func colorPicker(_ title: String, value: ConfigurationValue?, fallback: HexColor, set: @escaping (String) -> Void) -> some View {
-        ColorPicker(title, selection: Binding(get: {
-            ((try? value?.decoded(HexColor.self)) ?? fallback).color
-        }, set: {
-            let color = NSColor($0).usingColorSpace(.sRGB)!
-            set(String(format: "#%02x%02x%02x%02x", Int((color.redComponent * 255).rounded()),
-                       Int((color.greenComponent * 255).rounded()), Int((color.blueComponent * 255).rounded()),
-                       Int((color.alphaComponent * 255).rounded())))
+    func weight() -> some View {
+        row("Weight", "fontWeight") { _ in
+            let weight = if case let .string(weight) = values["fontWeight"] { weight } else { "medium" }
+            Picker("Weight", selection: Binding(get: { weight }, set: { set("fontWeight", .string($0)) })) {
+                ForEach(fontWeights, id: \.name) { Text($0.name.capitalized).tag($0.name) }
+            }
+            .labelsHidden()
+            .fixedSize()
+        }
+    }
+
+    private func row<Control: View>(_ title: String, _ key: String, @ViewBuilder control: (ConfigurationOrigin?) -> Control) -> some View {
+        let own = store.origins["\(path).\(key)"]
+        let inherited = defaultsPath.flatMap { store.origins["\($0).\(key)"] }
+        return OverrideRow(title: title,
+                           source: own.map { "From \(store.sourceText($0))" } ?? inherited.map { "Default from \(store.sourceText($0))" },
+                           reset: own.map(store.setsInMainFile) == true ? { unset(key) } : nil) {
+            control(own ?? inherited)
+        }
+    }
+}
+
+struct OverrideRow<Control: View>: View {
+    let title: String
+    let source: String?
+    let reset: (() -> Void)?
+    @ViewBuilder let control: Control
+
+    var body: some View {
+        LabeledContent {
+            HStack(spacing: 8) { control }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                HStack(spacing: 6) {
+                    if let source { Text(source).foregroundStyle(.secondary) }
+                    if let reset {
+                        Button("Reset to default", action: reset)
+                            .buttonStyle(.link)
+                            .help("Remove this value from your configuration so the theme or default applies again")
+                    }
+                }
+                .font(.caption)
+                .lineLimit(1)
+            }
+        }
+    }
+}
+
+struct TokenPicker: View {
+    let token: String?
+    let color: HexColor
+    let set: (ConfigurationValue) -> Void
+
+    var body: some View {
+        Picker("Color", selection: Binding(get: { token ?? "" }, set: {
+            set($0.isEmpty ? color.configurationValue : .string("@token.\($0)"))
+        })) {
+            ForEach(themeTokens, id: \.name) { Text($0.title).tag($0.name) }
+            if let token, !themeTokens.contains(where: { $0.name == token }) { Text(token).tag(token) }
+            Divider()
+            Text("Custom").tag("")
+        }
+        .labelsHidden()
+        .fixedSize()
+    }
+}
+
+struct ColorWells: View {
+    let color: HexColor?
+    let set: (ConfigurationValue) -> Void
+
+    var body: some View {
+        let shown = color ?? HexColor(0)
+        Image(systemName: "sun.max").foregroundStyle(.secondary)
+        ColorPicker("Light", selection: Binding(get: { HexColor(shown.light).color }, set: {
+            set(HexColor(light: rgba($0), dark: color?.dark ?? rgba($0)).configurationValue)
         }))
+        .labelsHidden()
+        .help("Color in the light appearance")
+        Image(systemName: "moon").foregroundStyle(.secondary)
+        ColorPicker("Dark", selection: Binding(get: { HexColor(shown.dark).color }, set: {
+            set(HexColor(light: color?.light ?? rgba($0), dark: rgba($0)).configurationValue)
+        }))
+        .labelsHidden()
+        .help("Color in the dark appearance")
+    }
+}
+
+private func rgba(_ color: Color) -> UInt32 {
+    let color = NSColor(color).usingColorSpace(.sRGB)!
+    let byte = { (component: CGFloat) in UInt32((min(max(component, 0), 1) * 255).rounded()) }
+    return byte(color.redComponent) << 24 | byte(color.greenComponent) << 16 | byte(color.blueComponent) << 8 | byte(color.alphaComponent)
+}
+
+extension HexColor {
+    var configurationValue: ConfigurationValue {
+        light == dark ? .string(String(format: "#%08x", light))
+            : .object(["light": .string(String(format: "#%08x", light)), "dark": .string(String(format: "#%08x", dark))])
+    }
+}
+
+extension BarStore {
+    func sourceText(_ origin: ConfigurationOrigin) -> String {
+        let file = origin.file
+        let packages = configurationURL.deletingLastPathComponent().appending(path: "packages").standardizedFileURL.path
+        let text: String
+        if file == configurationURL.standardizedFileURL.path {
+            text = "your configuration"
+        } else if let themes = bundledThemesDirectory?.standardizedFileURL.path, file.hasPrefix(themes + "/") {
+            let id = file.dropFirst(themes.count + 1).prefix { $0 != "/" }
+            text = id == "built-in" ? "the Built-in theme" : "the \(id.capitalized) theme"
+        } else if file.hasPrefix(packages + "/") {
+            text = "the \(file.dropFirst(packages.count + 1).prefix { $0 != "/" }) package"
+        } else {
+            text = URL(filePath: file).lastPathComponent
+        }
+        return origin.detail.isEmpty ? text : "\(text) \(origin.detail)"
+    }
+
+    func setsInMainFile(_ origin: ConfigurationOrigin) -> Bool {
+        origin.file == configurationURL.standardizedFileURL.path && (origin.detail.isEmpty || origin.detail == "(widget override)")
     }
 }

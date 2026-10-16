@@ -97,7 +97,7 @@
     },
     "theme": {
       "$ref": "#/definitions/packageSelection",
-      "description": "Installed theme package, applied after widget packages and before includes."
+      "description": "Theme applied after widget packages and before includes. Without version, a theme that ships with StableBar; with version, an installed theme package."
     }
   },
   "definitions": {
@@ -137,11 +137,44 @@
         }
       ]
     },
+    "hexColor": {
+      "type": "string",
+      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+    },
     "color": {
       "anyOf": [
         {
-          "type": "string",
-          "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+          "$ref": "#/definitions/hexColor"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "light",
+            "dark"
+          ],
+          "properties": {
+            "light": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/hexColor"
+                },
+                {
+                  "$ref": "#/definitions/reference"
+                }
+              ]
+            },
+            "dark": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/hexColor"
+                },
+                {
+                  "$ref": "#/definitions/reference"
+                }
+              ]
+            }
+          }
         },
         {
           "$ref": "#/definitions/reference"
@@ -150,7 +183,7 @@
           "type": "null"
         }
       ],
-      "description": "#RRGGBB or #RRGGBBAA."
+      "description": "#RRGGBB or #RRGGBBAA, or {\"light\": …, \"dark\": …} for a color that follows the light or dark appearance."
     },
     "strings": {
       "type": [
@@ -1053,6 +1086,23 @@
               "type": "null"
             }
           ]
+        },
+        "appearance": {
+          "anyOf": [
+            {
+              "enum": [
+                "light",
+                "dark"
+              ]
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Shows the bar and its popups in the light or dark appearance. Omit to follow the system."
         }
       }
     },

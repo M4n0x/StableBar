@@ -6,6 +6,7 @@ struct BarView: View {
     @State private var measuredWidths: [String: CGFloat] = [:]
     @State private var overflowAnchor = NSView()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Group {
@@ -95,14 +96,11 @@ struct BarView: View {
                 .animation(reduceMotion ? nil : .easeOut(duration: config.bar.animationDuration), value: style)
             }
         }
+        .environment(\.colorScheme, store.configuration?.bar.appearance?.colorScheme ?? colorScheme)
         .onDisappear { store.setVisibleWidgets(ids: [], displayID: display.id) }
         .contextMenu {
             Text("StableBar")
             Button("Customize StableBar…") { store.onCustomize?() }
-            Button("Set up StableBar…") { NSApp.sendAction(#selector(AppDelegate.showSetup), to: NSApp.delegate, from: nil) }
-            Button("Open configuration file…") { store.openConfiguration() }
-            Button("Reload configuration") { store.reloadConfiguration() }
-            Button("Reconnect \(store.workspaceStore.source.title)") { store.workspaceStore.start() }
             if let error = store.configurationError ?? store.workspaceStore.error {
                 Divider()
                 Text(error)

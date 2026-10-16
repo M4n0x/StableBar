@@ -13,7 +13,7 @@ Welcome to StableBar
 3. Follow the setup to choose your appearance, placement, and startup preferences.
 
 The starter bar needs no special permissions or third-party tools.
-Revisit setup from the StableBar icon in your macOS menu bar.
+Run setup again from Customize StableBar → General, in the StableBar icon in your macOS menu bar.
 
 Requires macOS 14 or later. This build is for the same processor family as the Mac that built it.
 EOF

@@ -369,3 +369,139 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     #expect(builtIn.defaults.foreground == nil)
     #expect(builtIn.bar.height == 40)
 }
+
+private let bundledThemes = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    .appending(path: "Resources/themes")
+
+@Test func colorsTakeOneValueOrALightAndDarkPair() throws {
+    let url = FileManager.default.temporaryDirectory.appending(path: "colors.json")
+    var loader = ConfigurationLoader()
+    let configuration = try loader.load(url, data: Data(##"""
+    {"tokens":{"text":{"light":"#111111","dark":"#eeeeee"},"line":"#333333"},
+     "defaults":{"foreground":"@token.text","background":"#22222280","borderColor":{"light":"@token.line","dark":"#444444"}},
+     "widgets":[]}
+    """##.utf8))
+    #expect(configuration.defaults.foreground == HexColor(light: 0x111111ff, dark: 0xeeeeeeff))
+    #expect(configuration.defaults.background == HexColor(0x22222280))
+    #expect(configuration.defaults.borderColor == HexColor(light: 0x333333ff, dark: 0x444444ff))
+    for (color, message) in [
+        (##"{"light":"#111111"}"##, "defaults.foreground: Missing property dark."),
+        (##"{"light":"#111111","dark":"#222222","tint":"#333333"}"##, "defaults.foreground.tint: Unknown property."),
+        (##"{"light":"blue","dark":"#222222"}"##, "defaults.foreground: Use #RRGGBB or #RRGGBBAA for colors.")
+    ] {
+        let error = #expect(throws: (any Error).self) {
+            try loader.load(url, data: Data(#"{"widgets":[],"defaults":{"foreground":\#(color)}}"#.utf8))
+        }
+        #expect(error.map(errorMessage) == message)
+    }
+}
+
+@Test func builtInThemeLoadsUnderEveryThemeAndReplacesPackageFallbacks() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let widget = directory.appending(path: "widget")
+    try writePackageFile(#"{"id":"status","name":"Status","version":"1","entry":"config.json"}"#, to: widget.appending(path: "package.json"))
+    try writePackageFile(##"""
+    {"tokens":{"textMuted":"#555555","badge":"#888888"},
+     "widgets":[{"id":"status","type":"text","position":"left","text":"Ready",
+                 "style":{"foreground":"@token.textMuted","background":"@token.badge"}}]}
+    """##, to: widget.appending(path: "config.json"))
+    _ = try WidgetPackageStore(directory: directory.appending(path: "packages")).install(widget)
+    let root = directory.appending(path: "config.json")
+    let widgets = #""packages":[{"id":"status","version":"1"}],"widgets":[{"id":"note","type":"text","position":"right","text":"Note","style":{"foreground":"@token.textMuted"}}]"#
+    var loader = ConfigurationLoader()
+    loader.themesDirectory = bundledThemes
+    let builtIn = try loader.load(root, data: Data("{\(widgets)}".utf8))
+    let textMuted = HexColor(light: 0x6e6e73ff, dark: 0xa1a1a6ff)
+    #expect(builtIn.defaults.foreground == HexColor(light: 0x1d1d1fff, dark: 0xf5f5f7ff))
+    #expect(builtIn.defaults.background == HexColor(light: 0xf8f8faed, dark: 0x242629ee))
+    #expect(builtIn.widgets[0].style.foreground == textMuted)
+    #expect(builtIn.widgets[0].style.background == HexColor(0x888888ff))
+    #expect(builtIn.widgets[1].style.foreground == textMuted)
+    let slate = try loader.load(root, data: Data(#"{"theme":{"id":"slate"},\#(widgets)}"#.utf8))
+    #expect(slate.defaults.foreground == HexColor(light: 0x1f2329ff, dark: 0xe6e9efff))
+    #expect(slate.defaults.cornerRadius == 8)
+    #expect(slate.defaults.shadowColor == HexColor(light: 0x00000014, dark: 0x00000040))
+    #expect(slate.widgets[1].style.foreground == HexColor(light: 0x5f6773ff, dark: 0x9aa3b0ff))
+    let ownText = Data(##"{"theme":{"id":"slate"},"tokens":{"text":"#c2410c"},"widgets":[]}"##.utf8)
+    for appearance in ["light", "dark"] {
+        #expect(try loader.load(root, data: ownText, context: ConfigurationContext(appearance: appearance)).defaults.foreground == HexColor(0xc2410cff))
+    }
+    for json in [#"{"theme":{"id":"missing"},"widgets":[]}"#, #"{"packages":[{"id":"status"}],"widgets":[]}"#] {
+        #expect(throws: WidgetPackageError.self) { try loader.load(root, data: Data(json.utf8)) }
+    }
+    loader.themesDirectory = nil
+    #expect(throws: WidgetPackageError.self) { try loader.load(root, data: Data(#"{"theme":{"id":"slate"},"widgets":[]}"#.utf8)) }
+}
+
+@Test func bundledThemesDefineEverySharedTokenForLightAndDark() throws {
+    let store = WidgetPackageStore(directory: bundledThemes)
+    let url = FileManager.default.temporaryDirectory.appending(path: "bundled.json")
+    var loader = ConfigurationLoader()
+    loader.themesDirectory = bundledThemes
+    for directory in try FileManager.default.contentsOfDirectory(at: bundledThemes, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+        let manifest = try store.manifest(at: directory)
+        #expect(manifest.kind == .theme)
+        #expect(manifest.id == directory.lastPathComponent)
+        #expect(try store.inspect(directory).commands.isEmpty)
+        _ = try loader.load(url, data: Data(#"{"theme":{"id":"\#(manifest.id)"},"widgets":[]}"#.utf8))
+        let tokens = try loader.document["tokens"]!.decoded([String: ConfigurationValue].self)
+        for name in ["surface", "surfaceRaised", "text", "textMuted", "accent", "track", "hairline", "warning", "critical"] {
+            let color = try #require(try tokens[name]?.decoded(HexColor.self), "\(manifest.id).\(name)")
+            #expect(color.light != color.dark, "\(manifest.id).\(name)")
+        }
+    }
+}
+
+@Test func barAppearanceDecidesWhichAppearanceProfilesApply() throws {
+    let url = FileManager.default.temporaryDirectory.appending(path: "appearance.json")
+    var loader = ConfigurationLoader()
+    let configuration = try loader.load(url, data: Data(#"""
+    {"bar":{"appearance":"dark"},"widgets":[],
+     "profiles":[{"name":"night","when":{"appearance":"dark"},"configuration":{"bar":{"height":30}}}]}
+    """#.utf8), context: ConfigurationContext(appearance: "light"))
+    #expect(configuration.bar.appearance == .dark)
+    #expect(configuration.bar.height == 30)
+    #expect(loader.activeProfiles == ["night"])
+    _ = try loader.load(url, data: Data(#"""
+    {"tokens":{"mode":"dark"},"bar":{"appearance":"@token.mode"},"widgets":[],
+     "profiles":[{"name":"night","when":{"appearance":"dark"},"configuration":{"bar":{"height":30}}}]}
+    """#.utf8), context: ConfigurationContext(appearance: "light"))
+    #expect(loader.activeProfiles == ["night"])
+    let error = #expect(throws: (any Error).self) {
+        try loader.load(url, data: Data(#"{"bar":{"appearance":"auto"},"widgets":[]}"#.utf8))
+    }
+    #expect(error.map(errorMessage) == "bar.appearance: Cannot initialize BarAppearance from invalid String value auto")
+}
+
+@Test func colorsThatSetupAndTheStarterWroteNoLongerHideATheme() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let root = directory.appending(path: "config.json")
+    let dark = ##""foreground":"#f5f5f7ff","background":"#242629ee","hoverBackground":"#36383cff","borderColor":"#ffffff1f","shadowColor":"#00000040""##
+    let light = ##""foreground":"#1d1d1fff","background":"#f8f8faed","hoverBackground":"#ffffffff","borderColor":"#ffffffb3","shadowColor":"#00000014""##
+    let automatic = #""foreground":null,"background":null,"hoverBackground":null,"borderColor":null,"shadowColor":null"#
+    let changedAfterAutomatic = ##""foreground":"#ff8800ff","background":null,"hoverBackground":null,"borderColor":null,"shadowColor":null"##
+    for (defaults, bar, migrated) in [
+        ("{\(dark),\"accent\":\"#007aff\",\"fontSize\":13}", ConfigurationValue.object(["height": .number(40), "appearance": .string("dark")]),
+         ConfigurationValue.object(["fontSize": .number(13)])),
+        ("{\(light)}", .object(["height": .number(40), "appearance": .string("light")]), nil),
+        ("{\(automatic),\"accent\":\"#007aff\"}", .object(["height": .number(40)]), nil),
+        ("{\(changedAfterAutomatic)}", .object(["height": .number(40)]), .object(["foreground": .string("#ff8800ff")]))
+    ] {
+        try writePackageFile(#"{"theme":{"id":"slate"},"bar":{"height":40},"defaults":\#(defaults),"widgets":[]}"#, to: root)
+        try migrateEarlierColors(root)
+        let saved = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: root))
+        #expect(saved["bar"] == bar)
+        #expect(saved["defaults"] == migrated)
+        var loader = ConfigurationLoader()
+        loader.themesDirectory = bundledThemes
+        let configuration = try loader.load(root)
+        #expect(configuration.defaults.background == HexColor(light: 0xf4f5f7ed, dark: 0x23272eee))
+        #expect(configuration.defaults.accent == HexColor(light: 0x3a6ea5ff, dark: 0x5b8ac4ff))
+    }
+    let handSet = ##"{"bar":{"height":40},"defaults":{"foreground":"#abcdefff","background":"#242629ee","hoverBackground":"#36383cff","borderColor":"#ffffff1f","shadowColor":"#00000040","accent":"#ff8800"},"widgets":[]}"##
+    try writePackageFile(handSet, to: root)
+    try migrateEarlierColors(root)
+    #expect(try String(contentsOf: root, encoding: .utf8) == handSet)
+}

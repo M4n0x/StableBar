@@ -64,22 +64,28 @@ struct WidgetPackageManifest: Codable, Sendable {
 
 struct WidgetPackageSelection: Decodable {
     let id: String
-    let version: String
-    let enabled: Bool
-    let settings: [String: ConfigurationValue]
+    var version: String?
+    var enabled = true
+    var settings: [String: ConfigurationValue] = [:]
 
     enum CodingKeys: String, CodingKey, CaseIterable { case id, version, enabled, settings }
+
+    init(id: String) {
+        self.id = id
+    }
 
     init(from decoder: Decoder) throws {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(String.self, forKey: .id)
-        version = try values.decode(String.self, forKey: .version)
+        version = try values.decodeIfPresent(String.self, forKey: .version)
         enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         settings = try values.decodeIfPresent([String: ConfigurationValue].self, forKey: .settings) ?? [:]
         try validatePackageComponent(id)
-        try validatePackageComponent(version)
+        if let version { try validatePackageComponent(version) }
     }
+
+    var key: String { version.map { "\(id)/\($0)" } ?? id }
 }
 
 struct WidgetPackageInspection: Sendable {
@@ -100,6 +106,8 @@ enum WidgetPackageError: LocalizedError {
     case notATheme(String)
     case themeInPackages(String)
     case themeProperty(String)
+    case missingVersion(String)
+    case unknownTheme(String)
 
     var errorDescription: String? {
         switch self {
@@ -114,6 +122,8 @@ enum WidgetPackageError: LocalizedError {
         case let .notATheme(id): "Package \(id) is not a theme. Enable it in packages instead."
         case let .themeInPackages(id): "Package \(id) is a theme. Select it with the theme key instead of packages."
         case let .themeProperty(key): "A theme can contain only tokens, defaults, bar, groups and profiles, not \(key)."
+        case let .missingVersion(id): "Package \(id) needs a version."
+        case let .unknownTheme(id): "No theme named \(id) ships with StableBar. Add a version to select an installed theme package."
         }
     }
 }
@@ -212,6 +222,30 @@ struct WidgetPackageStore {
         }
         return manifests.sorted { ($0.id, $0.version) < ($1.id, $1.version) }
     }
+}
+
+struct ThemeChoice {
+    let manifest: WidgetPackageManifest
+    let directory: URL
+    let isBundled: Bool
+
+    var key: String { isBundled ? manifest.id : manifest.versionKey }
+    var title: String { isBundled ? manifest.name : "\(manifest.name) · \(manifest.version)" }
+    var selection: [String: ConfigurationValue] {
+        isBundled ? ["id": .string(manifest.id)] : ["id": .string(manifest.id), "version": .string(manifest.version)]
+    }
+}
+
+func themeChoices(packages: URL) -> [ThemeChoice] {
+    let bundled = ((bundledThemesDirectory.flatMap {
+        try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+    }) ?? []).filter { $0.lastPathComponent != "built-in" }.compactMap { directory in
+        (try? WidgetPackageStore(directory: directory).manifest(at: directory)).map { ThemeChoice(manifest: $0, directory: directory, isBundled: true) }
+    }
+    let installed = ((try? WidgetPackageStore(directory: packages).list()) ?? []).filter { $0.kind == .theme }.map {
+        ThemeChoice(manifest: $0, directory: packages.appending(path: $0.id).appending(path: $0.version), isBundled: false)
+    }
+    return bundled.sorted { $0.manifest.name < $1.manifest.name } + installed
 }
 
 func preparePackageDocument(_ document: [String: ConfigurationValue], directory: URL) throws -> [String: ConfigurationValue] {
