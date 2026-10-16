@@ -375,7 +375,7 @@ final class BarStore: NSObject {
                    event: ScriptEvent = ScriptEvent(sender: "mouse.clicked")) -> Task<Void, Never> {
         let id = UUID()
         let script = scripts[widget.id]
-        let environment = event.commandEnvironment(commandEnvironment(widget, configuration: configuration!))
+        let environment = commandEnvironment(widget, configuration: configuration!)
         let previous = actionTails[widget.id]?.task
         let task = Task {
             await previous?.value
@@ -386,7 +386,7 @@ final class BarStore: NSObject {
             do {
                 try Task.checkCancellation()
                 _ = try await runCommand("/bin/zsh", arguments: ["-c", command],
-                                         timeout: widget.timeout, environment: environment)
+                                         timeout: widget.timeout, environment: event.commandEnvironment(environment))
                 if let script, scripts[widget.id] === script {
                     script.refresh(ScriptEvent(sender: "action", environment: event.environment))
                 }

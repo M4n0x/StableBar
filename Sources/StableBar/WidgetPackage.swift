@@ -175,7 +175,7 @@ enum WidgetPackageError: LocalizedError {
         case let .downloadFailed(url, status): "Downloading \(url) failed with HTTP status \(status)."
         case let .checksumMismatch(id): "The archive of package \(id) does not match the store's checksum."
         case let .archiveMismatch(id, version): "The archive of package \(id) \(version) contains a different id or version."
-        case let .misplacedSecret(reference): "\(reference) can be used only as a whole value in an environment object of its own package."
+        case let .misplacedSecret(reference): "\(reference) can be used only as a whole environment value of a widget or provider that its own package defines."
         }
     }
 }
@@ -427,20 +427,16 @@ private func rejectCommandKeys(_ value: ConfigurationValue) throws {
     }
 }
 
-func validateSecretReferences(_ value: ConfigurationValue, package id: String, inEnvironment: Bool = false) throws {
+func validateSecretReferences(_ value: ConfigurationValue, package id: String, path: [String] = []) throws {
     switch value {
-    case let .string(string) where string.hasPrefix("@secret.") && !(inEnvironment && string.hasPrefix("@secret.\(id)/")):
-        throw WidgetPackageError.misplacedSecret(string)
-    case let .object(object):
-        for (key, child) in object {
-            if key == "environment", case let .object(variables) = child {
-                for variable in variables.values { try validateSecretReferences(variable, package: id, inEnvironment: true) }
-            } else {
-                try validateSecretReferences(child, package: id)
-            }
+    case let .string(string) where string.hasPrefix("@secret."):
+        guard string.hasPrefix("@secret.\(id)/"), path.count == 4, ["widgets", "providers"].contains(path[0]), path[2] == "environment" else {
+            throw WidgetPackageError.misplacedSecret(string)
         }
+    case let .object(object):
+        for (key, child) in object { try validateSecretReferences(child, package: id, path: path + [key]) }
     case let .array(array):
-        for child in array { try validateSecretReferences(child, package: id) }
+        for (index, child) in array.enumerated() { try validateSecretReferences(child, package: id, path: path + [String(index)]) }
     default: break
     }
 }
