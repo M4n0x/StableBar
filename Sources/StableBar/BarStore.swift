@@ -310,8 +310,10 @@ final class BarStore: NSObject {
         updateSuspension()
     }
 
-    func setPopupVisibleWidget(_ id: String?) {
+    func setPopupVisibleWidget(_ id: String?, anchor: NSView? = nil) {
         popupWidgetID = id
+        let anchor = anchor.map(ObjectIdentifier.init)
+        for (widgetID, presentation) in presentations { presentation.setPopupAnchor(widgetID == id ? anchor : nil) }
         updateSuspension()
     }
 
@@ -498,11 +500,17 @@ final class WidgetPresentation {
     private(set) var hidden = false
     /// Output `display`, which replaces the configured one.
     private(set) var display: DisplaySelection?
+    /// The view that anchors this widget's open popup: only that instance shows `open`.
+    private(set) var popupAnchor: ObjectIdentifier?
 
     /// Assigns only what changed: equal assignments must not invalidate the widget's views.
     func update(style: ResolvedWidgetStyle, hidden: Bool, display: DisplaySelection?) {
         if self.style != style { self.style = style }
         if self.hidden != hidden { self.hidden = hidden }
         if self.display != display { self.display = display }
+    }
+
+    func setPopupAnchor(_ anchor: ObjectIdentifier?) {
+        if popupAnchor != anchor { popupAnchor = anchor }
     }
 }

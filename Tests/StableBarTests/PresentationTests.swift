@@ -187,3 +187,47 @@ private func output(_ json: String) throws -> ScriptOutput {
     #expect(!presentation.hidden)
     #expect(script.error == "Offline")
 }
+
+@Test @MainActor func openingAPopupMarksOnlyTheInstanceThatAnchorsIt() async throws {
+    let store = try makeStore(threeWidgets)
+    let first = try #require(store.presentations["a"])
+    let second = try #require(store.presentations["b"])
+    let anchor = NSView()
+    let elsewhere = NSView()
+    await confirmation("a's popup opens", expectedCount: 1) { opened in
+        await confirmation("b stays valid", expectedCount: 0) { invalidated in
+            withObservationTracking { _ = first.popupAnchor } onChange: { opened() }
+            withObservationTracking { _ = second.popupAnchor; _ = second.style } onChange: { invalidated() }
+            store.setPopupVisibleWidget("a", anchor: anchor)
+        }
+    }
+    #expect(first.popupAnchor == ObjectIdentifier(anchor))
+    #expect(first.popupAnchor != ObjectIdentifier(elsewhere))
+    store.setPopupVisibleWidget("b", anchor: elsewhere)
+    #expect(first.popupAnchor == nil)
+    #expect(second.popupAnchor == ObjectIdentifier(elsewhere))
+    store.setPopupVisibleWidget(nil)
+    #expect(second.popupAnchor == nil)
+}
+
+@Test @MainActor func openingAPopupInvalidatesOnlyTheViewsOfTheWidgetThatOpenedIt() throws {
+    let store = try makeStore(threeWidgets)
+    let configuration = try #require(store.configuration)
+    let widgets = Dictionary(uniqueKeysWithValues: configuration.widgets.map {
+        ($0.id, WidgetView(widget: $0, defaults: configuration.defaults, popupDefaults: configuration.popupDefaults, store: store,
+                           monitor: 1, animationDuration: 0.2))
+    })
+    func invalidated(by change: () -> Void) -> [String] {
+        let views = OSAllocatedUnfairLock(initialState: [String]())
+        for (id, view) in widgets {
+            withObservationTracking { _ = view.body } onChange: { views.withLock { $0.append(id) } }
+        }
+        change()
+        return views.withLock { $0 }.sorted()
+    }
+    let aAnchor = NSView()
+    let bAnchor = NSView()
+    #expect(invalidated { store.setPopupVisibleWidget("a", anchor: aAnchor) } == ["a"])
+    #expect(invalidated { store.setPopupVisibleWidget("b", anchor: bAnchor) } == ["a", "b"])
+    #expect(invalidated { store.setPopupVisibleWidget(nil) } == ["b"])
+}

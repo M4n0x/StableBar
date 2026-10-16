@@ -60,7 +60,7 @@ final class WidgetPopup {
         self.panel = panel
         widgetID = widget.id
         self.store = store
-        store.setPopupVisibleWidget(widget.id)
+        store.setPopupVisibleWidget(widget.id, anchor: anchor)
         self.anchor = anchor
         animation = popup.animation
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in

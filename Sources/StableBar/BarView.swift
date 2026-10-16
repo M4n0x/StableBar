@@ -256,10 +256,11 @@ struct WidgetView: View {
     var body: some View {
         let output = store.scripts[widget.id]?.output
         let resolution = self.resolution
-        let style = resolution.style(hovered: hovered)
+        let isOpen = store.presentations[widget.id]?.popupAnchor == ObjectIdentifier(popupAnchor)
+        let style = resolution.style(hovered: hovered, open: isOpen)
         let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let animation = output?.animation ?? widget.animation ?? WidgetAnimation(duration: animationDuration)
-        let tile = content(appearance, resolution: resolution)
+        let tile = content(appearance, resolution: resolution, open: isOpen)
             .padding(.leading, style.paddingLeading ?? appearance.paddingHorizontal)
             .padding(.trailing, style.paddingTrailing ?? appearance.paddingHorizontal)
             .padding(.top, style.paddingTop ?? appearance.paddingVertical)
@@ -298,7 +299,7 @@ struct WidgetView: View {
         .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
         .overlay(alignment: .bottom) {
             if let overlay = widget.overlay {
-                block(overlay, style: resolution.base, fillsWidth: true).allowsHitTesting(false)
+                block(overlay, style: resolution.base, states: resolution.blockStates(open: isOpen), fillsWidth: true).allowsHitTesting(false)
             }
         }
         .overlay {
@@ -330,15 +331,15 @@ struct WidgetView: View {
     }
 
     @ViewBuilder
-    private func content(_ appearance: WidgetAppearance, resolution: ResolvedWidgetStyle) -> some View {
+    private func content(_ appearance: WidgetAppearance, resolution: ResolvedWidgetStyle, open: Bool) -> some View {
         if let layout = widget.layout {
-            block(layout, style: resolution.base, fillsWidth: false)
+            block(layout, style: resolution.base, states: resolution.blockStates(open: open), fillsWidth: false)
                 .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
         } else {
             switch widget.content {
             case .workspaces:
                 WorkspaceView(workspaceStore: store.workspaceStore, monitor: monitor,
-                              appearance: WidgetAppearance(resolution.style(hovered: false), defaults: WidgetStyle()),
+                              appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
                               animationDuration: animationDuration,
                               configuration: widget.workspace, animation: widget.animation, defaults: widget.style.inheriting(defaults))
             case .activeApp:
@@ -376,7 +377,7 @@ struct WidgetView: View {
         }
     }
 
-    private func block(_ block: PopupBlock, style: WidgetStyle, fillsWidth: Bool) -> some View {
+    private func block(_ block: PopupBlock, style: WidgetStyle, states: StyleStates, fillsWidth: Bool) -> some View {
         let script = store.scripts[widget.id]
         var fields = script?.output.fields ?? [:]
         switch widget.content {
@@ -392,7 +393,7 @@ struct WidgetView: View {
                               menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
                               targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
                               series: script?.output.series ?? [:],
-                              fillsWidth: fillsWidth, open: { $0.open() }) { command, environment in
+                              fillsWidth: fillsWidth, open: { $0.open() }, states: states) { command, environment in
             if environment.isEmpty {
                 runAction(command, sender: "mouse.clicked", button: "left")
             } else {

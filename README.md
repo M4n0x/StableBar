@@ -161,13 +161,13 @@ Any style can have `states`: styles that apply over it while a state is active. 
 }
 ```
 
-`hover` is active while the pointer is over a bar widget, a workspace cell or a layout block, on that display only. Workspace cells also have a workspace state; see [Workspace appearance](#workspace-appearance). States apply in a fixed order, later ones winning: the workspace state, then `hover`. A state's style can have its own `states`, which refine later states while both are active: `states.focused.states.hover` styles the focused workspace under the pointer. `bar.style` and group styles have no states.
+`hover` is active while the pointer is over a bar widget, a workspace cell or a layout block, on that display only. `open` is active on a bar widget and its layout while its popup shows, on the instance that opened it: not on its copies on other displays, and not when the popup opened from the More widgets menu. Workspace cells also have a workspace state; see [Workspace appearance](#workspace-appearance). States apply in a fixed order, later ones winning: the workspace state, `hover`, then `open`, so an `open` style stays visible while the pointer rests on its widget. A state's style can have its own `states`, which refine later states while both are active: `states.focused.states.hover` styles the focused workspace under the pointer. `bar.style` and group styles have no states.
 
 `hoverBackground` and `hoverForeground` are shorthand for `states.hover.background` and `states.hover.foreground`. In each style, such as `defaults` or a widget's `style`, the two are compared after includes, packages, themes, templates, widget overrides and profiles merge, so a `states.hover.background` from any layer wins over `hoverBackground` from any layer, and likewise for the foreground; to override a lower layer's hover state, set `states.hover.background`. Customize's **Hover background** rows handle this for you: they set `hoverBackground` and set `states.hover.background` to `null` beside it, so the color you pick wins over a lower layer's hover state but not over an active profile's `hoverBackground`. A hover without a background keeps the background. In layout and popup blocks, `hover` changes the text color and the block's own background, border, padding, size, offset and opacity.
 
 A widget's states merge with those in `defaults`, and every style's states merge through includes, templates, profiles and widget overrides one state and property at a time: a widget's `states.hover.foreground` keeps the theme's `states.hover.background`. Set a state to `null` in a later layer to remove it at the same place: in `defaults` through includes, profiles and packages, and in a widget's `style` through its templates, widget overrides and package widgets. Nothing set on a widget (its `style`, a template, a widget override or script output) can remove a state set in `defaults`. A state wins over the base style, so a theme's states also show on widgets that set their own colors.
 
-The bar measures widths without `hover`, so use it for colors, borders, opacity and offsets rather than sizes.
+The bar measures widths without `hover` and `open`, so use them for colors, borders, opacity and offsets rather than sizes.
 
 ### Theme tokens and automatic profiles
 
@@ -793,7 +793,7 @@ The [interactive example](examples/interactive/config.json) combines groups, an 
 
 ## Custom popups
 
-Add `popup` to any widget. For a popup shared by multiple widgets, define it once in the top-level `popups` object and set each widget's `popupName` to its key. Each anchor uses its own script data. An inline `popup` takes precedence over `popupName`. It takes precedence over `menu` and `onClick`. Its layout is independent of the script, so you can change the layout without changing the data source or rebuilding the app. The example below uses the fields returned by the script output that follows it.
+Add `popup` to any widget. For a popup shared by multiple widgets, define it once in the top-level `popups` object and set each widget's `popupName` to its key. Each anchor uses its own script data. An inline `popup` takes precedence over `popupName`. It takes precedence over `menu` and `onClick`. Its layout is independent of the script, so you can change the layout without changing the data source or rebuilding the app. The example below uses the fields returned by the script output that follows it. While a popup shows, the widget that opened it uses its `open` state; see [States](#states).
 
 Widgets with `menu` entries already open a shared popup without additional configuration. To customize that popup, add `popup` with your preferred style and `"layout": { "type": "menu" }`. You can also place a `menu` block alongside other blocks in a custom layout. Entries retain their titles, details and click commands, and refresh while the popup is open.
 

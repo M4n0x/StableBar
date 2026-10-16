@@ -57,6 +57,8 @@ struct PopupBlockView: View {
     var series: [String: [Double]] = [:]
     var fillsWidth = true
     let open: (OpenTarget) -> Void
+    /// The widget's states, such as `open`; the block adds its own hover.
+    var states = StyleStates()
     let runAction: (String, [String: String]) -> Void
     @State private var hovered = false
     @State private var query = ""
@@ -79,9 +81,10 @@ struct PopupBlockView: View {
     }
 
     private var styledContent: some View {
-        let resting = block.resolvedStyle(inherited: inheritedStyle, styles: styles, fields: fields, states: StyleStates())
-        let current = hovered ? block.resolvedStyle(inherited: inheritedStyle, styles: styles, fields: fields,
-                                                    states: StyleStates(hover: true)) : resting
+        let resting = block.resolvedStyle(inherited: inheritedStyle, styles: styles, fields: fields, states: states)
+        var hovering = states
+        hovering.hover = true
+        let current = hovered ? block.resolvedStyle(inherited: inheritedStyle, styles: styles, fields: fields, states: hovering) : resting
         let appearance = WidgetAppearance(resting.text, defaults: WidgetStyle())
         let box = current.box
         let alignment: Alignment = switch block.alignment {
@@ -131,7 +134,7 @@ struct PopupBlockView: View {
                 ForEach(Array(children.enumerated()), id: \.offset) { _, child in
                     AnyView(PopupBlockView(block: child, inheritedStyle: style.inherited, fields: fields,
                                           lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, runAction: runAction))
+                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
                 }
             }
         case let .column(children):
@@ -139,7 +142,7 @@ struct PopupBlockView: View {
                 ForEach(Array(children.enumerated()), id: \.offset) { _, child in
                     AnyView(PopupBlockView(block: child, inheritedStyle: style.inherited, fields: fields,
                                           lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, runAction: runAction))
+                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
                 }
             }
         case let .text(text):
@@ -164,7 +167,7 @@ struct PopupBlockView: View {
                 ForEach(Array((lists[source] ?? []).enumerated()), id: \.offset) { _, fields in
                     AnyView(PopupBlockView(block: row, inheritedStyle: style.inherited, fields: fields,
                                           lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, runAction: runAction))
+                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
                 }
             }
         case let .button(title, command):
@@ -189,7 +192,7 @@ struct PopupBlockView: View {
                 ForEach(Array(searchPopupRows(lists[source] ?? [], query: query, fields: searchFields).enumerated()), id: \.offset) { _, fields in
                     AnyView(PopupBlockView(block: row, inheritedStyle: style.inherited, fields: fields,
                                           lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, runAction: runAction))
+                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
                 }
             }
         case .menu:

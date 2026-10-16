@@ -264,3 +264,18 @@ private func workspace(_ json: String) throws -> WorkspaceConfiguration {
         #expect(resolveStyle(layers, states: StyleStates(hover: true)).background == HexColor(0x111111ff), "\(widget.id)")
     }
 }
+
+@Test func openAppliesAfterHoverSoItsStyleShowsWhileThePointerRests() throws {
+    let resolution = ResolvedWidgetStyle(base: try style(##"""
+    {"background":"#000000","states":{"hover":{"background":"#111111"},"open":{"background":"#222222","borderColor":"#333333"}}}
+    """##))
+    #expect(resolution.style(hovered: false, open: false).background == HexColor(0x000000ff))
+    #expect(resolution.style(hovered: true, open: false).background == HexColor(0x111111ff))
+    #expect(resolution.style(hovered: false, open: true).background == HexColor(0x222222ff))
+    #expect(resolution.style(hovered: true, open: true).background == HexColor(0x222222ff))
+    let borderOnly = ResolvedWidgetStyle(base: try style(##"{"background":"#000000","states":{"open":{"borderColor":"#333333"}}}"##))
+    #expect(borderOnly.style(hovered: true, open: true).background == HexColor(0x000000ff))
+    #expect(borderOnly.style(hovered: true, open: true).borderColor == HexColor(0x333333ff))
+    #expect(borderOnly.style(hovered: false, open: true).background == HexColor(0x000000ff))
+    #expect(borderOnly.blockStates(open: true) == StyleStates(open: true))
+}
