@@ -172,18 +172,8 @@ struct BarView: View {
     }
 
     private func overflowTitle(_ widget: WidgetConfiguration) -> String {
-        switch widget.content {
-        case let .text(text): return text
-        case let .clock(format):
-            let formatter = DateFormatter()
-            formatter.dateFormat = format
-            return formatter.string(from: Date())
-        case .activeApp: return store.activeApp?.localizedName ?? "Desktop"
-        case .script, .provider:
-            let text = store.scripts[widget.id]?.output.text ?? ""
-            return text.isEmpty ? widget.id : text
-        case .workspaces, .spacer: return widget.id
-        }
+        let text = store.label(for: widget).text
+        return text.isEmpty ? widget.id : text
     }
 }
 
@@ -236,6 +226,11 @@ private func widgetPopup(_ widget: WidgetConfiguration, store: BarStore) -> Popu
         )
     }
     return nil
+}
+
+/// A clock's refresh schedule: each second when its format shows seconds, otherwise each minute.
+private func clockSchedule(_ format: String) -> PeriodicTimelineSchedule {
+    .periodic(from: Calendar.current.startOfDay(for: .now), by: format.contains("s") ? 1 : 60)
 }
 
 struct WidgetView: View {
@@ -299,7 +294,7 @@ struct WidgetView: View {
         .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
         .overlay(alignment: .bottom) {
             if let overlay = widget.overlay {
-                block(overlay, style: resolution.base, states: resolution.blockStates(open: isOpen), fillsWidth: true).allowsHitTesting(false)
+                block(overlay, date: .now, style: resolution.base, states: resolution.blockStates(open: isOpen), fillsWidth: true).allowsHitTesting(false)
             }
         }
         .overlay {
@@ -333,8 +328,16 @@ struct WidgetView: View {
     @ViewBuilder
     private func content(_ appearance: WidgetAppearance, resolution: ResolvedWidgetStyle, open: Bool) -> some View {
         if let layout = widget.layout {
-            block(layout, style: resolution.base, states: resolution.blockStates(open: open), fillsWidth: false)
-                .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
+            Group {
+                if case let .clock(format) = widget.content {
+                    TimelineView(clockSchedule(format)) { context in
+                        block(layout, date: context.date, style: resolution.base, states: resolution.blockStates(open: open), fillsWidth: false)
+                    }
+                } else {
+                    block(layout, date: .now, style: resolution.base, states: resolution.blockStates(open: open), fillsWidth: false)
+                }
+            }
+            .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
         } else {
             switch widget.content {
             case .workspaces:
@@ -347,28 +350,29 @@ struct WidgetView: View {
                     if let icon = store.activeApp?.icon {
                         Image(nsImage: icon).resizable().frame(width: appearance.iconSize, height: appearance.iconSize)
                     }
-                    Text(store.activeApp?.localizedName ?? "Desktop").lineLimit(1)
+                    Text(store.label(for: widget).text).lineLimit(1)
                 }
             case let .clock(format):
-                TimelineView(.periodic(from: Calendar.current.startOfDay(for: .now), by: format.contains("s") ? 1 : 60)) { context in
-                    let formatter = DateFormatter()
-                    let _ = formatter.dateFormat = format
-                    label(formatter.string(from: context.date), icon: widget.icon, appearance: appearance)
+                TimelineView(clockSchedule(format)) { context in
+                    let shown = store.label(for: widget, date: context.date)
+                    label(shown.text, icon: shown.icon, appearance: appearance)
                         .monospacedDigit()
                 }
-            case let .text(text):
-                label(text, icon: widget.icon, appearance: appearance)
+            case .text:
+                let shown = store.label(for: widget)
+                label(shown.text, icon: shown.icon, appearance: appearance)
             case .spacer:
                 Spacer(minLength: resolution.base.minWidth ?? 0)
             case .script, .provider:
                 if let script = store.scripts[widget.id] {
+                    let shown = store.label(for: widget)
                     HStack(spacing: appearance.spacing) {
                         if script.output.value != nil {
                             Sparkline(samples: script.samples)
                                 .stroke(appearance.accent, lineWidth: 1.2)
                                 .frame(width: 40, height: 16)
                         }
-                        label(script.output.text, icon: script.output.icon ?? widget.icon, appearance: appearance)
+                        label(shown.text, icon: shown.icon, appearance: appearance)
                     }
                         .foregroundStyle(appearance.foreground)
                         .help(script.error ?? script.output.tooltip ?? "")
@@ -377,18 +381,9 @@ struct WidgetView: View {
         }
     }
 
-    private func block(_ block: PopupBlock, style: WidgetStyle, states: StyleStates, fillsWidth: Bool) -> some View {
+    private func block(_ block: PopupBlock, date: Date, style: WidgetStyle, states: StyleStates, fillsWidth: Bool) -> some View {
         let script = store.scripts[widget.id]
-        var fields = script?.output.fields ?? [:]
-        switch widget.content {
-        case let .text(text): fields["text"] = text
-        case .activeApp: fields["text"] = store.activeApp?.localizedName ?? "Desktop"
-        case .script, .provider:
-            fields["text"] = script?.output.text ?? "…"
-            fields["icon"] = script?.output.icon ?? widget.icon ?? ""
-        default: break
-        }
-        return PopupBlockView(block: block, inheritedStyle: style, fields: fields,
+        return PopupBlockView(block: block, inheritedStyle: style, fields: store.label(for: widget, date: date).fields,
                               lists: script?.output.lists ?? [:], samples: script?.samples ?? [],
                               menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
                               targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],

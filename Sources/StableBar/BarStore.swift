@@ -382,6 +382,12 @@ final class BarStore: NSObject {
             var result: [String: ConfigurationValue] = ["configuration": .object(definition),
                 "defaults": effectiveDocument["defaults"] ?? .object([:]),
                 "origins": .object(origins.filter { $0.key.hasPrefix("widgets.\(id).") }.mapValues { .string($0.description) })]
+            if let widget = configuration?.widgets.first(where: { $0.id == id }) {
+                let shown = label(for: widget)
+                result["text"] = .string(shown.text)
+                result["icon"] = shown.icon.map(ConfigurationValue.string) ?? .null
+                result["fields"] = .object(shown.fields.mapValues(ConfigurationValue.string))
+            }
             if let script = scripts[id] {
                 let encoder = JSONEncoder()
                 encoder.dateEncodingStrategy = .iso8601
@@ -390,8 +396,6 @@ final class BarStore: NSObject {
                 result["latestOutput"] = (try? JSONDecoder().decode(ConfigurationValue.self, from: Data(script.diagnostics.lastStdout.utf8)))
                     ?? .string(script.diagnostics.lastStdout)
                 result["error"] = script.error.map(ConfigurationValue.string) ?? .null
-                result["text"] = .string(script.output.text)
-                result["fields"] = .object((script.output.fields ?? [:]).mapValues(ConfigurationValue.string))
                 result["values"] = .object((script.output.values ?? [:]).mapValues(ConfigurationValue.number))
                 result["state"] = presentations[id]?.style.state.map(ConfigurationValue.string) ?? .null
             }
