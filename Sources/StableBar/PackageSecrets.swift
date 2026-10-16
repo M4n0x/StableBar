@@ -9,10 +9,21 @@ func packageSecret(_ account: String) -> String {
     return String(decoding: data as! Data, as: UTF8.self)
 }
 
+func packageSecretIsSaved(_ account: String) -> Bool {
+    let query = [kSecClass: kSecClassGenericPassword, kSecAttrService: "StableBar", kSecAttrAccount: account] as CFDictionary
+    return SecItemCopyMatching(query, nil) == errSecSuccess
+}
+
 func savePackageSecret(_ value: String, account: String) throws {
     let item = [kSecClass: kSecClassGenericPassword, kSecAttrService: "StableBar", kSecAttrAccount: account] as [CFString: Any]
-    SecItemDelete(item as CFDictionary)
-    guard !value.isEmpty else { return }
-    let status = SecItemAdd(item.merging([kSecValueData: Data(value.utf8)]) { $1 } as CFDictionary, nil)
+    var status: OSStatus
+    if value.isEmpty {
+        status = SecItemDelete(item as CFDictionary)
+        if status == errSecItemNotFound { status = errSecSuccess }
+    } else {
+        let data = [kSecValueData: Data(value.utf8)] as [CFString: Any]
+        status = SecItemUpdate(item as CFDictionary, data as CFDictionary)
+        if status == errSecItemNotFound { status = SecItemAdd(item.merging(data) { $1 } as CFDictionary, nil) }
+    }
     guard status == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
 }
