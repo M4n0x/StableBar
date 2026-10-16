@@ -480,7 +480,7 @@ StableBar --batch '[
 ]' --persist
 ```
 
-A batch validates the whole resulting configuration before replacing the running bar or writing the file. A failed batch leaves both intact. Supported edit actions are `set` (`id`, `properties`), `add` (`properties`, including `id`), `remove` (`id`), `reorder` (`ids`), `bar`/`defaults`/`tokens` (`properties`, merged into those keys), `unset` (`properties` naming the keys to remove from the main file, with `id` for a widget, for example `{"action":"unset","id":"clock","properties":{"style":{"foreground":null}}}`), `profile` (`name`, omitted for automatic), `package` (`properties`: `id`, `version`, optional `enabled` and `settings`), and `theme` (the same `properties`, with only `id` for a theme that ships with StableBar, omitted for Built-in).
+A batch validates the whole resulting configuration before replacing the running bar or writing the file. A failed batch leaves both intact. Supported edit actions are `set` (`id`, `properties`), `add` (`properties`, including `id`), `remove` (`id`), `reorder` (`ids`), `bar`/`defaults`/`popupDefaults`/`tokens` (`properties`, merged into those keys), `unset` (`properties` naming the keys to remove from the main file, with `id` for a widget, for example `{"action":"unset","id":"clock","properties":{"style":{"foreground":null}}}`), `profile` (`name`, omitted for automatic), `package` (`properties`: `id`, `version`, optional `enabled` and `settings`), and `theme` (the same `properties`, with only `id` for a theme that ships with StableBar, omitted for Built-in).
 
 - `--validate [PATH]`: compose and validate files without starting scripts.
 - `--refresh ID`: refresh a running widget. Hidden, suspended providers must first be made visible or opened in **Customize → Diagnostics**.
@@ -494,7 +494,7 @@ Open **Customize StableBar…** from the menu-bar icon or by right-clicking the 
 
 **General** opens the configuration file in your editor, shows it in Finder or reloads it, runs setup again, and reconnects the workspace source.
 
-**Appearance** chooses the [theme](#themes), keeps the bar light or dark or lets it follow the system, and edits the theme's colors. Each theme color has a light and a dark value; changing one saves it in your configuration's `tokens`, so every widget, popup and package that uses the color follows. **All widgets** sets the default colors, font, weight, size, padding and corners, and **Bar** sets the bar's background, size and position.
+**Appearance** chooses the [theme](#themes), keeps the bar light or dark or lets it follow the system, and edits the theme's colors. Each theme color has a light and a dark value; changing one saves it in your configuration's `tokens`, so every widget, popup and package that uses the color follows. **All widgets** sets the default colors, shadow, font, weight, size, padding and corners. **Popups** sets their background, border, shadow and weight, which apply over All widgets. **Bar** sets the bar's background, bottom border, corners, size and position. Together they reach every property the themes that ship with StableBar set, so you can build any of their looks here.
 
 **Widgets** lists your widgets by position; drag to reorder them. Change a widget's position, icon, text or clock format, its colors, font and shape, or edit its properties as JSON. A color either follows one of the theme's colors, such as Text or Accent, or is a custom light and dark pair.
 

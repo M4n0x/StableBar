@@ -21,6 +21,10 @@ struct AppearanceView: View {
         let defaults = StyleFields(store: store, path: "defaults", values: document("defaults"),
                                    set: { editor.change(ConfigurationEdit(action: .defaults, properties: [$0: $1])) },
                                    unset: { unset(["defaults": .object([$0: .null])]) })
+        let popups = StyleFields(store: store, path: "popupDefaults", defaultsPath: "defaults",
+                                 values: document("defaults").merging(document("popupDefaults")) { $1 },
+                                 set: { editor.change(ConfigurationEdit(action: .popupDefaults, properties: [$0: $1])) },
+                                 unset: { unset(["popupDefaults": .object([$0: .null])]) })
         let bar = StyleFields(store: store, path: "bar", values: document("bar"),
                               set: { editor.change(ConfigurationEdit(action: .bar, properties: [$0: $1])) },
                               unset: { unset(["bar": .object([$0: .null])]) })
@@ -76,15 +80,27 @@ struct AppearanceView: View {
                 defaults.color("Background", "background")
                 defaults.color("Hover background", "hoverBackground")
                 defaults.color("Border", "borderColor")
+                defaults.color("Shadow", "shadowColor")
                 defaults.color("Accent", "accent")
+                defaults.color("Accent text", "accentText")
                 defaults.font(fontFamilies)
                 defaults.weight()
                 defaults.number("Font size", "fontSize", default: 12)
                 defaults.number("Horizontal padding", "paddingHorizontal", default: 10)
+                defaults.number("Vertical padding", "paddingVertical", default: 6)
                 defaults.number("Corner radius", "cornerRadius", default: 14)
+            }
+            Section("Popups") {
+                popups.color("Background", "background")
+                popups.color("Border", "borderColor")
+                popups.color("Shadow", "shadowColor")
+                popups.weight()
             }
             Section("Bar") {
                 barStyle.color("Background", "background")
+                barStyle.color("Border", "borderColor")
+                barStyle.number("Border width", "borderWidth", default: 0)
+                barStyle.number("Corner radius", "cornerRadius", default: 0)
                 bar.number("Height", "height", default: 40)
                 bar.number("Offset from top", "offset", default: 0)
                 bar.number("Margin", "margin", default: 0)
