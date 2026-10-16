@@ -23,6 +23,31 @@ struct WidgetActions: Decodable, Sendable {
     }
 }
 
+enum OpenTarget {
+    case url(URL)
+    case application(String)
+
+    init?(_ value: String) {
+        if let url = URL(string: value), let scheme = url.scheme {
+            guard ["http", "https", "mailto", "x-apple.systempreferences"].contains(scheme.lowercased()) else { return nil }
+            self = .url(url)
+        } else if value.contains("."),
+                  value.unicodeScalars.allSatisfy({ CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-").contains($0) }) {
+            self = .application(value)
+        } else {
+            return nil
+        }
+    }
+
+    func open() {
+        switch self {
+        case let .url(url): NSWorkspace.shared.open(url)
+        case let .application(identifier):
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier) { NSWorkspace.shared.open(url) }
+        }
+    }
+}
+
 struct WidgetActionContext: Sendable {
     let sender: String
     var button: String?

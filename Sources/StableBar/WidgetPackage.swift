@@ -24,7 +24,7 @@ struct WidgetPackageSetting: Codable, Sendable {
 }
 
 struct WidgetPackageManifest: Codable, Sendable {
-    enum Kind: String, Codable, Sendable { case theme }
+    enum Kind: String, Codable, Sendable { case theme, widgets }
 
     let id: String
     let name: String
@@ -106,6 +106,8 @@ enum WidgetPackageError: LocalizedError {
     case notATheme(String)
     case themeInPackages(String)
     case themeProperty(String)
+    case widgetsProperty(String)
+    case widgetsCommand(String)
     case missingVersion(String)
     case unknownTheme(String)
 
@@ -122,6 +124,8 @@ enum WidgetPackageError: LocalizedError {
         case let .notATheme(id): "Package \(id) is not a theme. Enable it in packages instead."
         case let .themeInPackages(id): "Package \(id) is a theme. Select it with the theme key instead of packages."
         case let .themeProperty(key): "A theme can contain only tokens, defaults, bar, groups and profiles, not \(key)."
+        case let .widgetsProperty(key): "A widgets package can contain only tokens, defaults, bar, groups, profiles, widgets, templates, popups and providers, not \(key)."
+        case let .widgetsCommand(key): "A widgets package cannot contain \(key)."
         case let .missingVersion(id): "Package \(id) needs a version."
         case let .unknownTheme(id): "No theme named \(id) ships with StableBar. Add a version to select an installed theme package."
         }
@@ -282,6 +286,28 @@ func validateThemeDocument(_ document: [String: ConfigurationValue]) throws {
     }
 }
 
+func validateWidgetsDocument(_ document: [String: ConfigurationValue]) throws {
+    for key in document.keys.sorted() where !["tokens", "defaults", "bar", "groups", "profiles", "widgets", "templates", "popups", "providers"].contains(key) {
+        throw WidgetPackageError.widgetsProperty(key)
+    }
+    for profile in try document["profiles"]?.decoded([ConfigurationProfile].self) ?? [] {
+        try validateWidgetsDocument(profile.configuration)
+    }
+    try rejectCommandKeys(.object(document))
+}
+
+private func rejectCommandKeys(_ value: ConfigurationValue) throws {
+    switch value {
+    case let .object(object):
+        for key in object.keys.sorted() {
+            guard !(commandKeys + ["onClickField", "environment"]).contains(key) else { throw WidgetPackageError.widgetsCommand(key) }
+            try rejectCommandKeys(object[key]!)
+        }
+    case let .array(array): try array.forEach(rejectCommandKeys)
+    default: break
+    }
+}
+
 private func packageEnvironment(_ definition: [String: ConfigurationValue], directory: URL) -> [String: ConfigurationValue] {
     var result = definition
     result["environment"] = .object(["PACKAGE_DIR": .string(directory.path)]).overriding(result["environment"] ?? .object([:]))
@@ -312,12 +338,14 @@ func preparePackageAssets(_ value: ConfigurationValue, path: String = "", origin
     }
 }
 
+private let commandKeys = ["command", "onClick", "rightClick", "middleClick", "scrollUp", "scrollDown", "mouseEntered", "mouseExited", "onChange"]
+
 private func packageCommands(_ value: ConfigurationValue) -> [String] {
     switch value {
     case let .object(object):
         return object.keys.sorted().flatMap { key in
             let value = object[key]!
-            if ["command", "onClick", "rightClick", "middleClick", "scrollUp", "scrollDown", "mouseEntered", "mouseExited", "onChange"].contains(key),
+            if commandKeys.contains(key),
                case let .string(command) = value { return [command] }
             return packageCommands(value)
         }

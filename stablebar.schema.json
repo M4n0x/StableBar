@@ -533,6 +533,10 @@
         "onClick": {
           "$ref": "#/definitions/string"
         },
+        "open": {
+          "$ref": "#/definitions/string",
+          "description": "An http, https, mailto or x-apple.systempreferences URL, or an application bundle identifier."
+        },
         "path": {
           "$ref": "#/definitions/string"
         },
@@ -565,6 +569,9 @@
           "$ref": "#/definitions/string"
         },
         "onClickField": {
+          "$ref": "#/definitions/string"
+        },
+        "openField": {
           "$ref": "#/definitions/string"
         },
         "lineWidth": {
@@ -834,6 +841,10 @@
         },
         "onClick": {
           "$ref": "#/definitions/string"
+        },
+        "open": {
+          "$ref": "#/definitions/string",
+          "description": "An http, https, mailto or x-apple.systempreferences URL, or an application bundle identifier."
         },
         "menu": {
           "type": [

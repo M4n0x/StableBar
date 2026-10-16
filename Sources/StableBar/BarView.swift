@@ -140,9 +140,11 @@ struct BarView: View {
                                 } else if let command {
                                     store.runAction(command, widget: widget,
                                                     event: ScriptEvent(sender: "mouse.clicked", environment: ["BUTTON": "left", "SID": String(display.id)]))
+                                } else if let open = widget.open {
+                                    OpenTarget(open)!.open()
                                 }
                             }
-                            .disabled(popup == nil && command == nil)
+                            .disabled(popup == nil && command == nil && widget.open == nil)
                         }
                     }
                 }
@@ -258,6 +260,9 @@ struct WidgetView: View {
                 .buttonStyle(.plain)
             } else if let command = output?.onClick ?? widget.onClick {
                 Button { runAction(command, sender: "mouse.clicked", button: "left") } label: { content(appearance) }
+                    .buttonStyle(.plain)
+            } else if let open = widget.open {
+                Button { OpenTarget(open)!.open() } label: { content(appearance) }
                     .buttonStyle(.plain)
             } else {
                 content(appearance)
@@ -377,7 +382,7 @@ struct WidgetView: View {
                               menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
                               targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
                               series: script?.output.series ?? [:],
-                              fillsWidth: fillsWidth) { command, environment in
+                              fillsWidth: fillsWidth, open: { $0.open() }) { command, environment in
             if environment.isEmpty {
                 runAction(command, sender: "mouse.clicked", button: "left")
             } else {

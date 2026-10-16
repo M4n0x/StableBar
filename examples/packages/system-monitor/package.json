@@ -1,0 +1,7 @@
+{
+  "id": "system-monitor",
+  "name": "System monitor",
+  "version": "1.0.0",
+  "kind": "widgets",
+  "entry": "config.json"
+}

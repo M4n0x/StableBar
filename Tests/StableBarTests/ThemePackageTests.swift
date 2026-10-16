@@ -323,6 +323,41 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     }
 }
 
+@Test func widgetsPackagesRejectCommandsAtAnyDepthAndLoadThroughPackages() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    let store = WidgetPackageStore(directory: directory.appending(path: "packages"))
+    try writePackageFile(#"{"id":"monitor","name":"Monitor","version":"1","kind":"widgets","entry":"config.json"}"#,
+                         to: source.appending(path: "package.json"))
+    for (configuration, message) in [
+        (#"{"environment":{"PLAYER":"Music"}}"#, "A widgets package can contain only tokens, defaults, bar, groups, profiles, widgets, templates, popups and providers, not environment."),
+        (#"{"widgetOverrides":{"cpu":{"text":"CPU"}}}"#, "A widgets package can contain only tokens, defaults, bar, groups, profiles, widgets, templates, popups and providers, not widgetOverrides."),
+        (#"{"widgets":[{"id":"load","type":"script","position":"left","command":"uptime"}]}"#, "A widgets package cannot contain command."),
+        (#"{"providers":{"load":{"type":"stream","command":"uptime"}}}"#, "A widgets package cannot contain command."),
+        (#"{"templates":{"cpu":{"type":"system","position":"left","actions":{"scrollUp":"uptime"}}}}"#, "A widgets package cannot contain scrollUp."),
+        (#"{"popups":{"agenda":{"style":{},"layout":{"type":"text","text":"Join","onClickField":"joinCommand"}}}}"#, "A widgets package cannot contain onClickField."),
+        (#"{"widgets":[{"id":"cpu","type":"system","position":"left","environment":{"A":"B"}}]}"#, "A widgets package cannot contain environment."),
+        (#"{"profiles":[{"name":"dark","configuration":{"workspaceSource":"yabai"}}]}"#, "A widgets package can contain only tokens, defaults, bar, groups, profiles, widgets, templates, popups and providers, not workspaceSource."),
+        (#"{"profiles":[{"name":"dark","configuration":{"widgets":[{"id":"cpu","type":"system","position":"left","onClick":"uptime"}]}}]}"#, "A widgets package cannot contain onClick.")
+    ] {
+        try writePackageFile(configuration, to: source.appending(path: "config.json"))
+        let error = #expect(throws: WidgetPackageError.self) { try store.inspect(source) }
+        #expect(error?.localizedDescription == message)
+    }
+    try writePackageFile(#"""
+    {"tokens":{"surface":"#222222"},"providers":{"system":{"type":"system","interval":2}},
+     "popups":{"usage":{"style":{},"layout":{"type":"field","field":"text","open":"com.apple.ActivityMonitor"}}},
+     "widgets":[{"id":"cpu","type":"system","position":"right","popupName":"usage","style":{"background":"@token.surface"}}]}
+    """#, to: source.appending(path: "config.json"))
+    #expect(try store.install(source).commands.isEmpty)
+    var loader = ConfigurationLoader()
+    let root = directory.appending(path: "config.json")
+    let configuration = try loader.load(root, data: Data(#"{"packages":[{"id":"monitor","version":"1"}]}"#.utf8))
+    #expect(configuration.widgets.map(\.id) == ["cpu"])
+    #expect(throws: WidgetPackageError.self) { try loader.load(root, data: Data(#"{"theme":{"id":"monitor","version":"1"}}"#.utf8)) }
+}
+
 @Test func themeAppliesAfterWidgetPackagesAndBeforeIncludesAndTheRootFile() throws {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
