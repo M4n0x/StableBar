@@ -161,7 +161,7 @@ import Testing
     #expect(url.path == "/tmp/custom.json")
     #expect(request.persist)
     #expect(request.edits?.count == 2)
-    for flag in ["--inspect-package", "--install-package", "--add", "--set", "--enable-package"] {
+    for flag in ["--inspect-package", "--install-package", "--add", "--set", "--enable-package", "--uninstall-package"] {
         #expect(throws: (any Error).self) { try LaunchCommand(arguments: [flag]) }
     }
 }

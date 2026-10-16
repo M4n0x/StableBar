@@ -164,6 +164,24 @@ final class BarStore: NSObject {
         catch { sessionEdits = previous; throw error }
     }
 
+    func uninstallPackage(id: String, version: String) throws {
+        let packages = WidgetPackageStore(directory: configurationURL.deletingLastPathComponent().appending(path: "packages"))
+        let directory = try packages.directory(id: id, version: version)
+        let manifest = try packages.manifest(at: directory)
+        var loader = ConfigurationLoader()
+        let document = try loader.compose(configurationURL, data: configurationData(editedDocument([])), context: context)
+        var selections = try document["packages"]?.decoded([WidgetPackageSelection].self) ?? []
+        if let theme = document["theme"] { selections.append(try theme.decoded(WidgetPackageSelection.self)) }
+        var edits: [ConfigurationEdit] = []
+        if let selection = selections.first(where: { $0.id == id && $0.version == version }) {
+            edits.append(ConfigurationEdit(action: manifest.kind == .theme ? .theme : .package, properties: [
+                "id": .string(id), "version": .string(version), "enabled": .bool(false), "settings": .object(selection.settings)
+            ]))
+        }
+        try applyEdits(edits, persist: true)
+        try FileManager.default.removeItem(at: directory)
+    }
+
     private func apply(_ next: Configuration) {
         profiles = configurationLoader.profiles
         pinnedProfile = configurationLoader.pinnedProfile
@@ -299,6 +317,11 @@ final class BarStore: NSObject {
         case .customize: onCustomize?()
         case .reload: try applyEdits([], persist: false)
         case .batch: try applyEdits(request.edits ?? [], persist: request.persist)
+        case .uninstallPackage:
+            guard let id = request.id, let version = request.version else {
+                throw CommandFailure(message: "Uninstall requires a package id and version.")
+            }
+            try uninstallPackage(id: id, version: version)
         case .reset: try setSessionEdits([])
         case .refresh:
             guard let id = request.id, let script = scripts[id] else { throw CommandFailure(message: "Refresh requires a running widget id.") }

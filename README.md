@@ -199,6 +199,12 @@ Widgets, templates and providers receive `PACKAGE_DIR`, the absolute path of the
 
 Packages install atomically into `packages/<id>/<version>` beside the main configuration. Existing versions cannot be overwritten. Configuration includes and static image paths stay inside the package; traversal and symlinks escaping the folder are rejected. Static image paths are resolved relative to the package folder, including token references. Package commands can run arbitrary code as your user; review the files as well as the displayed command strings before enabling an unfamiliar package.
 
+Select an installed version in **Customize → Packages** and choose **Uninstall…** to delete its files. If selected, that version is disabled in the root configuration, including when its selection comes from an include; an uninstalled theme falls back to Built-in. Other installed versions, saved settings and Keychain secrets are kept for reuse. To delete a saved token, use **Remove** beside it and save before uninstalling. Uninstall saves current configuration edits and checks that the configuration still loads before deleting files. It cannot be undone in Customize. The command line uses the running bar for the same operation, without a confirmation prompt:
+
+```sh
+StableBar --uninstall-package local-clock 1.0.0
+```
+
 ```sh
 StableBar --inspect-package examples/packages/local-clock
 StableBar --install-package examples/packages/local-clock
@@ -460,7 +466,7 @@ A batch validates the whole resulting configuration before replacing the running
 - `--refresh ID`: refresh a running widget. Hidden, suspended providers must first be made visible or opened in **Customize → Diagnostics**.
 - `--trigger EVENT [KEY=VALUE ...]`: send an event. Without `--config`, this broadcasts to all subscribed bars for compatibility; with `--config`, it targets that configuration.
 - `--reload`: reload configuration; without `--config`, notify all running bars.
-- `--packages`, `--inspect-package PATH`, `--install-package PATH|ID`, `--enable-package ID VERSION [--persist]`: review and manage packages. `--install-package` installs a folder, or a package from the [store](#store) when its argument is not a folder. Installation does not enable commands. Package selections belong in the root file or its includes; use profile widget overrides to hide package widgets contextually.
+- `--packages`, `--inspect-package PATH`, `--install-package PATH|ID`, `--enable-package ID VERSION [--persist]`, `--uninstall-package ID VERSION`: review and manage packages. `--install-package` installs a folder, or a package from the [store](#store) when its argument is not a folder. Installation does not enable commands. Uninstall requires the bar to be running and always saves configuration edits before removing that version. Package selections belong in the root file or its includes; use profile widget overrides to hide package widgets contextually.
 
 ### Customize
 
@@ -478,7 +484,7 @@ Changes in these sections apply to the bar immediately, like command-line edits 
 
 **Profiles** edits [profiles](#theme-tokens-and-automatic-profiles) and chooses automatic matching or a pinned profile.
 
-**Packages** reviews local folders and [store](#store) packages and their declared commands, edits typed settings, installs versions and enables a chosen version. Enabling a theme makes it the active theme; themes have no commands to review. Select an older installed version to roll back.
+**Packages** reviews local folders and [store](#store) packages and their declared commands, edits typed settings, installs versions and enables a chosen version. Enabling a theme makes it the active theme; themes have no commands to review. Select an older installed version to roll back, or **Uninstall…** to remove one.
 
 **Diagnostics** shows the composed widget configuration, defaults, source paths, provider output, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while Diagnostics is visible. Closing the window restores its visibility policy.
 

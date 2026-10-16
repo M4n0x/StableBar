@@ -26,6 +26,7 @@ enum LaunchCommand {
            StableBar [--config PATH] --reset | --refresh ID
            StableBar [--config PATH] --packages | --inspect-package PATH | --install-package PATH|ID
            StableBar [--config PATH] --enable-package ID VERSION [--persist]
+           StableBar [--config PATH] --uninstall-package ID VERSION
            StableBar --help
     """
 
@@ -79,6 +80,8 @@ enum LaunchCommand {
                 ? .packages(url, "install", source) : .installFromStore(url, arguments[1])
         case "--enable-package" where arguments.count == 3:
             self = batch([ConfigurationEdit(action: .package, properties: ["id": .string(arguments[1]), "version": .string(arguments[2]), "enabled": .bool(true)])])
+        case "--uninstall-package" where arguments.count == 3:
+            self = .control(url, RuntimeRequest(action: .uninstallPackage, id: arguments[1], version: arguments[2]))
         case "--validate" where arguments.count <= 2:
             let url = arguments.count == 2 ? URL(filePath: (arguments[1] as NSString).expandingTildeInPath) : url
             self = .validate(url)

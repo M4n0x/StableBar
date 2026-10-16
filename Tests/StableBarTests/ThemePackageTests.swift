@@ -219,6 +219,101 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     }
 }
 
+@Test @MainActor func uninstallDisablesInheritedSelectionsAndKeepsOtherVersionsAndSettings() throws {
+    for kind in ["widgets", "theme"] {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "source")
+        let packages = WidgetPackageStore(directory: directory.appending(path: "packages"))
+        for version in ["1", "2"] {
+            try writePackageFile(#"""
+            {"id":"sample","name":"Sample","version":"\#(version)","kind":"\#(kind)","entry":"config.json",
+             "settings":{"size":{"type":"number","default":40}}}
+            """#, to: source.appending(path: "package.json"))
+            try writePackageFile(#"{"bar":{"height":"@setting.size"}}"#, to: source.appending(path: "config.json"))
+            _ = try packages.install(source)
+        }
+        let selection = #"{"id":"sample","version":"1","settings":{"size":48}}"#
+        let imported = kind == "theme" ? #"{"theme":\#(selection)}"# : #"{"packages":[\#(selection)]}"#
+        let module = directory.appending(path: "module.json")
+        try writePackageFile(imported, to: module)
+        let url = directory.appending(path: "config.json")
+        try writePackageFile(#"{"includes":["module.json"],"widgets":[]}"#, to: url)
+        let store = BarStore(configurationURL: url)
+        defer { store.stop() }
+        store.reloadConfiguration()
+        #expect(store.configuration?.bar.height == 48)
+        try store.applyEdits([ConfigurationEdit(action: .bar, properties: ["height": .number(52)])], persist: false)
+        try store.uninstallPackage(id: "sample", version: "2")
+        #expect(try packages.list().map(\.version) == ["1"])
+        #expect(store.sessionEdits.isEmpty)
+        let command = try LaunchCommand(arguments: ["--config", url.path, "--uninstall-package", "sample", "1"])
+        guard case let .control(target, request) = command else { Issue.record("Expected control command"); return }
+        #expect(target == url)
+        _ = try store.handle(request)
+        #expect(try packages.list().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: packages.directory.appending(path: "sample/1").path))
+        #expect(try String(contentsOf: module, encoding: .utf8) == imported)
+        #expect(FileManager.default.fileExists(atPath: source.appending(path: "config.json").path))
+        store.reloadConfiguration()
+        #expect(store.configurationError == nil)
+        #expect(store.configuration?.bar.height == 52)
+        let saved = try kind == "theme"
+            ? #require(store.effectiveDocument["theme"]).decoded(WidgetPackageSelection.self)
+            : #require(store.effectiveDocument["packages"]).decoded([WidgetPackageSelection].self)[0]
+        #expect(!saved.enabled)
+        #expect(saved.settings == ["size": .number(48)])
+    }
+}
+
+@Test @MainActor func uninstallSavesSessionPinsBeforeDeletingThePreviouslySelectedVersion() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    let packages = WidgetPackageStore(directory: directory.appending(path: "packages"))
+    for version in ["1", "2"] {
+        try writePackageFile(#"{"id":"clock","name":"Clock","version":"\#(version)","entry":"config.json"}"#,
+                             to: source.appending(path: "package.json"))
+        try writePackageFile(#"{"widgets":[{"id":"clock","type":"text","position":"left","text":"\#(version)"}]}"#,
+                             to: source.appending(path: "config.json"))
+        _ = try packages.install(source)
+    }
+    let url = directory.appending(path: "config.json")
+    try writePackageFile(#"{"packages":[{"id":"clock","version":"1"}]}"#, to: url)
+    let store = BarStore(configurationURL: url)
+    defer { store.stop() }
+    store.reloadConfiguration()
+    try store.applyEdits([ConfigurationEdit(action: .package, properties: ["id": .string("clock"), "version": .string("2")])], persist: false)
+    try store.uninstallPackage(id: "clock", version: "1")
+    _ = try store.handle(RuntimeRequest(action: .reset))
+    #expect(store.configurationError == nil)
+    #expect(store.configuration?.widgets[0].content == .text("2"))
+    #expect(try packages.list().map(\.version) == ["2"])
+}
+
+@Test @MainActor func uninstallKeepsFilesAndConfigurationWhenDisablingBreaksAReference() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    let packages = WidgetPackageStore(directory: directory.appending(path: "packages"))
+    try writePackageFile(#"{"id":"sample","name":"Sample","version":"1","entry":"config.json"}"#,
+                         to: source.appending(path: "package.json"))
+    try writePackageFile(#"{"tokens":{"sampleHeight":48}}"#, to: source.appending(path: "config.json"))
+    _ = try packages.install(source)
+    let url = directory.appending(path: "config.json")
+    let original = #"{"packages":[{"id":"sample","version":"1"}],"bar":{"height":"@token.sampleHeight"}}"#
+    try writePackageFile(original, to: url)
+    let store = BarStore(configurationURL: url)
+    defer { store.stop() }
+    store.reloadConfiguration()
+    for (id, version) in [("sample", "1"), ("sample", "missing"), ("../source", "1")] {
+        #expect(throws: (any Error).self) { try store.uninstallPackage(id: id, version: version) }
+        #expect(try String(contentsOf: url, encoding: .utf8) == original)
+        #expect(try packages.list().map(\.version) == ["1"])
+        #expect(store.configuration?.bar.height == 48)
+    }
+}
+
 @Test func rootPackagePinsOverrideIncludedSelectionsWithoutDuplicatingProviders() throws {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
