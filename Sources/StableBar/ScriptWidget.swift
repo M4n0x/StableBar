@@ -53,7 +53,7 @@ struct ScriptOutput: Decodable, Sendable {
     var widgetStyles: [String: WidgetStyle]?
     var interval: Double?
     /// The widget's data state. Earlier versions ignored this field, so any JSON value decodes;
-    /// `dataState(_:)` uses only a string.
+    /// `dataState(_:rules:)` uses only a string.
     var state: ConfigurationValue?
 
     static func read(_ data: Data) throws -> ScriptOutput {

@@ -67,7 +67,7 @@ func barStyleLayers(_ style: WidgetStyle, widgets: [WidgetConfiguration], output
 struct ResolvedWidgetStyle: Equatable, Sendable {
     /// The merged layers, with their `states`, that the widget's layout and overlay blocks inherit.
     let base: WidgetStyle
-    /// The data state from the widget's output.
+    /// The data state, from the widget's output or its rules.
     let state: String?
     /// `base` resolved at rest, hovered, open, then open and hovered.
     private let variants: [WidgetStyle]
