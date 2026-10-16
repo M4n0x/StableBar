@@ -425,6 +425,7 @@ struct WorkspaceView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var selection
     @State private var hoveredWorkspace: String?
+    @State private var appIcons = WorkspaceAppIcons()
 
     var body: some View {
         let workspaces = workspaceStore.workspaces(on: monitor, showEmpty: configuration?.showEmpty == true)
@@ -451,8 +452,9 @@ struct WorkspaceView: View {
                                         .foregroundStyle((hoveredWorkspace == workspace.name ? appStyle.hoverForeground?.color : nil)
                                                          ?? appStyle.foreground?.color ?? appearance.foreground)
                                         .help(app.name)
-                                } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleID) {
-                                    Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                                } else if let image = appIcons.image(for: app.bundleID) {
+                                    Image(nsImage: image)
+                                        .renderingMode(.original)
                                         .resizable().frame(width: appStyle.width ?? 14, height: appStyle.height ?? 14)
                                         .help(app.name)
                                 }
