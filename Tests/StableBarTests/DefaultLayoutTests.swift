@@ -53,6 +53,12 @@ private let tolerance = 1
                    rgba: Array(UnsafeRawBufferPointer(start: data, count: image.width * image.height * 4)))
 }
 
+/// The frontmost app a case draws: none, this process through the store as the bar draws it, or
+/// `name` with Finder's icon.
+private enum FrontmostApp {
+    case noApp, thisProcess, named(String)
+}
+
 /// An active-app widget's default layout, drawn with `icon` as the frontmost app's icon and `name`
 /// as its name, so the drawing doesn't depend on the apps running when the test does.
 @MainActor private func appBlocks(_ widget: StableBar.WidgetConfiguration, name: String?, icon: NSImage, style: LayoutStyle, date: Date) throws -> some View {
@@ -67,19 +73,22 @@ private let tolerance = 1
 @Test @MainActor func defaultLayoutsDrawExactlyLikeBuiltInWidgets() throws {
     let date = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 15, hour: 9, minute: 41)))
     let icon = NSWorkspace.shared.icon(forFile: "/System/Library/CoreServices/Finder.app")
-    let cases: [(widget: String, output: String?, app: String?)] = [
-        (#"{"id":"w","type":"text","text":"Ready 12%","icon":"bolt","position":"left"}"#, nil, nil),
-        (#"{"id":"w","type":"text","text":"Ready","icon":"","position":"left"}"#, nil, nil),
-        (#"{"id":"w","type":"text","text":"","icon":"apple.logo","position":"left"}"#, nil, nil),
-        (#"{"id":"w","type":"text","text":"Ready","position":"left"}"#, nil, nil),
-        (#"{"id":"w","type":"clock","format":"EEE d MMM  HH:mm","icon":"clock","position":"right"}"#, nil, nil),
-        (#"{"id":"w","type":"activeApp","position":"left"}"#, nil, "Finder"),
-        (#"{"id":"w","type":"activeApp","position":"left"}"#, nil, nil),
-        (#"{"id":"w","type":"script","command":"true","icon":"bolt","position":"right"}"#, #"{"text":"Busy 3","icon":"hammer"}"#, nil),
-        (#"{"id":"w","type":"script","command":"true","icon":"cpu","position":"right"}"#, #"{"text":"12%","value":0.12}"#, nil),
-        (#"{"id":"w","type":"script","command":"true","position":"right"}"#, #"{"text":"","value":0.5}"#, nil),
-        (#"{"id":"w","type":"script","command":"true","icon":"speaker.wave.2","position":"right"}"#, #"{"text":""}"#, nil),
-        (#"{"id":"w","type":"battery","position":"right"}"#, #"{"text":"85%","icon":"battery.100percent","value":0.85}"#, nil)
+    _ = NSApplication.shared
+    try #require(NSRunningApplication.current.icon != nil)
+    let cases: [(widget: String, output: String?, app: FrontmostApp)] = [
+        (#"{"id":"w","type":"text","text":"Ready 12%","icon":"bolt","position":"left"}"#, nil, .noApp),
+        (#"{"id":"w","type":"text","text":"Ready","icon":"","position":"left"}"#, nil, .noApp),
+        (#"{"id":"w","type":"text","text":"","icon":"apple.logo","position":"left"}"#, nil, .noApp),
+        (#"{"id":"w","type":"text","text":"Ready","position":"left"}"#, nil, .noApp),
+        (#"{"id":"w","type":"clock","format":"EEE d MMM  HH:mm","icon":"clock","position":"right"}"#, nil, .noApp),
+        (#"{"id":"w","type":"activeApp","position":"left"}"#, nil, .thisProcess),
+        (#"{"id":"w","type":"activeApp","position":"left"}"#, nil, .named("Finder 12")),
+        (#"{"id":"w","type":"activeApp","position":"left"}"#, nil, .noApp),
+        (#"{"id":"w","type":"script","command":"true","icon":"bolt","position":"right"}"#, #"{"text":"Busy 3","icon":"hammer"}"#, .noApp),
+        (#"{"id":"w","type":"script","command":"true","icon":"cpu","position":"right"}"#, #"{"text":"12%","value":0.12}"#, .noApp),
+        (#"{"id":"w","type":"script","command":"true","position":"right"}"#, #"{"text":"","value":0.5}"#, .noApp),
+        (#"{"id":"w","type":"script","command":"true","icon":"speaker.wave.2","position":"right"}"#, #"{"text":""}"#, .noApp),
+        (#"{"id":"w","type":"battery","position":"right"}"#, #"{"text":"85%","icon":"battery.100percent","value":0.85}"#, .noApp)
     ]
     let styles = try [
         decode(WidgetStyle.self, "{}"),
@@ -91,7 +100,12 @@ private let tolerance = 1
     for item in cases {
         let widget = try decode(WidgetConfiguration.self, item.widget)
         let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).json"))
-        store.activeApp = nil
+        if case .thisProcess = item.app { store.activeApp = NSRunningApplication.current } else { store.activeApp = nil }
+        let app: (name: String?, icon: NSImage?) = switch item.app {
+        case .noApp: (nil, nil)
+        case .thisProcess: (store.activeApp?.localizedName, store.activeApp?.icon)
+        case let .named(name): (name, icon)
+        }
         if let json = item.output {
             let script = ScriptWidget()
             script.output = try ScriptOutput.read(Data(json.utf8))
@@ -104,15 +118,17 @@ private let tolerance = 1
             for (hovered, open) in [(false, false), (true, false), (false, true), (true, true)] {
                 let appearance = WidgetAppearance(resolution.style(hovered: hovered, open: open), defaults: WidgetStyle())
                 let builtIn = BuiltInLabel(content: widget.content,
-                                           label: widget.label(output: script?.output, activeApp: item.app, date: date),
-                                           appIcon: item.app == nil ? nil : icon,
+                                           label: widget.label(output: script?.output, activeApp: app.name, date: date),
+                                           appIcon: app.icon,
                                            samples: script?.output.value == nil ? nil : script?.samples, appearance: appearance)
                 let layoutStyle = resolution.layoutStyle(configured: false, hovered: hovered, open: open)
-                let drawn = try item.app == nil
-                    ? draw(boxed(WidgetBlocks(widget: widget, store: store, style: layoutStyle, date: date, runAction: { _, _ in }), appearance))
-                    : draw(boxed(try appBlocks(widget, name: item.app, icon: icon, style: layoutStyle, date: date), appearance))
+                let drawn = if case let .named(name) = item.app {
+                    try draw(boxed(appBlocks(widget, name: name, icon: icon, style: layoutStyle, date: date), appearance))
+                } else {
+                    try draw(boxed(WidgetBlocks(widget: widget, store: store, style: layoutStyle, date: date, runAction: { _, _ in }), appearance))
+                }
                 let expected = try draw(boxed(builtIn, appearance))
-                let name = "\(item.widget) with style \(index), hovered: \(hovered), open: \(open)"
+                let name = "\(item.widget), app \(item.app), style \(index), hovered: \(hovered), open: \(open)"
                 #expect(Double(expected.width) / 2 > appearance.paddingHorizontal * 2, "\(name) draws something")
                 #expect(drawn.width == expected.width && drawn.height == expected.height, "\(name)")
                 #expect(drawn.difference(from: expected) <= tolerance, "\(name)")
