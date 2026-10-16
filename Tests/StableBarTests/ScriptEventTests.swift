@@ -334,7 +334,7 @@ func widgetActionsRunInOrderAndStoppingCancelsQueuedWork(stop: Bool) async throw
     let rows = lines[(header + 2)...].prefix { $0.hasPrefix("| ") }.map { row in
         row.dropFirst(2).dropLast(2).components(separatedBy: " | ")
     }
-    #expect(rows.allSatisfy { $0.count == 3 })
+    try #require(rows.allSatisfy { $0.count == 3 })
     #expect(rows.map { $0[0] } == BuiltInEvent.allCases.map { "`\($0.rawValue)`" })
     #expect(rows.map { $0[1] } == BuiltInEvent.allCases.map(\.trigger))
     #expect(rows.map { $0[2] } == BuiltInEvent.allCases.map(\.info))

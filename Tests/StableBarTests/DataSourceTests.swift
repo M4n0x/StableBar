@@ -727,13 +727,13 @@ private func battery(_ state: String) -> ScriptOutput {
     defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
     let monitor = FakeMonitor(battery("charging"))
     let store = BarStore(configurationURL: url, registry: .builtIn.replacing("battery") { _, _ in PushSource(monitor: monitor) })
+    defer { store.stop() }
     store.reloadConfiguration()
     try await awaitCondition { monitor.listening }
     #expect(store.scripts["power"]?.diagnostics.suspended == false)
     try store.applyEdits([ConfigurationEdit(action: .set, id: "notice", properties: ["enabled": .bool(false)])], persist: false)
     #expect(store.scripts["power"]?.diagnostics.suspended == true)
     #expect(!monitor.listening)
-    store.stop()
 }
 
 @Test @MainActor func aSourceEventRefreshesItsSubscribersButNotTheProviderThatSentIt() async throws {
@@ -767,6 +767,7 @@ private func battery(_ state: String) -> ScriptOutput {
     defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
     let monitor = FakeMonitor(battery("charging"))
     let store = BarStore(configurationURL: url, registry: .builtIn.replacing("battery") { _, _ in PushSource(monitor: monitor) })
+    defer { store.stop() }
     store.reloadConfiguration()
     try await awaitCondition { monitor.listening }
     store.stop()
