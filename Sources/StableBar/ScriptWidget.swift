@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 
 struct ScriptEvent: Sendable {
     var sender: String
@@ -110,6 +111,9 @@ final class ScriptWidget {
     private var source: (any DataSource)?
     private var schedule = SourceSchedule()
     private var changeObserver: (any NSObjectProtocol)?
+    /// A continuous run open this long is steady: an update it sends, or the failure that ends it,
+    /// starts a new failure streak. Tests shorten it.
+    @ObservationIgnored var steadyRun: Duration = .seconds(10)
 
     func start(command: String, interval: Double?, timeout: Double = 10, environment: [String: String] = [:]) {
         start(schedule: SourceSchedule(interval: interval)) {
@@ -167,10 +171,15 @@ final class ScriptWidget {
                 diagnostics.executionCount += 1
                 let started = ContinuousClock.now
                 var delay = schedule.interval
-                // The single-slot queue: while an update is being applied, only the newest waits.
+                // The single-slot queue: while an update is being applied, only the newest waits. A
+                // failure ends the run, so it waits outside the slot until the output sent before it is applied.
                 let (updates, queue) = AsyncStream<SourceUpdate>.makeStream(bufferingPolicy: .bufferingNewest(1))
+                let failure = OSAllocatedUnfairLock<(any Error, CommandResult?)?>(initialState: nil)
                 source.start { update in
-                    if case .finished = update { queue.finish() } else { queue.yield(update) }
+                    if case let .output(.failure(error), process) = update {
+                        failure.withLock { $0 = $0 ?? (error, process) }
+                        queue.finish()
+                    } else if case .finished = update { queue.finish() } else { queue.yield(update) }
                 }
                 source.refresh(event: event)
                 do {
@@ -179,9 +188,13 @@ final class ScriptWidget {
                         guard case let .output(result, process) = update else { continue }
                         if let process { record(process) }
                         try accept(result.get())
-                        if schedule.continuous, started.duration(to: .now) >= .seconds(10) { diagnostics.consecutiveFailures = 0 }
+                        if schedule.continuous, started.duration(to: .now) >= steadyRun { diagnostics.consecutiveFailures = 0 }
                     }
                     try Task.checkCancellation()
+                    if case let (error, process)? = failure.withLock({ $0 }) {
+                        if let process { record(process) }
+                        throw error
+                    }
                     diagnostics.consecutiveFailures = 0
                     if delay != nil { delay = output.interval ?? delay }
                 } catch {
@@ -192,6 +205,7 @@ final class ScriptWidget {
                         onUpdate?()
                     }
                     diagnostics.failureCount += 1
+                    if schedule.continuous, started.duration(to: .now) >= steadyRun { diagnostics.consecutiveFailures = 0 }
                     diagnostics.consecutiveFailures += 1
                     if let failure = error as? CommandFailure {
                         if !failure.stdout.isEmpty { diagnostics.lastStdout = String(decoding: failure.stdout.suffix(16_384), as: UTF8.self) }

@@ -51,9 +51,8 @@ extension DataSourceType {
         StreamSource(command: provider.command!, environment: environment)
     }
 
-    static let battery = DataSourceType(name: "battery", isNative: true, symbol: "battery.100percent", settings: [], continuous: false) { _, _ in
-        let metrics = NativeMetrics()
-        return PollingSource { _ in .output(Result { try metrics.battery() }) }
+    static let battery = DataSourceType(name: "battery", isNative: true, symbol: "battery.100percent", settings: [], continuous: true) { _, _ in
+        PushSource(monitor: PowerMonitor())
     }
 
     static let system = DataSourceType(name: "system", isNative: true, symbol: "cpu", settings: [], continuous: false) { _, _ in

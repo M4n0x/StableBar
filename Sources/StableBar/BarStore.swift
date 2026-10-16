@@ -25,7 +25,7 @@ final class BarStore: NSObject {
     var context = ConfigurationContext()
     private(set) var presentations: [String: WidgetPresentation] = [:]
     private(set) var barStyle = WidgetStyle()
-    private var providers: [String: ScriptWidget] = [:]
+    private(set) var providers: [String: ScriptWidget] = [:]
     private var visibleWidgets: [Int: Set<String>] = [:]
     private var sleeping = false
     private var popupWidgetID: String?

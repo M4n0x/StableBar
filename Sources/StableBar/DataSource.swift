@@ -1,17 +1,22 @@
 import Foundation
+import os
 
 /// Where a widget's output comes from: a command, a stream, a native reading or a native listener.
 /// The runner (`ScriptWidget`) drives each run: it calls `start(emit:)`, then `refresh(event:)` with
 /// the event that began the run, and `stop()` when the run ends, the widget suspends or it stops.
+/// One source serves several runs: the runner may stop a source that never started, stop it twice
+/// in one run, and start it again after it stopped.
 @MainActor
 protocol DataSource: AnyObject {
     /// Connects the source for one run. `emit` hands updates to the runner's single-slot queue and
     /// may be called from any thread: while the runner applies one update, only the newest waits.
+    /// A failure ends the run: the runner applies the output sent before it, reports the failure
+    /// and ignores later updates.
     func start(emit: @escaping @Sendable (SourceUpdate) -> Void)
     /// Produces output for `event`: runs a command, reads native data, or launches a stream.
     func refresh(event: ScriptEvent)
     /// Ends the run: cancels work, ends processes and removes listeners. Later updates are ignored,
-    /// and stopping a source that has already stopped does nothing.
+    /// and stopping a source that has already stopped, or never started, does nothing.
     func stop()
 }
 
@@ -130,6 +135,65 @@ final class StreamSource: DataSource {
     func stop() {
         task?.cancel()
         task = nil
+        emit = nil
+    }
+}
+
+/// Native data that macOS reports changes to, such as the battery or the default audio device.
+/// A push source reads it once per change. Tests replace it with a fake.
+protocol ChangeMonitor: AnyObject, Sendable {
+    /// Reads the current state. Called from any thread.
+    func read() throws -> ScriptOutput
+    /// Calls `changed`, from any thread, whenever the state may have changed, until `stop()`.
+    /// `start` and `stop` are called on the main actor. Like a data source, a monitor may be stopped
+    /// before it starts or twice, and started again after it stops.
+    func start(changed: @escaping @Sendable () -> Void) throws
+    func stop()
+}
+
+/// A source that updates when macOS reports a change, without a timer: its run stays open, reading
+/// once when it starts and again after each change, and sends only reads that differ.
+@MainActor
+final class PushSource: DataSource {
+    private let monitor: any ChangeMonitor
+    /// The last output read, so a notification that changes nothing sends nothing. Locked, since
+    /// notifications may arrive on any thread.
+    private let last = OSAllocatedUnfairLock<ScriptOutput?>(initialState: nil)
+    private var emit: (@Sendable (SourceUpdate) -> Void)?
+
+    init(monitor: any ChangeMonitor) {
+        self.monitor = monitor
+    }
+
+    func start(emit: @escaping @Sendable (SourceUpdate) -> Void) {
+        self.emit = emit
+        let monitor = monitor
+        let last = last
+        do {
+            try monitor.start {
+                let output = Result { try monitor.read() }
+                if case let .success(next) = output {
+                    let changed = last.withLock { previous in
+                        defer { previous = next }
+                        return previous != next
+                    }
+                    guard changed else { return }
+                }
+                emit(.output(output))
+            }
+        } catch {
+            emit(.output(.failure(error)))
+        }
+    }
+
+    func refresh(event: ScriptEvent) {
+        let output = Result { try monitor.read() }
+        if case let .success(next) = output { last.withLock { $0 = next } }
+        emit?(.output(output))
+    }
+
+    func stop() {
+        monitor.stop()
         emit = nil
     }
 }

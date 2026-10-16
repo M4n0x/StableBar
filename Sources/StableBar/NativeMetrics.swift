@@ -2,7 +2,6 @@ import CoreAudio
 import Darwin
 import EventKit
 import Foundation
-import IOKit.ps
 
 struct NetworkCounters: Sendable {
     let received: UInt64
@@ -74,29 +73,6 @@ final class NativeMetrics {
         store.requestFullAccessToEvents { _, _ in }
         return store
     }()
-
-    func battery() throws -> ScriptOutput {
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else {
-            throw CommandFailure(message: "Could not read power sources.")
-        }
-        for source in sources {
-            guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
-                  description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
-                  let current = description[kIOPSCurrentCapacityKey] as? Double,
-                  let maximum = description[kIOPSMaxCapacityKey] as? Double, maximum > 0 else { continue }
-            let percent = current / maximum
-            let charging = description[kIOPSIsChargingKey] as? Bool == true
-            let onAC = description[kIOPSPowerSourceStateKey] as? String == kIOPSACPowerValue
-            let minutes = description[charging ? kIOPSTimeToFullChargeKey : kIOPSTimeToEmptyKey] as? Int
-            let state = charging ? "charging" : (onAC ? "charged" : "battery")
-            var fields = ["state": state, "present": "true", "percent": String(Int(percent * 100))]
-            if let minutes, minutes >= 0 { fields["timeRemaining"] = String(minutes) }
-            return ScriptOutput(text: "\(Int(percent * 100))%", icon: charging ? "battery.100percent.bolt" : "battery.100percent",
-                                value: percent, fields: fields, values: ["percent": percent])
-        }
-        return ScriptOutput(text: "AC", icon: "powerplug", fields: ["state": "ac", "present": "false"])
-    }
 
     func calendar(_ provider: ProviderConfiguration) -> ScriptOutput {
         let store = eventStore

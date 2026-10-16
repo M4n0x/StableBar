@@ -241,6 +241,25 @@ private func awaitCondition(_ condition: () -> Bool) async throws {
     #expect(updates == 2)
 }
 
+@Test @MainActor func aFailureIsReportedAfterTheOutputSentBeforeIt() async throws {
+    let sources = FakeSources()
+    let script = ScriptWidget()
+    defer { script.stop() }
+    script.start(schedule: SourceSchedule(interval: nil, continuous: true)) { sources.make() }
+    try await awaitCondition { sources.made.first?.emit != nil }
+    let source = try #require(sources.made.first)
+    let emit = try #require(source.emit)
+    emit(.output(.success(ScriptOutput(text: "A", value: 0.1))))
+    emit(.output(.success(ScriptOutput(text: "B", value: 0.2))))
+    emit(.output(.failure(CommandFailure(message: "Disconnected."))))
+    try await awaitCondition { script.error != nil }
+    #expect(script.output.text == "B")
+    #expect(script.samples.last == 0.2)
+    #expect(script.error == "Disconnected.")
+    #expect(script.diagnostics.failureCount == 1)
+    #expect(source.stopped == 1)
+}
+
 private func writeTemporaryConfiguration(_ json: String) throws -> URL {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -402,4 +421,181 @@ private func writeTemporaryConfiguration(_ json: String) throws -> URL {
     #expect(script.error == "Unknown data source type: disk.")
     #expect(script.output.text == "…")
     #expect(script.diagnostics.executionCount == 0)
+}
+
+/// Native data a test changes by hand, in place of IOKit or CoreAudio.
+private final class FakeMonitor: ChangeMonitor {
+    private struct State {
+        var output: Result<ScriptOutput, any Error>
+        var changed: (@Sendable () -> Void)?
+    }
+
+    private let state: OSAllocatedUnfairLock<State>
+
+    init(_ output: ScriptOutput) {
+        state = OSAllocatedUnfairLock(initialState: State(output: .success(output)))
+    }
+
+    var listening: Bool { state.withLock { $0.changed != nil } }
+
+    func read() throws -> ScriptOutput { try state.withLock { $0.output }.get() }
+
+    func start(changed: @escaping @Sendable () -> Void) throws {
+        state.withLock { $0.changed = changed }
+    }
+
+    func stop() {
+        state.withLock { $0.changed = nil }
+    }
+
+    /// Replaces the data and notifies the listener, as macOS would.
+    func change(to output: ScriptOutput) {
+        state.withLock { $0.output = .success(output) }
+        notify()
+    }
+
+    func fail(_ error: any Error) {
+        state.withLock { $0.output = .failure(error) }
+        notify()
+    }
+
+    private func notify() {
+        let changed = state.withLock { $0.changed }
+        changed?()
+    }
+}
+
+private extension DataSourceRegistry {
+    /// This registry with the source of one type replaced, such as a battery backed by a fake.
+    func replacing(_ name: String, with makeSource: @escaping @MainActor @Sendable (ProviderConfiguration, [String: String]) -> any DataSource) -> DataSourceRegistry {
+        DataSourceRegistry(types: types.map { type in
+            var type = type
+            if type.name == name { type.makeSource = makeSource }
+            return type
+        })
+    }
+}
+
+@Test @MainActor func pushSourcesSendOnlyChanges() throws {
+    let monitor = FakeMonitor(ScriptOutput(text: "80%"))
+    let source = PushSource(monitor: monitor)
+    let sent = OSAllocatedUnfairLock<[String]>(initialState: [])
+    source.start { update in
+        guard case let .output(result, _) = update else { return }
+        let text = (try? result.get())?.text ?? "failure"
+        sent.withLock { $0.append(text) }
+    }
+    #expect(monitor.listening)
+    source.refresh(event: ScriptEvent(sender: "startup"))
+    monitor.change(to: ScriptOutput(text: "80%"))
+    monitor.change(to: ScriptOutput(text: "79%"))
+    monitor.fail(CommandFailure(message: "No battery."))
+    source.stop()
+    #expect(!monitor.listening)
+    monitor.change(to: ScriptOutput(text: "78%"))
+    #expect(sent.withLock { $0 } == ["80%", "79%", "failure"])
+}
+
+@Test @MainActor func aPushSourceCanStopBeforeItStartsStopTwiceAndStartAgain() {
+    let monitor = FakeMonitor(ScriptOutput(text: "80%"))
+    let source = PushSource(monitor: monitor)
+    let sent = OSAllocatedUnfairLock<[String]>(initialState: [])
+    func emit(_ run: String) -> @Sendable (SourceUpdate) -> Void {
+        { update in
+            guard case let .output(result, _) = update else { return }
+            let text = (try? result.get())?.text ?? "failure"
+            sent.withLock { $0.append("\(run) \(text)") }
+        }
+    }
+    source.stop()
+    #expect(!monitor.listening)
+    source.start(emit: emit("first"))
+    #expect(monitor.listening)
+    source.refresh(event: ScriptEvent(sender: "startup"))
+    monitor.change(to: ScriptOutput(text: "79%"))
+    source.stop()
+    source.stop()
+    #expect(!monitor.listening)
+    monitor.change(to: ScriptOutput(text: "78%"))
+    source.start(emit: emit("second"))
+    #expect(monitor.listening)
+    source.refresh(event: ScriptEvent(sender: "routine"))
+    monitor.change(to: ScriptOutput(text: "77%"))
+    #expect(sent.withLock { $0 } == ["first 80%", "first 79%", "second 78%", "second 77%"])
+}
+
+@Test @MainActor func aFailedPushSourceStopsListeningAndListensAgainWhenItRetries() async throws {
+    let monitor = FakeMonitor(ScriptOutput(text: "80%"))
+    let made = OSAllocatedUnfairLock(initialState: 0)
+    let script = ScriptWidget()
+    defer { script.stop() }
+    script.start(schedule: SourceSchedule(interval: 0.05, continuous: true)) {
+        made.withLock { $0 += 1 }
+        return PushSource(monitor: monitor)
+    }
+    try await awaitCondition { script.output.text == "80%" && monitor.listening }
+    monitor.fail(CommandFailure(message: "No battery."))
+    try await awaitCondition { script.error == "No battery." }
+    #expect(!monitor.listening)
+    #expect(script.diagnostics.nextDelay == 1)
+    monitor.change(to: ScriptOutput(text: "79%"))
+    try await awaitCondition { script.output.text == "79%" && monitor.listening }
+    #expect(script.error == nil)
+    #expect(script.diagnostics.restartCount == 1)
+    #expect(made.withLock { $0 } == 1)
+}
+
+@Test @MainActor func aContinuousRunThatStayedOpenStartsANewFailureStreakWhenItFails() async throws {
+    let sources = FakeSources()
+    let script = ScriptWidget()
+    defer { script.stop() }
+    script.steadyRun = .milliseconds(300)
+    script.start(schedule: SourceSchedule(interval: 0.05, continuous: true)) { sources.make() }
+    for run in 0..<2 {
+        try await awaitCondition { sources.made.count == run + 1 && sources.made[run].emit != nil }
+        sources.made[run].emit?(.output(.failure(CommandFailure(message: "Disconnected."))))
+        try await awaitCondition { script.diagnostics.failureCount == run + 1 }
+        #expect(script.diagnostics.nextDelay == Double(run + 1))
+        script.refresh(ScriptEvent(sender: "manual"))
+    }
+    try await awaitCondition { sources.made.count == 3 && sources.made[2].emit != nil }
+    try await Task.sleep(for: .milliseconds(400))
+    sources.made[2].emit?(.output(.failure(CommandFailure(message: "Disconnected."))))
+    try await awaitCondition { script.diagnostics.failureCount == 3 }
+    #expect(script.diagnostics.consecutiveFailures == 1)
+    #expect(script.diagnostics.nextDelay == 1)
+}
+
+@Test @MainActor func batteryListensOnlyWhileAWidgetUsesIt() async throws {
+    let url = try writeTemporaryConfiguration(#"""
+    {"providers":{"battery":{"type":"battery","interval":0.05,"whenVisible":true}},
+     "widgets":[{"id":"power","type":"battery","position":"right"}]}
+    """#)
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let monitor = FakeMonitor(ScriptOutput(text: "80%", value: 0.8))
+    let store = BarStore(configurationURL: url, registry: .builtIn.replacing("battery") { _, _ in PushSource(monitor: monitor) })
+    defer { store.stop() }
+    store.reloadConfiguration()
+    let power = try #require(store.scripts["power"])
+    #expect(power.diagnostics.suspended)
+    #expect(!monitor.listening)
+    store.setVisibleWidgets(ids: ["power"], displayID: 1)
+    try await awaitCondition { power.output.text == "80%" && monitor.listening }
+    monitor.change(to: ScriptOutput(text: "79%", value: 0.79))
+    try await awaitCondition { power.output.text == "79%" }
+    let updated = power.diagnostics.lastUpdated
+    monitor.change(to: ScriptOutput(text: "79%", value: 0.79))
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(power.diagnostics.lastUpdated == updated)
+    #expect(power.diagnostics.executionCount == 1)
+    #expect(power.diagnostics.nextDelay == nil)
+    #expect(power.samples == [0.8, 0.79])
+    store.setSleeping(true)
+    #expect(!monitor.listening)
+    store.setSleeping(false)
+    try await awaitCondition { monitor.listening }
+    #expect(power.output.text == "79%")
+    try store.applyEdits([ConfigurationEdit(action: .set, id: "power", properties: ["enabled": .bool(false)])], persist: false)
+    #expect(!monitor.listening)
+    #expect(store.providers.isEmpty)
 }

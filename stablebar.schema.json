@@ -1118,7 +1118,8 @@
           "$ref": "#/definitions/string"
         },
         "interval": {
-          "$ref": "#/definitions/number"
+          "$ref": "#/definitions/number",
+          "description": "Seconds between updates for command, system, network and audio providers, and for calendar until it has access; for stream and battery, the first retry delay after a failure."
         },
         "timeout": {
           "$ref": "#/definitions/number"
