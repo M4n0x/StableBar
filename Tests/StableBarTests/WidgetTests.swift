@@ -473,3 +473,11 @@ import Testing
     let configuration = try loader.load(root, data: updated, context: context)
     #expect(configuration.widgets[0].content == .clock(format: "EEE d MMM  h:mm a"))
 }
+
+@Test func layoutBlocksAreConcreteViews() {
+    let body = String(reflecting: PopupBlockView.Body.self)
+    let typeErased = body.contains("AnyView")
+    let childrenAreBlockViews = body.contains("PopupBlockView")
+    #expect(!typeErased)
+    #expect(childrenAreBlockViews)
+}

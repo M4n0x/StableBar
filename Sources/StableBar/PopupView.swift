@@ -16,17 +16,17 @@ struct PopupView: View {
         let error = script?.error ?? store.actionErrors[widget.id]
         ScrollView {
             VStack(alignment: .leading, spacing: appearance.spacing) {
-                PopupBlockView(block: popup.layout, inheritedStyle: style,
-                               fields: fields, lists: lists, samples: samples, menu: menu,
-                               values: script?.output.values ?? [:], targets: script?.output.targets ?? [:],
-                               styles: script?.output.styles ?? [:], series: script?.output.series ?? [:], open: { target in
+                PopupBlockView(block: popup.layout, inheritedStyle: style, fields: fields,
+                               context: BlockContext(lists: lists, samples: samples, menu: menu,
+                                                     values: script?.output.values ?? [:], targets: script?.output.targets ?? [:],
+                                                     styles: script?.output.styles ?? [:], series: script?.output.series ?? [:], open: { target in
                     if popup.dismissOnAction { store.popup.close() }
                     target.open()
                 }) { command, environment in
                     if environment.isEmpty ? popup.dismissOnAction : popup.dismissOnControl { store.popup.close() }
                     store.runAction(command, widget: widget,
                                     event: ScriptEvent(sender: environment.isEmpty ? "mouse.clicked" : "control.changed", environment: environment))
-                }
+                })
                 if let error {
                     Text(error).foregroundStyle(.red).textSelection(.enabled)
                 }
@@ -44,22 +44,30 @@ struct PopupView: View {
     }
 }
 
-struct PopupBlockView: View {
-    let block: PopupBlock
-    let inheritedStyle: WidgetStyle
-    let fields: [String: String]
-    let lists: [String: [[String: String]]]
-    let samples: [Double]
-    let menu: [WidgetMenuItem]
+/// What every block of one layout shares: the widget's data, the states it applies and the action
+/// its controls run.
+struct BlockContext {
+    var lists: [String: [[String: String]]] = [:]
+    var samples: [Double] = []
+    var menu: [WidgetMenuItem] = []
     var values: [String: Double] = [:]
     var targets: [String: Double] = [:]
     var styles: [String: WidgetStyle] = [:]
     var series: [String: [Double]] = [:]
+    /// Popup layouts fill their width; bar layouts take their content's width.
     var fillsWidth = true
+    /// Opens an `open` or `openField` block's target; a popup's also closes the popup when its actions dismiss it.
     let open: (OpenTarget) -> Void
-    /// The widget's states, such as `open`; the block adds its own hover.
+    /// The widget's states, such as `open`; each block adds its own hover.
     var states = StyleStates()
     let runAction: (String, [String: String]) -> Void
+}
+
+struct PopupBlockView: View {
+    let block: PopupBlock
+    let inheritedStyle: WidgetStyle
+    let fields: [String: String]
+    let context: BlockContext
     @State private var hovered = false
     @State private var query = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -81,10 +89,10 @@ struct PopupBlockView: View {
     }
 
     private var styledContent: some View {
-        let resting = block.resolvedStyle(inherited: inheritedStyle, styles: styles, fields: fields, states: states)
-        var hovering = states
+        let resting = block.resolvedStyle(inherited: inheritedStyle, styles: context.styles, fields: fields, states: context.states)
+        var hovering = context.states
         hovering.hover = true
-        let current = hovered ? block.resolvedStyle(inherited: inheritedStyle, styles: styles, fields: fields, states: hovering) : resting
+        let current = hovered ? block.resolvedStyle(inherited: inheritedStyle, styles: context.styles, fields: fields, states: hovering) : resting
         let appearance = WidgetAppearance(resting.text, defaults: WidgetStyle())
         let box = current.box
         let alignment: Alignment = switch block.alignment {
@@ -96,10 +104,10 @@ struct PopupBlockView: View {
             if handlesInteraction {
                 content(resting, appearance: appearance)
             } else if let command = block.onClickField.flatMap({ fields[$0] }) ?? block.onClick {
-                Button { runAction(command, [:]) } label: { content(resting, appearance: appearance) }
+                Button { context.runAction(command, [:]) } label: { content(resting, appearance: appearance) }
                     .buttonStyle(.plain)
             } else if let value = block.openField.flatMap({ fields[$0] }) ?? block.open {
-                Button { if let target = OpenTarget(value) { open(target) } } label: { content(resting, appearance: appearance) }
+                Button { if let target = OpenTarget(value) { context.open(target) } } label: { content(resting, appearance: appearance) }
                     .buttonStyle(.plain)
             } else {
                 content(resting, appearance: appearance)
@@ -113,7 +121,7 @@ struct PopupBlockView: View {
             .padding(.top, box.paddingTop ?? box.paddingVertical ?? 0)
             .padding(.bottom, box.paddingBottom ?? box.paddingVertical ?? 0)
             .frame(width: box.width.map { CGFloat($0) }, height: box.height.map { CGFloat($0) }, alignment: alignment)
-            .frame(maxWidth: fillsWidth && box.width == nil ? .infinity : nil, alignment: alignment)
+            .frame(maxWidth: context.fillsWidth && box.width == nil ? .infinity : nil, alignment: alignment)
             .background(box.background?.color ?? .clear, in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
             .overlay {
                 RoundedRectangle(cornerRadius: appearance.cornerRadius)
@@ -126,24 +134,21 @@ struct PopupBlockView: View {
             .animation(reduceMotion ? nil : block.animation?.value, value: hovered)
     }
 
+    /// A child block, built as a concrete view so SwiftUI diffs it without type erasure.
+    private func child(_ block: PopupBlock, of style: BlockStyle, fields: [String: String]) -> PopupBlockView {
+        PopupBlockView(block: block, inheritedStyle: style.inherited, fields: fields, context: context)
+    }
+
     @ViewBuilder
     private func content(_ style: BlockStyle, appearance: WidgetAppearance) -> some View {
         switch block.content {
         case let .row(children):
             HStack(spacing: appearance.spacing) {
-                ForEach(Array(children.enumerated()), id: \.offset) { _, child in
-                    AnyView(PopupBlockView(block: child, inheritedStyle: style.inherited, fields: fields,
-                                          lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
-                }
+                ForEach(Array(children.enumerated()), id: \.offset) { _, item in child(item, of: style, fields: fields) }
             }
         case let .column(children):
             VStack(alignment: .leading, spacing: appearance.spacing) {
-                ForEach(Array(children.enumerated()), id: \.offset) { _, child in
-                    AnyView(PopupBlockView(block: child, inheritedStyle: style.inherited, fields: fields,
-                                          lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
-                }
+                ForEach(Array(children.enumerated()), id: \.offset) { _, item in child(item, of: style, fields: fields) }
             }
         case let .text(text):
             if let speed = block.scrollSpeed {
@@ -158,47 +163,43 @@ struct PopupBlockView: View {
                 Text(fields[name] ?? "—").lineLimit(1).monospacedDigit()
             }
         case let .graph(height, source, lineWidth):
-            Sparkline(samples: source.flatMap { series[$0] } ?? samples)
+            Sparkline(samples: source.flatMap { context.series[$0] } ?? context.samples)
                 .stroke(appearance.accent, lineWidth: lineWidth)
                 .frame(height: height)
                 .accessibilityLabel("History graph")
         case let .list(source, row):
             VStack(spacing: appearance.spacing) {
-                ForEach(Array((lists[source] ?? []).enumerated()), id: \.offset) { _, fields in
-                    AnyView(PopupBlockView(block: row, inheritedStyle: style.inherited, fields: fields,
-                                          lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
+                ForEach(Array((context.lists[source] ?? []).enumerated()), id: \.offset) { _, fields in
+                    child(row, of: style, fields: fields)
                 }
             }
         case let .button(title, command):
-            Button { runAction(command, [:]) } label: {
+            Button { context.runAction(command, [:]) } label: {
                 Text(title).frame(maxWidth: .infinity).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         case let .slider(title, source, minimum, maximum, step, command):
-            PopupSlider(title: title, value: values[source] ?? Double(fields[source] ?? "") ?? minimum,
-                        minimum: minimum, maximum: maximum, step: step) { runAction(command, ["VALUE": String($0)]) }
+            PopupSlider(title: title, value: context.values[source] ?? Double(fields[source] ?? "") ?? minimum,
+                        minimum: minimum, maximum: maximum, step: step) { context.runAction(command, ["VALUE": String($0)]) }
         case let .toggle(title, source, command):
-            PopupToggle(title: title, value: fields[source] == "true" || fields[source] == "1" || values[source] == 1) {
-                runAction(command, ["VALUE": $0 ? "true" : "false"])
+            PopupToggle(title: title, value: fields[source] == "true" || fields[source] == "1" || context.values[source] == 1) {
+                context.runAction(command, ["VALUE": $0 ? "true" : "false"])
             }
         case let .segmented(title, source, options, command):
             PopupSegmented(title: title, value: fields[source] ?? options[0].value, options: options) {
-                runAction(command, ["VALUE": $0])
+                context.runAction(command, ["VALUE": $0])
             }
         case let .search(title, source, searchFields, row):
             VStack(alignment: .leading, spacing: appearance.spacing) {
                 TextField(title, text: $query).textFieldStyle(.roundedBorder).accessibilityLabel(title)
-                ForEach(Array(searchPopupRows(lists[source] ?? [], query: query, fields: searchFields).enumerated()), id: \.offset) { _, fields in
-                    AnyView(PopupBlockView(block: row, inheritedStyle: style.inherited, fields: fields,
-                                          lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
+                ForEach(Array(searchPopupRows(context.lists[source] ?? [], query: query, fields: searchFields).enumerated()), id: \.offset) { _, fields in
+                    child(row, of: style, fields: fields)
                 }
             }
         case .menu:
             VStack(spacing: appearance.spacing) {
-                ForEach(Array(menu.enumerated()), id: \.offset) { _, item in
-                    PopupMenuRow(item: item, appearance: appearance) { runAction($0, [:]) }
+                ForEach(Array(context.menu.enumerated()), id: \.offset) { _, item in
+                    PopupMenuRow(item: item, appearance: appearance) { context.runAction($0, [:]) }
                 }
             }
         case .divider:
@@ -212,7 +213,7 @@ struct PopupBlockView: View {
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: appearance.cornerRadius))
         case let .progress(source, height):
-            ProgressRule(value: values[source] ?? Double(fields[source] ?? "") ?? 0, target: targets[source],
+            ProgressRule(value: context.values[source] ?? Double(fields[source] ?? "") ?? 0, target: context.targets[source],
                          animation: block.animation ?? WidgetAnimation(), color: appearance.accent,
                          track: style.text.background?.color ?? .clear, cornerRadius: appearance.cornerRadius)
                 .frame(height: height)
@@ -287,8 +288,10 @@ struct ProgressRule: View {
     let cornerRadius: Double
     @State private var fraction = 0.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.measuringBarWidths) private var measuring
 
     var body: some View {
+        let still = reduceMotion || measuring
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: cornerRadius).fill(track)
@@ -296,13 +299,13 @@ struct ProgressRule: View {
                     .frame(width: geometry.size.width * min(max(fraction, 0), 1))
             }
         }
-        .task(id: ProgressUpdate(value: value, target: target, animation: animation, reduceMotion: reduceMotion)) {
-            if let target, !reduceMotion {
+        .task(id: ProgressUpdate(value: value, target: target, animation: animation, reduceMotion: still)) {
+            if let target, !still {
                 withAnimation(nil) { fraction = progressFraction(value) }
                 await Task.yield()
                 if !Task.isCancelled { withAnimation(animation.value) { fraction = progressFraction(target) } }
             } else {
-                withAnimation(reduceMotion ? nil : animation.value) { fraction = progressFraction(value) }
+                withAnimation(still ? nil : animation.value) { fraction = progressFraction(value) }
             }
         }
         .accessibilityLabel("Progress")

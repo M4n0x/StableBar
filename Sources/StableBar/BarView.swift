@@ -78,6 +78,11 @@ struct BarView: View {
                         .hidden()
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
+                        .environment(\.measuringBarWidths, true)
+                        .transaction { transaction in
+                            transaction.animation = nil
+                            transaction.disablesAnimations = true
+                        }
                     }
                     .onPreferenceChange(BarWidthPreference.self) { widths in
                         let appResized = units.contains { unit in
@@ -181,6 +186,19 @@ private struct BarWidthPreference: PreferenceKey {
     static let defaultValue: [String: CGFloat] = [:]
     static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
         value.merge(nextValue()) { $1 }
+    }
+}
+
+private struct MeasuringBarWidthsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// True in the bar's hidden copy that measures widget widths. Nothing moves there: it measures
+    /// final widths only.
+    var measuringBarWidths: Bool {
+        get { self[MeasuringBarWidthsKey.self] }
+        set { self[MeasuringBarWidthsKey.self] = newValue }
     }
 }
 
@@ -384,18 +402,17 @@ struct WidgetView: View {
     private func block(_ block: PopupBlock, date: Date, style: WidgetStyle, states: StyleStates, fillsWidth: Bool) -> some View {
         let script = store.scripts[widget.id]
         return PopupBlockView(block: block, inheritedStyle: style, fields: store.label(for: widget, date: date).fields,
-                              lists: script?.output.lists ?? [:], samples: script?.samples ?? [],
-                              menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
-                              targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
-                              series: script?.output.series ?? [:],
-                              fillsWidth: fillsWidth, open: { $0.open() }, states: states) { command, environment in
+                              context: BlockContext(lists: script?.output.lists ?? [:], samples: script?.samples ?? [],
+                                                    menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
+                                                    targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
+                                                    series: script?.output.series ?? [:], fillsWidth: fillsWidth, open: { $0.open() }, states: states) { command, environment in
             if environment.isEmpty {
                 runAction(command, sender: "mouse.clicked", button: "left")
             } else {
                 store.runAction(command, widget: widget,
                                 event: ScriptEvent(sender: "control.changed", environment: environment.merging(["SID": String(monitor)]) { first, _ in first }))
             }
-        }
+        })
     }
 
     private func label(_ text: String, icon: String?, appearance: WidgetAppearance) -> some View {
