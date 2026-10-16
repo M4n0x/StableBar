@@ -24,6 +24,10 @@ struct AppearanceView: View {
         let bar = StyleFields(store: store, path: "bar", values: document("bar"),
                               set: { editor.change(ConfigurationEdit(action: .bar, properties: [$0: $1])) },
                               unset: { unset(["bar": .object([$0: .null])]) })
+        let barStyle = StyleFields(store: store, path: "bar.style",
+                                   values: (try? document("bar")["style"]?.decoded([String: ConfigurationValue].self)) ?? [:],
+                                   set: { editor.change(ConfigurationEdit(action: .bar, properties: ["style": .object([$0: $1])])) },
+                                   unset: { unset(["bar": .object(["style": .object([$0: .null])])]) })
         Form {
             Section {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
@@ -80,6 +84,7 @@ struct AppearanceView: View {
                 defaults.number("Corner radius", "cornerRadius", default: 14)
             }
             Section("Bar") {
+                barStyle.color("Background", "background")
                 bar.number("Height", "height", default: 40)
                 bar.number("Offset from top", "offset", default: 0)
                 bar.number("Margin", "margin", default: 0)

@@ -494,7 +494,7 @@ Open **Customize StableBar…** from the menu-bar icon or by right-clicking the 
 
 **General** opens the configuration file in your editor, shows it in Finder or reloads it, runs setup again, and reconnects the workspace source.
 
-**Appearance** chooses the [theme](#themes), keeps the bar light or dark or lets it follow the system, and edits the theme's colors. Each theme color has a light and a dark value; changing one saves it in your configuration's `tokens`, so every widget, popup and package that uses the color follows. **All widgets** sets the default colors, font, weight, size, padding and corners, and **Bar** sets the bar's size and position.
+**Appearance** chooses the [theme](#themes), keeps the bar light or dark or lets it follow the system, and edits the theme's colors. Each theme color has a light and a dark value; changing one saves it in your configuration's `tokens`, so every widget, popup and package that uses the color follows. **All widgets** sets the default colors, font, weight, size, padding and corners, and **Bar** sets the bar's background, size and position.
 
 **Widgets** lists your widgets by position; drag to reorder them. Change a widget's position, icon, text or clock format, its colors, font and shape, or edit its properties as JSON. A color either follows one of the theme's colors, such as Text or Accent, or is a custom light and dark pair.
 
