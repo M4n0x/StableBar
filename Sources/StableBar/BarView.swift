@@ -273,7 +273,7 @@ struct WidgetView: View {
         let style = resolution.style(hovered: hovered, open: isOpen)
         let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let animation = output?.animation ?? widget.animation ?? WidgetAnimation(duration: animationDuration)
-        let tile = content(appearance, resolution: resolution, open: isOpen)
+        let tile = content(resolution, open: isOpen)
             .padding(.leading, style.paddingLeading ?? appearance.paddingHorizontal)
             .padding(.trailing, style.paddingTrailing ?? appearance.paddingHorizontal)
             .padding(.top, style.paddingTop ?? appearance.paddingVertical)
@@ -348,33 +348,17 @@ struct WidgetView: View {
     }
 
     @ViewBuilder
-    private func content(_ appearance: WidgetAppearance, resolution: ResolvedWidgetStyle, open: Bool) -> some View {
-        if widget.layout != nil {
+    private func content(_ resolution: ResolvedWidgetStyle, open: Bool) -> some View {
+        switch widget.content {
+        case .workspaces where widget.layout == nil:
+            WorkspaceView(workspaceStore: store.workspaceStore, monitor: monitor,
+                          appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
+                          animationDuration: animationDuration,
+                          configuration: widget.workspace, animation: widget.animation, defaults: widget.style.inheriting(defaults))
+        case .spacer where widget.layout == nil:
+            Spacer(minLength: resolution.base.minWidth ?? 0)
+        default:
             timed { date in blocks(resolution, open: open, date: date) }
-                .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
-        } else {
-            switch widget.content {
-            case .workspaces:
-                WorkspaceView(workspaceStore: store.workspaceStore, monitor: monitor,
-                              appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
-                              animationDuration: animationDuration,
-                              configuration: widget.workspace, animation: widget.animation, defaults: widget.style.inheriting(defaults))
-            case let .clock(format):
-                TimelineView(clockSchedule(format)) { context in
-                    BuiltInLabel(content: widget.content, label: store.label(for: widget, date: context.date), appearance: appearance)
-                }
-            case .spacer:
-                Spacer(minLength: resolution.base.minWidth ?? 0)
-            case .script, .provider:
-                if let script = store.scripts[widget.id] {
-                    BuiltInLabel(content: widget.content, label: store.label(for: widget),
-                                 samples: script.output.value == nil ? nil : script.samples, appearance: appearance)
-                        .help(script.error ?? script.output.tooltip ?? "")
-                }
-            default:
-                BuiltInLabel(content: widget.content, label: store.label(for: widget),
-                             appIcon: widget.content == .activeApp ? store.activeApp?.icon : nil, appearance: appearance)
-            }
         }
     }
 
@@ -392,6 +376,7 @@ struct WidgetView: View {
         WidgetBlocks(widget: widget, store: store,
                      style: resolution.layoutStyle(configured: widget.layout != nil, hovered: hovered, open: open),
                      date: date, runAction: blockAction)
+            .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
     }
 
     private func blockAction(_ command: String, _ environment: [String: String]) {
@@ -426,53 +411,6 @@ struct WidgetBlocks: View {
                                                  targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
                                                  series: script?.output.series ?? [:], fillsWidth: fillsWidth, open: { $0.open() },
                                                  states: style.states, tracksHover: style.tracksHover, appIcon: appIcon, runAction: runAction))
-        }
-    }
-}
-
-/// A built-in widget's content drawn the way StableBar drew it before default layouts. Default
-/// layouts are tested against it.
-struct BuiltInLabel: View {
-    let content: WidgetContent
-    let label: WidgetLabel
-    var appIcon: NSImage?
-    /// The script's graph samples, when its output has a `value`.
-    var samples: [Double]?
-    let appearance: WidgetAppearance
-
-    var body: some View {
-        switch content {
-        case .activeApp:
-            HStack(spacing: appearance.spacing) {
-                if let appIcon {
-                    Image(nsImage: appIcon).resizable().frame(width: appearance.iconSize, height: appearance.iconSize)
-                }
-                Text(label.text).lineLimit(1)
-            }
-        case .clock:
-            text.monospacedDigit()
-        case .script, .provider:
-            HStack(spacing: appearance.spacing) {
-                if let samples {
-                    Sparkline(samples: samples)
-                        .stroke(appearance.accent, lineWidth: 1.2)
-                        .frame(width: 40, height: 16)
-                }
-                text
-            }
-                .foregroundStyle(appearance.foreground)
-        default:
-            text
-        }
-    }
-
-    private var text: some View {
-        ZStack {
-            Text(" ").hidden()
-            HStack(spacing: appearance.spacing) {
-                if let icon = label.icon { Image(systemName: icon).font(.system(size: appearance.iconSize)) }
-                if !label.text.isEmpty { Text(label.text).lineLimit(1) }
-            }
         }
     }
 }

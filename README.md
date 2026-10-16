@@ -163,7 +163,7 @@ Any style can have `states`: styles that apply over it while a state is active. 
 
 `hover` is active while the pointer is over a bar widget, a workspace cell or a layout block, on that display only. The `open` state is active on a bar widget, its layout and its overlay while its popup shows, on the instance that opened it: not on its copies on other displays, and not when the popup opened from the More widgets menu. A block's own background, border, padding, size, offset and opacity change for `open` only through that block's own `states`. Workspace cells also have a workspace state; see [Workspace appearance](#workspace-appearance). Script and provider widgets can have a data state; see [Data states](#data-states). States apply in a fixed order, later ones winning: the data state, the workspace state, `hover`, then `open`, so an `open` style stays visible while the pointer rests on its widget. A state's style can have its own `states`, which refine later states while both are active: `states.focused.states.hover` styles the focused workspace under the pointer. `bar.style` and group styles have no states.
 
-`hoverBackground` and `hoverForeground` are shorthand for `states.hover.background` and `states.hover.foreground`. In each style, such as `defaults` or a widget's `style`, the two are compared after includes, packages, themes, templates, widget overrides and profiles merge, so a `states.hover.background` from any layer wins over `hoverBackground` from any layer, and likewise for the foreground; to override a lower layer's hover state, set `states.hover.background`. Customize's **Hover background** rows handle this for you: they set `hoverBackground` and set `states.hover.background` to `null` beside it, so the color you pick wins over a lower layer's hover state but not over an active profile's `hoverBackground`. A hover without a background keeps the background. In layout and popup blocks, `hover` changes the text color and the block's own background, border, padding, size, offset and opacity.
+`hoverBackground` and `hoverForeground` are shorthand for `states.hover.background` and `states.hover.foreground`. In each style, such as `defaults` or a widget's `style`, the two are compared after includes, packages, themes, templates, widget overrides and profiles merge, so a `states.hover.background` from any layer wins over `hoverBackground` from any layer, and likewise for the foreground; to override a lower layer's hover state, set `states.hover.background`. Customize's **Hover background** rows handle this for you: they set `hoverBackground` and set `states.hover.background` to `null` beside it, so the color you pick wins over a lower layer's hover state but not over an active profile's `hoverBackground`. A hover without a background keeps the background. In a widget's `layout` and `overlay` and in popups, `hover` changes a block's text color and its own background, border, padding, size, offset and opacity. A widget without `layout` draws its default layout with all of its `hover` and `open` styles.
 
 A widget's states merge with those in `defaults`, and every style's states merge through includes, templates, profiles and widget overrides one state and property at a time: a widget's `states.hover.foreground` keeps the theme's `states.hover.background`. Set a state to `null` in a later layer to remove it at the same place: in `defaults` through includes, profiles and packages, and in a widget's `style` through its templates, widget overrides and package widgets. A hover set with `hoverBackground` or `hoverForeground` comes back from the shorthand, so set those to `null` too. Nothing set on a widget (its `style`, a template, a widget override or script output) can remove a state set in `defaults`. A state wins over the base style, so a theme's states also show on widgets that set their own colors.
 
@@ -390,6 +390,8 @@ Set `bar.displayScale` to `{ "builtIn": 0.85, "external": 1 }` to shrink the lap
 ### Composing widgets
 
 A widget's `layout` uses the same blocks as a popup. Use rows and columns to style the label, icon and other elements independently. Bar layouts take their content's width; popup layouts fill their available width. Give graphs, progress blocks and images explicit sizes when they should have a fixed footprint.
+
+A widget without `layout` draws a default layout made of the same blocks: a `row` of its icon (`symbol`) and text (`field`), at least a line of text tall even when it shows only the icon. Script and provider widgets whose output has a `value` show a 40 × 16 `graph` before them, and active-app widgets show the app's icon instead of a `symbol`. Workspaces and spacers keep their own views. A `layout` replaces the default layout, so block options work on built-in widgets too, for example an app name that scrolls when it doesn't fit: `"layout": { "type": "field", "field": "text", "scrollSpeed": 30, "style": { "width": 120 } }`.
 
 `overlay` uses the same blocks, aligned to the widget's bottom edge. It occupies no space and does not intercept clicks. This supports an underline, playback progress or a graph underneath the label.
 
@@ -922,14 +924,14 @@ Field and list values are display strings; scripts supply units and formatting. 
 
 Add the popup to the script widget that returns those fields.
 
-For new native widget types, add a case to `WidgetContent`, decode its settings in `WidgetConfiguration`, and render it in `WidgetView.content`. New popup components belong in `PopupContent` and `PopupBlockView`. Runtime SwiftUI plugins and arbitrary chart types are not implemented.
+For new native widget types, add a case to `WidgetContent`, decode its settings in `WidgetConfiguration`, return what it shows from `WidgetConfiguration.label` and give it a default layout in `WidgetConfiguration.defaultLayout`. New popup components belong in `PopupContent` and `PopupBlockView`. Runtime SwiftUI plugins and arbitrary chart types are not implemented.
 
 
 ## Architecture
 
 - [Configuration.swift](Sources/StableBar/Configuration.swift): config, widget definitions and style inheritance.
 - [StyleResolution.swift](Sources/StableBar/StyleResolution.swift): style layers and states resolved in one place for bar widgets, workspace cells, layout blocks and the bar, and the rules that set data states.
-- [WidgetLabel.swift](Sources/StableBar/WidgetLabel.swift): what each widget type shows.
+- [WidgetLabel.swift](Sources/StableBar/WidgetLabel.swift): what each widget type shows and the default layout it draws.
 - [BarStore.swift](Sources/StableBar/BarStore.swift): live reload, shared provider lifetimes, visibility, sleep and each widget's resolved style.
 - [ConfigurationLoader.swift](Sources/StableBar/ConfigurationLoader.swift): includes, profiles, tokens and provenance.
 - [ConfigurationEdits.swift](Sources/StableBar/ConfigurationEdits.swift): file-preserving edits shared by CLI and editor.

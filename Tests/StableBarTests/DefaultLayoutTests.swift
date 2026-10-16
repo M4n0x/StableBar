@@ -185,3 +185,13 @@ private let tolerance = 1
         }
     }
 }
+
+@Test func builtInWidgetsDrawThroughBlocks() {
+    let body = String(reflecting: WidgetView.Body.self)
+    let drawsBlocks = body.contains("WidgetBlocks")
+    let drawsBuiltInLabels = body.contains("BuiltInLabel")
+    let keepsWorkspaces = body.contains("WorkspaceView")
+    #expect(drawsBlocks)
+    #expect(!drawsBuiltInLabels)
+    #expect(keepsWorkspaces)
+}
