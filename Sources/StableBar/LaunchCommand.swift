@@ -7,6 +7,7 @@ enum LaunchCommand {
     case validate(URL)
     case control(URL, RuntimeRequest)
     case packages(URL, String, URL?)
+    case installFromStore(URL, String)
     case help
 
     static let configurationURL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/stablebar/config.json")
@@ -23,7 +24,7 @@ enum LaunchCommand {
            StableBar [--config PATH] --batch JSON_ARRAY [--persist]
            StableBar [--config PATH] --profile NAME|auto [--persist]
            StableBar [--config PATH] --reset | --refresh ID
-           StableBar [--config PATH] --packages | --inspect-package PATH | --install-package PATH
+           StableBar [--config PATH] --packages | --inspect-package PATH | --install-package PATH|ID
            StableBar [--config PATH] --enable-package ID VERSION [--persist]
            StableBar --help
     """
@@ -70,9 +71,12 @@ enum LaunchCommand {
             self = .control(url, RuntimeRequest(action: .refresh, id: arguments[1]))
         case "--packages" where arguments.count == 1:
             self = .packages(url, "list", nil)
-        case "--inspect-package" where arguments.count == 2, "--install-package" where arguments.count == 2:
-            self = .packages(url, arguments[0] == "--inspect-package" ? "inspect" : "install",
-                             URL(filePath: (arguments[1] as NSString).expandingTildeInPath))
+        case "--inspect-package" where arguments.count == 2:
+            self = .packages(url, "inspect", URL(filePath: (arguments[1] as NSString).expandingTildeInPath))
+        case "--install-package" where arguments.count == 2:
+            let source = URL(filePath: (arguments[1] as NSString).expandingTildeInPath)
+            self = (try? source.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+                ? .packages(url, "install", source) : .installFromStore(url, arguments[1])
         case "--enable-package" where arguments.count == 3:
             self = batch([ConfigurationEdit(action: .package, properties: ["id": .string(arguments[1]), "version": .string(arguments[2]), "enabled": .bool(true)])])
         case "--validate" where arguments.count <= 2:

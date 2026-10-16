@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import StableBar
@@ -409,6 +410,39 @@ private func writePackageFile(_ text: String, to url: URL) throws {
         _ = try store.inspect(source)
     }
     _ = try store.install(source)
+}
+
+@Test func storePackagesInstallFromTheIndexOnlyWhenTheirArchiveMatches() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    let store = WidgetPackageStore(directory: directory.appending(path: "packages"))
+    try writePackageFile(#"{"id":"clock","name":"Clock","version":"1","kind":"widgets","entry":"config.json"}"#,
+                         to: source.appending(path: "package.json"))
+    try writePackageFile(#"{"widgets":[{"id":"clock","type":"clock","position":"right"}]}"#, to: source.appending(path: "config.json"))
+    let archive = directory.appending(path: "store/clock-1.tar.gz")
+    try FileManager.default.createDirectory(at: archive.deletingLastPathComponent(), withIntermediateDirectories: true)
+    _ = try await runCommand("/usr/bin/tar", arguments: ["-czf", archive.path, "-C", source.path, "."])
+    let sha256 = SHA256.hash(data: try Data(contentsOf: archive)).map { String(format: "%02x", $0) }.joined()
+    let index = directory.appending(path: "store/index.json")
+    for (version, checksum, message) in [
+        ("1", String(repeating: "0", count: 64), "The archive of package clock does not match the store's checksum."),
+        ("2", sha256, "The archive of package clock 2 contains a different id or version.")
+    ] {
+        try writePackageFile(#"{"packages":[{"id":"clock","name":"Clock","version":"\#(version)","archive":"clock-1.tar.gz","sha256":"\#(checksum)"}]}"#,
+                             to: index)
+        let entry = try await PackageIndex.load(from: index).packages[0]
+        let error = await #expect(throws: WidgetPackageError.self) { try await store.download(entry, from: index) }
+        #expect(error?.localizedDescription == message)
+    }
+    try writePackageFile(#"""
+    {"packages":[{"id":"clock","name":"Clock","version":"1","kind":"widgets","archive":"clock-1.tar.gz","sha256":"\#(sha256)",
+      "source":"https://example.com/packages/clock","rating":5}],"updated":"2026-10-16"}
+    """#, to: index)
+    let entry = try await PackageIndex.load(from: index).packages[0]
+    let installed = try store.install(try await store.download(entry, from: index))
+    #expect(installed.directory == directory.appending(path: "packages/clock/1"))
+    #expect(installed.manifest.kind == .widgets)
 }
 
 @Test func themeAppliesAfterWidgetPackagesAndBeforeIncludesAndTheRootFile() throws {

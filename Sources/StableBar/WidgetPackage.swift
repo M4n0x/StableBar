@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct WidgetPackageSetting: Codable, Sendable {
@@ -140,6 +141,10 @@ enum WidgetPackageError: LocalizedError {
     case missingVersion(String)
     case unknownTheme(String)
     case newerVersionRequired(String, String)
+    case notInStore(String)
+    case downloadFailed(String, Int)
+    case checksumMismatch(String)
+    case archiveMismatch(String, String)
 
     var errorDescription: String? {
         switch self {
@@ -159,6 +164,10 @@ enum WidgetPackageError: LocalizedError {
         case let .missingVersion(id): "Package \(id) needs a version."
         case let .unknownTheme(id): "No theme named \(id) ships with StableBar. Add a version to select an installed theme package."
         case let .newerVersionRequired(id, version): "Package \(id) needs StableBar \(version) or later."
+        case let .notInStore(id): "The store has no package \(id)."
+        case let .downloadFailed(url, status): "Downloading \(url) failed with HTTP status \(status)."
+        case let .checksumMismatch(id): "The archive of package \(id) does not match the store's checksum."
+        case let .archiveMismatch(id, version): "The archive of package \(id) \(version) contains a different id or version."
         }
     }
 }
@@ -256,6 +265,24 @@ struct WidgetPackageStore {
         return try inspect(destination)
     }
 
+    func download(_ entry: PackageIndex.Entry, from index: URL) async throws -> URL {
+        let data = try await fetch(index.deletingLastPathComponent().appending(path: entry.archive))
+        guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == entry.sha256 else {
+            throw WidgetPackageError.checksumMismatch(entry.id)
+        }
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let package = directory.appending(path: "package")
+        try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+        let archive = directory.appending(path: "package.tar.gz")
+        try data.write(to: archive)
+        _ = try await runCommand("/usr/bin/tar", arguments: ["-xzf", archive.path, "-C", package.path])
+        let manifest = try manifest(at: package)
+        guard manifest.id == entry.id, manifest.version == entry.version else {
+            throw WidgetPackageError.archiveMismatch(entry.id, entry.version)
+        }
+        return package
+    }
+
     func list() throws -> [WidgetPackageManifest] {
         guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
         var manifests: [WidgetPackageManifest] = []
@@ -267,6 +294,36 @@ struct WidgetPackageStore {
         }
         return manifests.sorted { ($0.id, $0.version) < ($1.id, $1.version) }
     }
+}
+
+// Unlike manifests, the index ignores unknown keys, because older apps read the same index.
+struct PackageIndex: Decodable {
+    struct Entry: Decodable {
+        let id: String
+        let name: String
+        let version: String
+        let kind: WidgetPackageManifest.Kind?
+        let description: String?
+        let minimumVersion: String?
+        let archive: String
+        let sha256: String
+    }
+
+    static let url = URL(string: "https://github.com/Seb-GRAF/stablebar-packages/releases/download/store/index.json")!
+
+    let packages: [Entry]
+
+    static func load(from url: URL) async throws -> PackageIndex {
+        try JSONDecoder().decode(PackageIndex.self, from: await fetch(url))
+    }
+}
+
+private func fetch(_ url: URL) async throws -> Data {
+    let (data, response) = try await URLSession.shared.data(from: url)
+    if let response = response as? HTTPURLResponse, response.statusCode != 200 {
+        throw WidgetPackageError.downloadFailed(url.absoluteString, response.statusCode)
+    }
+    return data
 }
 
 struct ThemeChoice {

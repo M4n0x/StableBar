@@ -23,23 +23,27 @@ struct StableBarApp {
                 print(String(decoding: try encoder.encode(result), as: UTF8.self))
             case let .packages(url, action, source):
                 let packages = WidgetPackageStore(directory: url.deletingLastPathComponent().appending(path: "packages"))
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                 if action == "list" {
+                    let encoder = JSONEncoder()
+                    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                     print(String(decoding: try encoder.encode(packages.list()), as: UTF8.self))
                 } else {
-                    let inspection = try action == "install" ? packages.install(source!) : packages.inspect(source!)
-                    print(String(decoding: try encoder.encode(inspection.manifest), as: UTF8.self))
-                    let missing = inspection.manifest.missingTools(path: shellEnvironment.withLock { $0["PATH", default: ""] })
-                    if !missing.isEmpty { print("Not found on PATH: \(missing.joined(separator: ", "))") }
-                    switch inspection.manifest.kind {
-                    case .theme?: break
-                    case .widgets?: print("This package contains no commands.")
-                    case nil:
-                        print("Commands to review before enabling:")
-                        for command in inspection.commands { print(command) }
-                    }
+                    try printReview(action == "install" ? packages.install(source!) : packages.inspect(source!))
                 }
+            case let .installFromStore(url, id):
+                let packages = WidgetPackageStore(directory: url.deletingLastPathComponent().appending(path: "packages"))
+                Task {
+                    do {
+                        let index = try await PackageIndex.load(from: PackageIndex.url)
+                        guard let entry = index.packages.first(where: { $0.id == id }) else { throw WidgetPackageError.notInStore(id) }
+                        try printReview(packages.install(await packages.download(entry, from: PackageIndex.url)))
+                    } catch {
+                        FileHandle.standardError.write(Data("\(errorMessage(error))\n".utf8))
+                        exit(1)
+                    }
+                    exit(0)
+                }
+                dispatchMain()
             case .help:
                 print(LaunchCommand.usage)
             case let .run(url):
@@ -52,6 +56,21 @@ struct StableBarApp {
         } catch {
             FileHandle.standardError.write(Data("\(errorMessage(error))\n".utf8))
             exit(1)
+        }
+    }
+
+    private static func printReview(_ inspection: WidgetPackageInspection) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        print(String(decoding: try encoder.encode(inspection.manifest), as: UTF8.self))
+        let missing = inspection.manifest.missingTools(path: shellEnvironment.withLock { $0["PATH", default: ""] })
+        if !missing.isEmpty { print("Not found on PATH: \(missing.joined(separator: ", "))") }
+        switch inspection.manifest.kind {
+        case .theme?: break
+        case .widgets?: print("This package contains no commands.")
+        case nil:
+            print("Commands to review before enabling:")
+            for command in inspection.commands { print(command) }
         }
     }
 }

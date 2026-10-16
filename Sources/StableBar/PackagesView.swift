@@ -6,6 +6,7 @@ struct PackagesView: View {
     @State private var installed: [WidgetPackageManifest] = []
     @State private var selections: [WidgetPackageSelection] = []
     @State private var inspection: WidgetPackageInspection?
+    @State private var storeEntries: [PackageIndex.Entry] = []
     @State private var settings: [String: ConfigurationValue] = [:]
     @State private var error: String?
 
@@ -16,12 +17,17 @@ struct PackagesView: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                List(selection: Binding(get: { inspection?.manifest.versionKey }, set: { key in
-                    if let manifest = installed.first(where: { $0.versionKey == key }) {
+                List(selection: Binding(get: { inspection.map { isInstalled($0) ? $0.manifest.versionKey : "store/\($0.manifest.versionKey)" } }, set: { key in
+                    if let manifest = installed.first(where: { $0.versionKey == key || "store/\($0.versionKey)" == key }) {
                         perform { try select(packages.directory(id: manifest.id, version: manifest.version)) }
+                    } else if let entry = storeEntries.first(where: { "store/\($0.id)/\($0.version)" == key }) {
+                        Task { await perform { try select(await packages.download(entry, from: PackageIndex.url)) } }
                     }
                 })) {
                     Section("Installed") {
+                        if installed.isEmpty {
+                            Text("No packages installed").foregroundStyle(.secondary)
+                        }
                         ForEach(installed, id: \.versionKey) { manifest in
                             Label {
                                 HStack {
@@ -40,13 +46,56 @@ struct PackagesView: View {
                             .padding(.vertical, 2)
                         }
                     }
-                }
-                .listStyle(.sidebar)
-                .overlay {
-                    if installed.isEmpty {
-                        Text("No packages installed").foregroundStyle(.secondary)
+                    Section {
+                        ForEach(storeEntries, id: \.id) { entry in
+                            let installedVersions = installed.filter { $0.id == entry.id }.map(\.version)
+                            let tooOld = entry.minimumVersion.map(packages.requiresNewerApp) == true
+                            let kind = switch entry.kind {
+                            case .theme?: "theme"
+                            case .widgets?: "contains no commands"
+                            case nil: "runs commands"
+                            }
+                            Label {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(entry.name).lineLimit(1)
+                                        Text("\(entry.version) · \(kind)").font(.caption).foregroundStyle(.secondary)
+                                        if let description = entry.description {
+                                            Text(description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                        }
+                                        if tooOld {
+                                            Text("Requires StableBar \(entry.minimumVersion!)").font(.caption).foregroundStyle(.orange)
+                                        }
+                                    }
+                                    Spacer()
+                                    if !installedVersions.isEmpty, installedVersions.allSatisfy({ entry.version.compare($0, options: .numeric) == .orderedDescending }) {
+                                        Text("Update")
+                                            .font(.caption.weight(.medium))
+                                            .foregroundStyle(Color.accentColor)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.accentColor.opacity(0.12), in: Capsule())
+                                    }
+                                }
+                            } icon: {
+                                Image(systemName: "arrow.down.circle")
+                            }
+                            .padding(.vertical, 2)
+                            .tag("store/\(entry.id)/\(entry.version)")
+                            .selectionDisabled(tooOld)
+                        }
+                    } header: {
+                        HStack {
+                            Text("Store")
+                            Spacer()
+                            Button("Reload Store", systemImage: "arrow.clockwise") { Task { await perform(loadStore) } }
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
+                                .help("Reload the store")
+                        }
                     }
                 }
+                .listStyle(.sidebar)
                 Divider()
                 HStack {
                     Button("Review Package Folder…", systemImage: "folder.badge.plus", action: chooseFolder)
@@ -65,7 +114,7 @@ struct PackagesView: View {
                     ContentUnavailableView {
                         Label("Widget packages", systemImage: "shippingbox")
                     } description: {
-                        Text("Choose a local package folder to review its settings and commands.")
+                        Text("Choose a package from the store or a local folder to review its settings and commands.")
                     } actions: {
                         Button("Review Package Folder…", action: chooseFolder)
                     }
@@ -86,6 +135,7 @@ struct PackagesView: View {
             .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear { perform(loadInstalled) }
+        .task { await perform(loadStore) }
         .onChange(of: store.effectiveDocument) { _, _ in perform(loadInstalled) }
         .onChange(of: settings) { _, values in
             if let inspection {
@@ -96,8 +146,7 @@ struct PackagesView: View {
 
     private func packageDetails(_ inspection: WidgetPackageInspection) -> some View {
         let manifest = inspection.manifest
-        let installedDirectory = packages.directory.appending(path: manifest.id).appending(path: manifest.version)
-        let isInstalled = inspection.directory.standardizedFileURL == installedDirectory.standardizedFileURL
+        let isInstalled = self.isInstalled(inspection)
         let isEnabled = selections.contains { $0.id == manifest.id && $0.version == manifest.version && $0.enabled }
         return VStack(spacing: 0) {
             Form {
@@ -252,6 +301,15 @@ struct PackagesView: View {
         inspection = reviewed
     }
 
+    private func isInstalled(_ inspection: WidgetPackageInspection) -> Bool {
+        let installedDirectory = packages.directory.appending(path: inspection.manifest.id).appending(path: inspection.manifest.version)
+        return inspection.directory.standardizedFileURL == installedDirectory.standardizedFileURL
+    }
+
+    private func loadStore() async throws {
+        storeEntries = try await PackageIndex.load(from: PackageIndex.url).packages
+    }
+
     private func loadInstalled() throws {
         installed = try packages.list()
         selections = try store.effectiveDocument["packages"]?.decoded([WidgetPackageSelection].self) ?? []
@@ -270,6 +328,15 @@ struct PackagesView: View {
     private func perform(_ action: () throws -> Void) {
         do {
             try action()
+            error = nil
+        } catch {
+            self.error = errorMessage(error)
+        }
+    }
+
+    private func perform(_ action: () async throws -> Void) async {
+        do {
+            try await action()
             error = nil
         } catch {
             self.error = errorMessage(error)
