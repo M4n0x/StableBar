@@ -46,8 +46,14 @@ struct BarView: View {
                         (style.background ?? config.bar.background).color
                         ForEach(units) { unit in
                             if let placement = plan.placements[unit.id] {
+                                let alignment: Alignment = switch unit.position {
+                                case .left: .leading
+                                case .right: .trailing
+                                case .notchLeft, .center, .notchRight: .center
+                                }
                                 unitView(unit, config: config, width: placement.width)
-                                    .frame(width: placement.width, height: geometry.size.height / scale)
+                                    .geometryGroup()
+                                    .frame(width: placement.width, height: geometry.size.height / scale, alignment: alignment)
                                     .offset(x: placement.x)
                             }
                         }
@@ -75,7 +81,15 @@ struct BarView: View {
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                     }
-                    .onPreferenceChange(BarWidthPreference.self) { measuredWidths = $0 }
+                    .onPreferenceChange(BarWidthPreference.self) { widths in
+                        let appResized = units.contains { unit in
+                            unit.widgets.contains { $0.content == .activeApp }
+                                && measuredWidths[unit.id] != nil && measuredWidths[unit.id] != widths[unit.id]
+                        }
+                        withAnimation(appResized && !reduceMotion ? .easeOut(duration: config.bar.animationDuration) : nil) {
+                            measuredWidths = widths
+                        }
+                    }
                     .onChange(of: visible, initial: true) { _, ids in store.setVisibleWidgets(ids: ids, displayID: display.id) }
                     .frame(width: geometry.size.width / scale, height: geometry.size.height / scale)
                     .scaleEffect(scale, anchor: .topLeading)
@@ -312,6 +326,7 @@ struct WidgetView: View {
         }
         .animation(reduceMotion ? nil : animation.value, value: hovered)
         .animation(reduceMotion ? nil : animation.value, value: style)
+        .animation(reduceMotion ? nil : animation.value, value: store.activeApp)
         .accessibilityIdentifier(widget.id)
     }
 
