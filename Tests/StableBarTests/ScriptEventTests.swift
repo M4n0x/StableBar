@@ -325,3 +325,44 @@ func widgetActionsRunInOrderAndStoppingCancelsQueuedWork(stop: Bool) async throw
     }
     #expect(script.output.text == "\(home)|payload")
 }
+
+@Test func builtInEventsMatchTheReadmeTable() throws {
+    let readme = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appending(path: "README.md")
+    let lines = try String(contentsOf: readme, encoding: .utf8).components(separatedBy: "\n")
+    let header = try #require(lines.firstIndex(of: "| Event | Sent when | `INFO` |"))
+    let rows = lines[(header + 2)...].prefix { $0.hasPrefix("| ") }.map { row in
+        row.dropFirst(2).dropLast(2).components(separatedBy: " | ")
+    }
+    #expect(rows.map { $0[0] } == BuiltInEvent.allCases.map { "`\($0.rawValue)`" })
+    #expect(rows.map { $0[1] } == BuiltInEvent.allCases.map(\.trigger))
+    #expect(rows.map { $0[2] } == BuiltInEvent.allCases.map(\.info))
+}
+
+@Test @MainActor func sendingABuiltInEventRefreshesItsSubscribers() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let url = directory.appending(path: "config.json")
+    try Data(#"""
+    {"widgets":[{"id":"woke","type":"script","position":"right","interval":null,"events":["wake"],
+      "command":"printf '%s:%s' \"$SENDER\" \"${INFO:-none}\""}]}
+    """#.utf8).write(to: url)
+    let store = BarStore(configurationURL: url)
+    defer {
+        store.stop()
+        try? FileManager.default.removeItem(at: directory)
+    }
+    store.reloadConfiguration()
+    let script = try #require(store.scripts["woke"])
+    for _ in 0..<100 {
+        if script.output.text == "startup:none" { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(script.output.text == "startup:none")
+    store.send(.wake)
+    for _ in 0..<100 {
+        if script.output.text == "wake:none" { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(script.output.text == "wake:none")
+}

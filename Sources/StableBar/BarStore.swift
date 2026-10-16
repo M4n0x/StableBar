@@ -59,10 +59,10 @@ final class BarStore: NSObject {
             guard let self else { return }
             popup.close()
             let focused = workspaceStore.workspaces.first(where: \.isFocused)
-            refreshScripts(for: "workspace", environment: ["INFO": focused?.name ?? "", "SID": String(focused?.monitor ?? activeDisplayID)])
+            send(.workspace, ["INFO": focused?.name ?? "", "SID": String(focused?.monitor ?? activeDisplayID)])
         }
         workspaceStore.onModeChange = { [weak self] mode in
-            self?.refreshScripts(for: "aerospaceMode", environment: ["INFO": mode])
+            self?.send(.aerospaceMode, ["INFO": mode])
         }
         do {
             let directory = configurationURL.deletingLastPathComponent()
@@ -92,7 +92,7 @@ final class BarStore: NSObject {
         if let screen = NSScreen.main { activeDisplayID = BarDisplay(screen: screen).id }
         popup.close()
         refreshContext()
-        refreshScripts(for: "frontApp", environment: ["INFO": activeApp?.localizedName ?? "Desktop"])
+        send(.frontApp, ["INFO": activeApp?.localizedName ?? "Desktop"])
     }
 
     func refreshContext() {
@@ -255,7 +255,7 @@ final class BarStore: NSObject {
         let center = DistributedNotificationCenter.default()
         for observer in eventObservers { center.removeObserver(observer) }
         let events = Set(next.widgets.filter(\.enabled).flatMap(\.events) + usedProviders.flatMap { next.providers[$0]!.events }
-                         + (needsWorkspaces && next.workspaceSource == .yabai ? ["yabai"] : []))
+                         + (needsWorkspaces && next.workspaceSource == .yabai ? [BuiltInEvent.yabai.rawValue] : []))
         eventObservers = events.map { event in
             center.addObserver(forName: Notification.Name(event), object: nil, queue: .main) { [weak self] notification in
                 var environment = withoutShellVariables(notification.userInfo as? [String: String] ?? [:])
@@ -420,8 +420,13 @@ final class BarStore: NSObject {
         return environment
     }
 
+    /// Sends one of StableBar's own events to the widgets and providers that subscribe to it.
+    func send(_ event: BuiltInEvent, _ variables: [String: String] = [:]) {
+        refreshScripts(for: event.rawValue, environment: variables)
+    }
+
     func refreshScripts(for event: String, environment: [String: String] = [:]) {
-        if event == "yabai" { workspaceStore.trigger() }
+        if event == BuiltInEvent.yabai.rawValue { workspaceStore.trigger() }
         var refreshed = Set<ObjectIdentifier>()
         for widget in configuration?.widgets ?? [] {
             let providerEvents: [String]
