@@ -81,11 +81,7 @@ struct BarView: View {
                         .hidden()
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
-                        .environment(\.measuringBarWidths, true)
-                        .transaction { transaction in
-                            transaction.animation = nil
-                            transaction.disablesAnimations = true
-                        }
+                        .modifier(MeasuringCopy())
                     }
                     // Keeps the last width of units that leave, so a returning widget is planned at its size.
                     .onPreferenceChange(BarWidthPreference.self) { widths in
@@ -202,6 +198,18 @@ extension EnvironmentValues {
     var measuringBarWidths: Bool {
         get { self[MeasuringBarWidthsKey.self] }
         set { self[MeasuringBarWidthsKey.self] = newValue }
+    }
+}
+
+/// Marks the bar's hidden copy that measures widget widths and keeps it still: nothing animates there.
+struct MeasuringCopy: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .environment(\.measuringBarWidths, true)
+            .transaction { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
     }
 }
 

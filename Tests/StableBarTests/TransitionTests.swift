@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import SwiftUI
 import Testing
 @testable import StableBar
@@ -162,4 +163,51 @@ private func block(_ json: String) throws -> PopupBlock {
     #expect(try resolvedTransition(of: own, motion: motion) { _ in } == .roll)
     #expect(try resolvedTransition(of: plain, motion: motion) { $0.measuringBarWidths = true } == WidgetTransition.none)
     #expect(try resolvedTransition(of: own, motion: motion) { $0.measuringBarWidths = true } == WidgetTransition.none)
+}
+
+/// What a view sees of its environment, and of the transaction of a change.
+@MainActor @Observable private final class ProbeSeen {
+    var change = 0
+    @ObservationIgnored var measuring: Bool?
+    @ObservationIgnored var animation: Animation?
+    @ObservationIgnored var disablesAnimations: Bool?
+}
+
+private struct Probe: View {
+    let seen: ProbeSeen
+    @Environment(\.measuringBarWidths) private var measuring
+
+    var body: some View {
+        seen.measuring = measuring
+        return Color.clear.frame(width: 4 + Double(seen.change), height: 4).transaction { transaction in
+            seen.animation = transaction.animation
+            seen.disablesAnimations = transaction.disablesAnimations
+        }
+    }
+}
+
+/// What a probe drawn in `content` sees of an animated change.
+@MainActor private func seen(_ content: (Probe) -> some View) -> ProbeSeen {
+    let seen = ProbeSeen()
+    let host = NSHostingView(rootView: content(Probe(seen: seen)))
+    host.frame = CGRect(x: 0, y: 0, width: 20, height: 20)
+    host.layoutSubtreeIfNeeded()
+    withAnimation(.default) { seen.change += 1 }
+    host.layoutSubtreeIfNeeded()
+    return seen
+}
+
+@Test @MainActor func theMeasuringCopyMeasuresWithoutAnimating() {
+    let outside = seen { $0 }
+    #expect(outside.measuring == false)
+    #expect(outside.animation == .default)
+    #expect(outside.disablesAnimations == false)
+    let inside = seen { $0.modifier(MeasuringCopy()) }
+    #expect(inside.measuring == true)
+    #expect(inside.animation == nil)
+    #expect(inside.disablesAnimations == true)
+}
+
+@Test func theBarMeasuresWidgetsInTheMeasuringCopy() {
+    #expect(String(reflecting: BarView.Body.self).contains("MeasuringCopy"))
 }
