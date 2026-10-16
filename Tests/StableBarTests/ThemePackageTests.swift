@@ -293,6 +293,40 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     #expect(FileManager.default.fileExists(atPath: installed.directory.path))
 }
 
+@Test func secretSettingsReachOnlyTheirPackageEnvironmentsAndComeFromTheLookup() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    let store = WidgetPackageStore(directory: directory.appending(path: "packages"))
+    let manifest = #"{"id":"github","name":"GitHub","version":"1","entry":"config.json","settings":{"token":{"type":"secret"}}}"#
+    try writePackageFile(manifest.replacingOccurrences(of: #""secret""#, with: #""secret","default":"x""#),
+                         to: source.appending(path: "package.json"))
+    try writePackageFile(#"{"widgets":[]}"#, to: source.appending(path: "config.json"))
+    #expect(throws: WidgetPackageError.self) { try store.inspect(source) }
+    try writePackageFile(manifest, to: source.appending(path: "package.json"))
+    for configuration in [#"{"widgets":[{"id":"a","type":"text","position":"left","text":"@setting.token"}]}"#,
+                          #"{"tokens":{"token":"@setting.token"}}"#,
+                          #"{"widgets":[{"id":"a","type":"script","position":"left","command":"true","environment":{"T":"@secret.other/token"}}]}"#] {
+        try writePackageFile(configuration, to: source.appending(path: "config.json"))
+        #expect(throws: WidgetPackageError.self) { try store.inspect(source) }
+    }
+    try writePackageFile(#"""
+    {"widgets":[{"id":"github","type":"script","position":"right","command":"true","environment":{"GITHUB_TOKEN":"@setting.token"}}]}
+    """#, to: source.appending(path: "config.json"))
+    _ = try store.install(source)
+    var loader = ConfigurationLoader()
+    let root = directory.appending(path: "config.json")
+    #expect(throws: WidgetPackageError.self) {
+        try loader.load(root, data: Data(#"{"packages":[{"id":"github","version":"1","settings":{"token":"x"}}]}"#.utf8))
+    }
+    let widget = try loader.load(root, data: Data(#"{"packages":[{"id":"github","version":"1"}]}"#.utf8)).widgets[0]
+    #expect(widget.environment["GITHUB_TOKEN"] == "@secret.github/token")
+    let environment = ScriptEvent(sender: "control.changed", environment: ["VALUE": "@secret.github/token"])
+        .commandEnvironment(widget.environment) { $0 == "github/token" ? "abc" : "" }
+    #expect(environment["GITHUB_TOKEN"] == "abc")
+    #expect(environment["VALUE"] == "@secret.github/token")
+}
+
 @Test func themePackagesContainOnlyStylesAndAreSelectedOnlyAsTheTheme() throws {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }

@@ -5,8 +5,9 @@ struct ScriptEvent: Sendable {
     var sender: String
     var environment: [String: String] = [:]
 
-    func commandEnvironment(_ configured: [String: String]) -> [String: String] {
-        var variables = configured.merging(environment) { _, event in event }
+    func commandEnvironment(_ configured: [String: String], secret: (String) -> String = packageSecret) -> [String: String] {
+        var variables = configured.mapValues { $0.hasPrefix("@secret.") ? secret(String($0.dropFirst("@secret.".count))) : $0 }
+            .merging(environment) { _, event in event }
         variables["NAME"] = configured["NAME"]
         variables["CONFIG_DIR"] = configured["CONFIG_DIR"]
         variables["SENDER"] = sender
