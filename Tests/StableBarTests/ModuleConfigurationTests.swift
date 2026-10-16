@@ -377,6 +377,8 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     for (name, state) in modular.defaults.states ?? [:] where state.background != nil && !StyleStates.reservedNames.contains(name) {
         #expect(state.states?["hover"]?.background != nil, "\(name) needs its own hover background")
     }
+    #expect(modular.widgets.first { $0.id == "volume" }?.events == ["volumeChange"])
+    #expect(modular.activeProviders == ["system"])
     let interactive = try loader.load(repository.appending(path: "examples/interactive/config.json"))
     #expect(interactive.defaults.states?["open"]?.borderWidth == 1)
     #expect(interactive.widgets.first { $0.id == "application" }?.transition == .roll)

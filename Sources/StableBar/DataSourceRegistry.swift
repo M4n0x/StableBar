@@ -66,9 +66,9 @@ extension DataSourceType {
         return PollingSource { _ in .output(Result { try metrics.networkRates() }) }
     }
 
-    static let audio = DataSourceType(name: "audio", isNative: true, symbol: "speaker.wave.2", settings: [], continuous: false) { _, _ in
-        let metrics = NativeMetrics()
-        return PollingSource { _ in .output(Result { try metrics.audio() }) }
+    static let audio = DataSourceType(name: "audio", isNative: true, symbol: "speaker.wave.2", settings: [], continuous: true,
+                                      events: [.volumeChange, .outputDeviceChange]) { _, _ in
+        PushSource(monitor: AudioMonitor())
     }
 
     /// Its output sets its own `interval`, so the runner reads it again at the next minute or phase

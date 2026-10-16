@@ -1,3 +1,4 @@
+import CoreAudio
 import EventKit
 import Foundation
 import Observation
@@ -772,4 +773,121 @@ private func battery(_ state: String) -> ScriptOutput {
     try await awaitCondition { monitor.listening }
     store.stop()
     #expect(!monitor.listening)
+}
+
+private func audio(_ volume: Double?, muted: Bool = false, device: String = "Speakers", id: String = "42") -> ScriptOutput {
+    var fields = ["device": device, "deviceID": id, "volumeAvailable": String(volume != nil), "muted": String(muted)]
+    if volume == nil { fields["muted"] = nil }
+    return ScriptOutput(text: volume.map { "\(Int($0 * 100))%" } ?? device, value: volume, fields: fields,
+                        values: volume.map { ["volume": $0] })
+}
+
+@Test func volumeAndDeviceEventsFollowTheDefaultOutputDevice() {
+    #expect(BuiltInEvent.volumeChange.variables(from: audio(0.5), to: audio(0.62)) == ["INFO": "62", "MUTED": "false"])
+    #expect(BuiltInEvent.volumeChange.variables(from: audio(0.5), to: audio(0.5, muted: true)) == ["INFO": "50", "MUTED": "true"])
+    #expect(BuiltInEvent.volumeChange.variables(from: audio(0.5), to: audio(0.5, device: "AirPods", id: "77")) == nil)
+    #expect(BuiltInEvent.volumeChange.variables(from: audio(0.5), to: audio(nil, device: "HDMI", id: "9")) == ["INFO": "", "MUTED": "false"])
+    #expect(BuiltInEvent.outputDeviceChange.variables(from: audio(0.5), to: audio(0.5, device: "AirPods", id: "77")) == ["INFO": "AirPods"])
+    #expect(BuiltInEvent.outputDeviceChange.variables(from: audio(0.5), to: ScriptOutput(text: "No output")) == ["INFO": ""])
+    #expect(BuiltInEvent.outputDeviceChange.variables(from: audio(0.5), to: audio(0.7)) == nil)
+    #expect(DataSourceType.audio.continuous)
+    #expect(DataSourceType.audio.events == [.volumeChange, .outputDeviceChange])
+}
+
+@Test func theDeviceListSkipsADeviceWhoseNameCannotBeRead() {
+    let rows = AudioMonitor.deviceRows([42, 77, 9]) { device in
+        guard device != 77 else { throw CommandFailure(message: "Could not read audio device name (560947818).") }
+        return device == 42 ? "Speakers" : "HDMI"
+    }
+    #expect(rows == [["id": "42", "name": "Speakers"], ["id": "9", "name": "HDMI"]])
+}
+
+@Test func aDeviceListChangeMovesTheVolumeListenerUnlessItWatchesEveryPropertyOfTheDevice() {
+    let volume = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar, mScope: kAudioDevicePropertyScopeOutput,
+                                            mElement: kAudioObjectPropertyElementMain)
+    let mute = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioDevicePropertyScopeOutput,
+                                          mElement: kAudioObjectPropertyElementMain)
+    #expect(AudioMonitor.covers(device: 42, properties: [volume, mute], watched: 42, addresses: [mute, volume]))
+    #expect(AudioMonitor.covers(device: 42, properties: [mute], watched: 42, addresses: [volume, mute]))
+    #expect(AudioMonitor.covers(device: AudioObjectID(kAudioObjectUnknown), properties: [],
+                                watched: AudioObjectID(kAudioObjectUnknown), addresses: []))
+    #expect(!AudioMonitor.covers(device: 42, properties: [volume, mute], watched: 42, addresses: [mute]))
+    #expect(!AudioMonitor.covers(device: 77, properties: [volume, mute], watched: 42, addresses: [volume, mute]))
+}
+
+/// Runs what the main queue holds now, such as a relay's waiting hops.
+@MainActor
+private func drainMainQueue() async {
+    await withCheckedContinuation { continuation in DispatchQueue.main.async { continuation.resume() } }
+}
+
+/// A relay whose runs record their changes under their names, and the queue a monitor would hear of changes on.
+private struct RelayProbe {
+    let relay = MainQueueRelay()
+    let changes = OSAllocatedUnfairLock<[String]>(initialState: [])
+    let listener = DispatchQueue(label: "StableBarTests.listener")
+
+    func start(_ run: String) {
+        relay.start { [changes] in changes.withLock { $0.append(run) } }
+    }
+
+    /// Reports `count` changes from the listener queue while the main queue waits.
+    func notify(_ count: Int = 1) {
+        listener.sync { for _ in 0..<count { relay.notify() } }
+    }
+
+    var recorded: [String] { changes.withLock { $0 } }
+}
+
+@Test @MainActor func aBurstOfChangesReachesTheMainQueueOnce() async {
+    let probe = RelayProbe()
+    probe.start("first")
+    probe.notify(20)
+    await drainMainQueue()
+    #expect(probe.recorded == ["first"])
+    probe.notify(3)
+    await drainMainQueue()
+    #expect(probe.recorded == ["first", "first"])
+}
+
+@Test @MainActor func aChangeThatReachesTheMainQueueAfterStopIsDropped() async {
+    let probe = RelayProbe()
+    probe.start("first")
+    probe.notify()
+    probe.relay.stop()
+    probe.notify()
+    await drainMainQueue()
+    #expect(probe.recorded.isEmpty)
+}
+
+@Test @MainActor func aChangeAfterARestartReachesTheMainQueue() async {
+    let probe = RelayProbe()
+    probe.start("first")
+    probe.notify()
+    probe.relay.stop()
+    probe.start("second")
+    probe.notify()
+    await drainMainQueue()
+    #expect(probe.recorded == ["second"])
+    probe.start("third")
+    probe.notify()
+    await drainMainQueue()
+    #expect(probe.recorded == ["second", "third"])
+}
+
+@Test @MainActor func aVolumeBurstRunsSubscribedScriptsAtMostTwice() async throws {
+    let url = try writeTemporaryConfiguration(#"""
+    {"widgets":[{"id":"volume","type":"script","position":"right","interval":null,"events":["volumeChange"],
+      "command":"printf '%s' \"${INFO:-start}\""}]}
+    """#)
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let monitor = FakeMonitor(audio(0.5))
+    let store = BarStore(configurationURL: url, registry: .builtIn.replacing("audio") { _, _ in PushSource(monitor: monitor) })
+    defer { store.stop() }
+    store.reloadConfiguration()
+    let volume = try #require(store.scripts["volume"])
+    try await awaitCondition { volume.output.text == "start" && store.providers["audio"]?.diagnostics.lastUpdated != nil }
+    for level in 51...80 { monitor.change(to: audio(Double(level) / 100)) }
+    try await awaitCondition { volume.output.text == "80" }
+    #expect(volume.diagnostics.executionCount <= 3)
 }

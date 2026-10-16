@@ -125,7 +125,7 @@ Widget properties override their template recursively. `widgetOverrides` applies
 
 Included files are watched even outside the main directory. A missing module or directory is watched for repair; the last working bar remains visible meanwhile.
 
-[examples/modular](examples/modular/config.json) is a complete, dependency-free starter with a theme that styles the shared data states, a template, an event-only status that fades in new text, a CPU widget whose rules set those states, a clock whose digits roll, and an optional volume widget that shows the volume for a moment after a scroll changes it. Try it without replacing your personal configuration:
+[examples/modular](examples/modular/config.json) is a complete, dependency-free starter with a theme that styles the shared data states, a template, an event-only status that fades in new text, a CPU widget whose rules set those states, a clock whose digits roll, and an optional volume widget that shows the volume for a moment after a scroll or click, or when `volumeChange` reports a change made elsewhere. Try it without replacing your personal configuration:
 
 ```sh
 ./dist/StableBar.app/Contents/MacOS/StableBar --validate examples/modular/config.json
@@ -485,8 +485,10 @@ Add `events` to a script widget to refresh it on named events, alongside its int
 | `wake` | The Mac wakes from sleep | Not set |
 | `yabai` | `StableBar --trigger yabai` runs, usually from a yabai signal; StableBar also refreshes its workspaces | The trigger's `INFO`, if any |
 | `powerSourceChange` | The Mac switches between its power adapter and battery | `ac` or `battery` |
+| `volumeChange` | The default output device's volume or mute state changes | The volume as a whole percentage, empty without a volume control; `MUTED` is `true` or `false` |
+| `outputDeviceChange` | The default output device changes | The device's name, empty when there is none |
 
-`powerSourceChange` comes from the `battery` data source. Subscribing to it runs that source while the subscribing widget is enabled, even when no widget shows it, and keeps it running while its own widgets are hidden. Other names subscribe to macOS distributed notifications, for example `com.spotify.client.PlaybackStateChanged`.
+`powerSourceChange` comes from the `battery` data source, and `volumeChange` and `outputDeviceChange` from the `audio` source. Subscribing to one of them runs that source while the subscribing widget is enabled, even when no widget shows it, and keeps it running while its own widgets are hidden. A provider of another type named `battery` or `audio`, such as your own stream, keeps the built-in source from starting. Other names subscribe to macOS distributed notifications, for example `com.spotify.client.PlaybackStateChanged`.
 
 External hooks can trigger an event without launching another bar:
 
@@ -712,7 +714,7 @@ Define a provider once and reference it from several widgets. StableBar keeps on
 }
 ```
 
-Provider `type` is `command`, `stream`, `system`, `network`, `battery`, `audio` or `calendar`. `command` and `stream` require a shell `command`. `interval` defaults to 5 seconds: the polling interval for commands, `system`, `network` and `audio`, and for `calendar` until it has access; the first reconnect delay for streams; and for `battery`, which updates when macOS reports a change, the first retry delay after a failure. `timeout` defaults to 10 seconds and applies to command providers; streams remain running until they exit, fail, suspend or stop. Provider intervals and timeouts must be positive and finite.
+Provider `type` is `command`, `stream`, `system`, `network`, `battery`, `audio` or `calendar`. `command` and `stream` require a shell `command`. `interval` defaults to 5 seconds: the polling interval for commands, `system` and `network`, and for `calendar` until it has access; the first reconnect delay for streams; and for `audio` and `battery`, which update when macOS reports a change, the first retry delay after a failure. That first delay is `interval`, or 1 second if `interval` is shorter. `timeout` defaults to 10 seconds and applies to command providers; streams remain running until they exit, fail, suspend or stop. Provider intervals and timeouts must be positive and finite.
 
 A widget with `type` set to `system`, `network`, `battery`, `audio` or `calendar` uses the provider of that name. Without a definition in `providers`, it is a native provider of that type with default settings, shared by every widget that names it. Define a provider with the same name to change its interval or other settings. `{ "id": "power", "type": "battery", "position": "right" }` is enough for a battery widget.
 
@@ -720,7 +722,7 @@ Provider `environment` overlays the top-level environment. `NAME` is the provide
 
 A stream writes one complete JSON object per line, including `text`, and flushes stdout after each update. Empty lines are ignored; the final line may omit its newline. Streaming output represents current state: when updates arrive faster than the UI consumes them, only the newest pending update is retained. Each line is limited to 1 MiB; stderr retains its latest 16 KiB. Malformed output stops the process and retains the last good value. Clean exits and failures reconnect with exponential backoff, capped at five minutes or the configured interval if longer. Ten seconds of successful streaming resets the failure streak.
 
-Set `whenVisible` to `true` to suspend a provider when none of its consumers is visible on any display, including widgets moved to overflow. Removing or disabling the last consuming widget stops the provider. System sleep suspends scripts and providers; resuming preserves the last output and graph history, and starts a fresh update with `SENDER=resume`. A suspended or stopped `battery` provider removes its macOS listener. A provider whose events a widget subscribes to stays running; see [Script events](#script-events).
+Set `whenVisible` to `true` to suspend a provider when none of its consumers is visible on any display, including widgets moved to overflow. Removing or disabling the last consuming widget stops the provider. System sleep suspends scripts and providers; resuming preserves the last output and graph history, and starts a fresh update with `SENDER=resume`. A suspended or stopped `audio` or `battery` provider removes its macOS listeners. A provider whose events a widget subscribes to stays running; see [Script events](#script-events).
 
 Native providers use public macOS APIs and launch no shell commands:
 
@@ -729,14 +731,14 @@ Native providers use public macOS APIs and launch no shell commands:
 | `system` | `value` and `values.cpu`: CPU fraction; `values.memory`: used-memory fraction; `values.memoryUsed` and `values.memoryTotal`: bytes. `fields.cpu` and `fields.memory` are whole percentages. Used memory includes internal, wired and compressed pages, excluding purgeable pages. |
 | `network` | `values.download` and `values.upload`: aggregate bytes/second across up `en*` Wi-Fi/Ethernet interfaces. `fields.interface`: interface names. `lists.interfaces`: rows with `name`, `download`, `upload`. Virtual VPN interfaces are excluded to avoid counting the same traffic twice. |
 | `battery` | `value` and `values.percent`: charge fraction. `fields.percent`: whole percentage; `fields.state`: `charging`, `charged`, `battery` or `ac`; `fields.present`: `true`/`false`; optional `fields.timeRemaining`: minutes. Desktops without a battery return `AC` without a charge value. Updates when the charge, the time remaining or the power source changes, without polling. |
-| `audio` | `value` and `values.volume`: output-volume fraction when supported. `fields.device`, `fields.deviceID`, `fields.volumeAvailable` and optional `fields.muted`; `lists.devices`: output-device rows with `id` and `name`. Fixed-volume devices can omit volume, and no output device returns `No output`. |
+| `audio` | `value` and `values.volume`: output-volume fraction when supported. `fields.device`, `fields.deviceID`, `fields.volumeAvailable` and optional `fields.muted`; `lists.devices`: output-device rows with `id` and `name`. Fixed-volume devices can omit volume, and no output device returns `No output`. Updates as soon as the volume, the mute state or the default output device changes, without polling. |
 | `calendar` | The next meeting and today's agenda; see [Calendar](#calendar). |
 
-Fractions use 0–1. CPU and network rates are deltas; their first sample after startup or resume is zero. `battery` adds a graph sample for each change rather than each interval. Native audio is a data source; use a control's `onChange` command to change volume or devices.
+Fractions use 0–1. CPU and network rates are deltas; their first sample after startup or resume is zero. `audio` and `battery` add a graph sample for each change rather than each interval. Native audio is a data source; use a control's `onChange` command to change volume or devices.
 
 Native providers can't return `state`. Give their widgets `rules` to set a data state from `values` or `fields`, such as a battery `warning` at 20 %; see [Data states](#data-states).
 
-Scripts and providers expose diagnostics in **Customize → Diagnostics** and the runtime query: running/suspended state, last event/start/update, execution duration, bounded stdout/stderr, execution/failure/restart counts and next retry delay. Streams and the native sources macOS notifies of changes, such as `battery`, count as running while connected, and each update sets their last update time. CPU time is cumulative completed-command CPU time, not a live resource meter for a running stream. Diagnostics and graph history survive style-only edits and suspension. The existing process-group cancellation limit for deliberately detached descendants also applies to streams.
+Scripts and providers expose diagnostics in **Customize → Diagnostics** and the runtime query: running/suspended state, last event/start/update, execution duration, bounded stdout/stderr, execution/failure/restart counts and next retry delay. Streams and the native sources macOS notifies of changes, such as `battery` and `audio`, count as running while connected, and each update sets their last update time. CPU time is cumulative completed-command CPU time, not a live resource meter for a running stream. Diagnostics and graph history survive style-only edits and suspension. The existing process-group cancellation limit for deliberately detached descendants also applies to streams.
 
 ### Calendar
 
@@ -951,7 +953,8 @@ For new native widget types, add a case to `WidgetContent`, decode its settings 
 - [ConfigurationEdits.swift](Sources/StableBar/ConfigurationEdits.swift): file-preserving edits shared by CLI and editor.
 - [RuntimeControl.swift](Sources/StableBar/RuntimeControl.swift): local request/reply control endpoint.
 - [ConfigurationEditor.swift](Sources/StableBar/ConfigurationEditor.swift): preview, undo/redo and validated persistence.
-- [NativeMetrics.swift](Sources/StableBar/NativeMetrics.swift): CPU, memory, network, audio and calendar readings.
+- [NativeMetrics.swift](Sources/StableBar/NativeMetrics.swift): CPU, memory, network and calendar readings.
+- [AudioMonitor.swift](Sources/StableBar/AudioMonitor.swift): output-device readings and CoreAudio change listeners.
 - [PowerMonitor.swift](Sources/StableBar/PowerMonitor.swift): battery readings and power-change notifications.
 - [WidgetPackage.swift](Sources/StableBar/WidgetPackage.swift): package inspection, installation, store downloads and version selection.
 - [Workspaces.swift](Sources/StableBar/Workspaces.swift): AeroSpace subscriptions, yabai refreshes and workspace actions.

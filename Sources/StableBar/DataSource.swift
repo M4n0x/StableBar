@@ -142,13 +142,56 @@ final class StreamSource: DataSource {
 /// Native data that macOS reports changes to, such as the battery or the default audio device.
 /// A push source reads it once per change. Tests replace it with a fake.
 protocol ChangeMonitor: AnyObject, Sendable {
-    /// Reads the current state. Called from any thread.
+    /// Reads the current state. Called on the main actor.
     func read() throws -> ScriptOutput
-    /// Calls `changed`, from any thread, whenever the state may have changed, until `stop()`.
-    /// `start` and `stop` are called on the main actor. Like a data source, a monitor may be stopped
-    /// before it starts or twice, and started again after it stops.
+    /// Calls `changed` on the main actor whenever the state may have changed, until `stop()`. A
+    /// monitor that hears of changes on another thread hops to the main actor first, so that a
+    /// change never runs between a refresh's read and its send. `start` and `stop` are called on
+    /// the main actor. Like a data source, a monitor may be stopped before it starts or twice, and
+    /// started again after it stops.
     func start(changed: @escaping @Sendable () -> Void) throws
     func stop()
+}
+
+/// Hands a monitor's changes from the thread that hears of them to the main queue. At most one hop
+/// waits per run, so a burst of changes reads once, and a hop that arrives after its run stopped
+/// is dropped, so `changed` never runs after `stop`.
+final class MainQueueRelay: Sendable {
+    private struct State {
+        var run = 0
+        var changed: (@Sendable () -> Void)?
+        var waiting = false
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    /// Starts a run that calls `changed` on the main queue, ending the one before it.
+    func start(_ changed: @escaping @Sendable () -> Void) {
+        state.withLock { $0 = State(run: $0.run + 1, changed: changed) }
+    }
+
+    func stop() {
+        state.withLock { $0 = State(run: $0.run + 1) }
+    }
+
+    /// Reports a change from any thread. While a hop of this run waits for the main queue, it
+    /// carries this change too.
+    func notify() {
+        let run: Int? = state.withLock { state in
+            guard state.changed != nil, !state.waiting else { return nil }
+            state.waiting = true
+            return state.run
+        }
+        guard let run else { return }
+        DispatchQueue.main.async { [state] in
+            let changed = state.withLock { state -> (@Sendable () -> Void)? in
+                guard state.run == run else { return nil }
+                state.waiting = false
+                return state.changed
+            }
+            changed?()
+        }
+    }
 }
 
 /// A source that updates when macOS reports a change, without a timer: its run stays open, reading
@@ -156,8 +199,8 @@ protocol ChangeMonitor: AnyObject, Sendable {
 @MainActor
 final class PushSource: DataSource {
     private let monitor: any ChangeMonitor
-    /// The last output read, so a notification that changes nothing sends nothing. Locked, since
-    /// notifications may arrive on any thread.
+    /// The last output read, so a notification that changes nothing sends nothing. Only read on the
+    /// main actor, where a monitor delivers changes; the lock lets the `@Sendable` closure share it.
     private let last = OSAllocatedUnfairLock<ScriptOutput?>(initialState: nil)
     private var emit: (@Sendable (SourceUpdate) -> Void)?
 

@@ -1119,7 +1119,7 @@
         },
         "interval": {
           "$ref": "#/definitions/number",
-          "description": "Seconds between updates for command, system, network and audio providers, and for calendar until it has access; for stream and battery, the first retry delay after a failure."
+          "description": "Seconds between updates for command, system and network providers, and for calendar until it has access; for stream, audio and battery, the first retry delay after a failure, which is at least 1 second."
         },
         "timeout": {
           "$ref": "#/definitions/number"
