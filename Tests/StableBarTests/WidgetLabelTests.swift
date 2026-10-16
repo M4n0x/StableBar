@@ -47,25 +47,35 @@ private func output(_ json: String) throws -> ScriptOutput {
     #expect(store.label(for: app).text == NSRunningApplication.current.localizedName ?? "Desktop")
 }
 
-@Test @MainActor func snapshotsShowWhatEveryWidgetShows() throws {
+@Test @MainActor func snapshotsShowWhatEveryWidgetShows() async throws {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let url = directory.appending(path: "config.json")
     try Data(#"""
     {"widgets":[{"id":"note","type":"text","text":"Ready","icon":"bolt","position":"left"},
-                {"id":"time","type":"clock","format":"HH:mm","position":"right"}]}
+                {"id":"time","type":"clock","format":"HH:mm","position":"right"},
+                {"id":"jobs","type":"script","icon":"bolt","position":"right","interval":null,
+                 "command":"printf '{\"text\":\"Busy\",\"icon\":\"hammer\",\"fields\":{\"count\":\"3\"}}'"}]}
     """#.utf8).write(to: url)
     let store = BarStore(configurationURL: url)
     defer { store.stop() }
     store.reloadConfiguration()
-    guard case let .object(note) = try store.snapshot(id: "note"), case let .object(time) = try store.snapshot(id: "time") else {
+    for _ in 0..<100 {
+        if store.scripts["jobs"]?.output.text == "Busy" { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    guard case let .object(note) = try store.snapshot(id: "note"), case let .object(time) = try store.snapshot(id: "time"),
+          case let .object(jobs) = try store.snapshot(id: "jobs") else {
         Issue.record("Expected object snapshots")
         return
     }
     #expect(note["text"] == .string("Ready"))
     #expect(note["icon"] == .string("bolt"))
     #expect(note["fields"] == .object(["text": .string("Ready"), "icon": .string("bolt")]))
+    #expect(jobs["text"] == .string("Busy"))
+    #expect(jobs["icon"] == .string("hammer"))
+    #expect(jobs["fields"] == .object(["count": .string("3"), "text": .string("Busy"), "icon": .string("hammer")]))
     #expect(time["icon"] == .null)
     guard case let .string(clock)? = time["text"] else {
         Issue.record("Expected the clock's text")

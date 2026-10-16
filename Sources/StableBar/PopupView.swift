@@ -60,6 +60,11 @@ struct BlockContext {
     let open: (OpenTarget) -> Void
     /// The widget's states, such as `open`; each block adds its own hover.
     var states = StyleStates()
+    /// False when the inherited style already has the widget's hover and open states, as in default
+    /// layouts, so blocks don't add their own hover.
+    var tracksHover = true
+    /// The frontmost app's icon, for an active-app widget's default layout.
+    var appIcon: NSImage?
     let runAction: (String, [String: String]) -> Void
 }
 
@@ -109,6 +114,11 @@ struct PopupBlockView: View {
             } else if let value = block.openField.flatMap({ fields[$0] }) ?? block.open {
                 Button { if let target = OpenTarget(value) { context.open(target) } } label: { content(resting, appearance: appearance) }
                     .buttonStyle(.plain)
+            } else if block.keepsLineHeight {
+                ZStack {
+                    Text(" ").hidden()
+                    content(resting, appearance: appearance)
+                }
             } else {
                 content(resting, appearance: appearance)
             }
@@ -129,7 +139,7 @@ struct PopupBlockView: View {
             }
             .offset(x: box.offsetX ?? 0, y: box.offsetY ?? 0)
             .opacity(box.opacity ?? 1)
-            .onHover { hovered = $0 }
+            .onHover { if context.tracksHover { hovered = $0 } }
             .animation(reduceMotion ? nil : block.animation?.value, value: box)
             .animation(reduceMotion ? nil : block.animation?.value, value: hovered)
     }
@@ -159,8 +169,10 @@ struct PopupBlockView: View {
         case let .field(name):
             if let speed = block.scrollSpeed {
                 ScrollingText(text: fields[name] ?? "", font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
-            } else {
+            } else if block.monospacedDigits {
                 Text(fields[name] ?? "—").lineLimit(1).monospacedDigit()
+            } else {
+                Text(fields[name] ?? "—").lineLimit(1)
             }
         case let .graph(height, source, lineWidth):
             Sparkline(samples: source.flatMap { context.series[$0] } ?? context.samples)
@@ -217,6 +229,10 @@ struct PopupBlockView: View {
                          animation: block.animation ?? WidgetAnimation(), color: appearance.accent,
                          track: style.text.background?.color ?? .clear, cornerRadius: appearance.cornerRadius)
                 .frame(height: height)
+        case .appIcon:
+            if let icon = context.appIcon {
+                Image(nsImage: icon).resizable().frame(width: appearance.iconSize, height: appearance.iconSize)
+            }
         }
     }
 }

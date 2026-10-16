@@ -312,7 +312,11 @@ struct WidgetView: View {
         .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
         .overlay(alignment: .bottom) {
             if let overlay = widget.overlay {
-                block(overlay, date: .now, style: resolution.base, states: resolution.blockStates(open: isOpen), fillsWidth: true).allowsHitTesting(false)
+                timed { date in
+                    WidgetBlocks(widget: widget, store: store, style: resolution.layoutStyle(configured: true, hovered: hovered, open: isOpen),
+                                 block: overlay, date: date, fillsWidth: true, runAction: blockAction)
+                }
+                .allowsHitTesting(false)
             }
         }
         .overlay {
@@ -345,17 +349,9 @@ struct WidgetView: View {
 
     @ViewBuilder
     private func content(_ appearance: WidgetAppearance, resolution: ResolvedWidgetStyle, open: Bool) -> some View {
-        if let layout = widget.layout {
-            Group {
-                if case let .clock(format) = widget.content {
-                    TimelineView(clockSchedule(format)) { context in
-                        block(layout, date: context.date, style: resolution.base, states: resolution.blockStates(open: open), fillsWidth: false)
-                    }
-                } else {
-                    block(layout, date: .now, style: resolution.base, states: resolution.blockStates(open: open), fillsWidth: false)
-                }
-            }
-            .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
+        if widget.layout != nil {
+            timed { date in blocks(resolution, open: open, date: date) }
+                .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
         } else {
             switch widget.content {
             case .workspaces:
@@ -363,64 +359,119 @@ struct WidgetView: View {
                               appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
                               animationDuration: animationDuration,
                               configuration: widget.workspace, animation: widget.animation, defaults: widget.style.inheriting(defaults))
-            case .activeApp:
-                HStack(spacing: appearance.spacing) {
-                    if let icon = store.activeApp?.icon {
-                        Image(nsImage: icon).resizable().frame(width: appearance.iconSize, height: appearance.iconSize)
-                    }
-                    Text(store.label(for: widget).text).lineLimit(1)
-                }
             case let .clock(format):
                 TimelineView(clockSchedule(format)) { context in
-                    let shown = store.label(for: widget, date: context.date)
-                    label(shown.text, icon: shown.icon, appearance: appearance)
-                        .monospacedDigit()
+                    BuiltInLabel(content: widget.content, label: store.label(for: widget, date: context.date), appearance: appearance)
                 }
-            case .text:
-                let shown = store.label(for: widget)
-                label(shown.text, icon: shown.icon, appearance: appearance)
             case .spacer:
                 Spacer(minLength: resolution.base.minWidth ?? 0)
             case .script, .provider:
                 if let script = store.scripts[widget.id] {
-                    let shown = store.label(for: widget)
-                    HStack(spacing: appearance.spacing) {
-                        if script.output.value != nil {
-                            Sparkline(samples: script.samples)
-                                .stroke(appearance.accent, lineWidth: 1.2)
-                                .frame(width: 40, height: 16)
-                        }
-                        label(shown.text, icon: shown.icon, appearance: appearance)
-                    }
-                        .foregroundStyle(appearance.foreground)
+                    BuiltInLabel(content: widget.content, label: store.label(for: widget),
+                                 samples: script.output.value == nil ? nil : script.samples, appearance: appearance)
                         .help(script.error ?? script.output.tooltip ?? "")
                 }
+            default:
+                BuiltInLabel(content: widget.content, label: store.label(for: widget),
+                             appIcon: widget.content == .activeApp ? store.activeApp?.icon : nil, appearance: appearance)
             }
         }
     }
 
-    private func block(_ block: PopupBlock, date: Date, style: WidgetStyle, states: StyleStates, fillsWidth: Bool) -> some View {
-        let script = store.scripts[widget.id]
-        return PopupBlockView(block: block, inheritedStyle: style, fields: store.label(for: widget, date: date).fields,
-                              context: BlockContext(lists: script?.output.lists ?? [:], samples: script?.samples ?? [],
-                                                    menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
-                                                    targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
-                                                    series: script?.output.series ?? [:], fillsWidth: fillsWidth, open: { $0.open() }, states: states) { command, environment in
-            if environment.isEmpty {
-                runAction(command, sender: "mouse.clicked", button: "left")
-            } else {
-                store.runAction(command, widget: widget,
-                                event: ScriptEvent(sender: "control.changed", environment: environment.merging(["SID": String(monitor)]) { first, _ in first }))
-            }
-        })
+    /// `content` drawn for the time the widget shows: a clock's, redrawn on its schedule, otherwise now.
+    @ViewBuilder
+    private func timed<Content: View>(@ViewBuilder _ content: @escaping (Date) -> Content) -> some View {
+        if case let .clock(format) = widget.content {
+            TimelineView(clockSchedule(format)) { context in content(context.date) }
+        } else {
+            content(.now)
+        }
     }
 
-    private func label(_ text: String, icon: String?, appearance: WidgetAppearance) -> some View {
+    private func blocks(_ resolution: ResolvedWidgetStyle, open: Bool, date: Date) -> some View {
+        WidgetBlocks(widget: widget, store: store,
+                     style: resolution.layoutStyle(configured: widget.layout != nil, hovered: hovered, open: open),
+                     date: date, runAction: blockAction)
+    }
+
+    private func blockAction(_ command: String, _ environment: [String: String]) {
+        if environment.isEmpty {
+            runAction(command, sender: "mouse.clicked", button: "left")
+        } else {
+            store.runAction(command, widget: widget,
+                            event: ScriptEvent(sender: "control.changed", environment: environment.merging(["SID": String(monitor)]) { first, _ in first }))
+        }
+    }
+}
+
+/// One of a widget's block trees drawn with its data: `block` when given, such as its overlay,
+/// otherwise its `layout`, otherwise the default layout of its type.
+struct WidgetBlocks: View {
+    let widget: WidgetConfiguration
+    let store: BarStore
+    let style: LayoutStyle
+    var block: PopupBlock?
+    var date = Date.now
+    var fillsWidth = false
+    let runAction: (String, [String: String]) -> Void
+
+    var body: some View {
+        let script = store.scripts[widget.id]
+        let label = store.label(for: widget, date: date)
+        let appIcon = widget.content == .activeApp ? store.activeApp?.icon : nil
+        if let layout = block ?? widget.layout ?? widget.defaultLayout(label, output: script?.output, appIcon: appIcon != nil) {
+            PopupBlockView(block: layout, inheritedStyle: style.inherited, fields: label.fields,
+                           context: BlockContext(lists: script?.output.lists ?? [:], samples: script?.samples ?? [],
+                                                 menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
+                                                 targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
+                                                 series: script?.output.series ?? [:], fillsWidth: fillsWidth, open: { $0.open() },
+                                                 states: style.states, tracksHover: style.tracksHover, appIcon: appIcon, runAction: runAction))
+        }
+    }
+}
+
+/// A built-in widget's content drawn the way StableBar drew it before default layouts. Default
+/// layouts are tested against it.
+struct BuiltInLabel: View {
+    let content: WidgetContent
+    let label: WidgetLabel
+    var appIcon: NSImage?
+    /// The script's graph samples, when its output has a `value`.
+    var samples: [Double]?
+    let appearance: WidgetAppearance
+
+    var body: some View {
+        switch content {
+        case .activeApp:
+            HStack(spacing: appearance.spacing) {
+                if let appIcon {
+                    Image(nsImage: appIcon).resizable().frame(width: appearance.iconSize, height: appearance.iconSize)
+                }
+                Text(label.text).lineLimit(1)
+            }
+        case .clock:
+            text.monospacedDigit()
+        case .script, .provider:
+            HStack(spacing: appearance.spacing) {
+                if let samples {
+                    Sparkline(samples: samples)
+                        .stroke(appearance.accent, lineWidth: 1.2)
+                        .frame(width: 40, height: 16)
+                }
+                text
+            }
+                .foregroundStyle(appearance.foreground)
+        default:
+            text
+        }
+    }
+
+    private var text: some View {
         ZStack {
             Text(" ").hidden()
             HStack(spacing: appearance.spacing) {
-                if let icon { Image(systemName: icon).font(.system(size: appearance.iconSize)) }
-                if !text.isEmpty { Text(text).lineLimit(1) }
+                if let icon = label.icon { Image(systemName: icon).font(.system(size: appearance.iconSize)) }
+                if !label.text.isEmpty { Text(label.text).lineLimit(1) }
             }
         }
     }

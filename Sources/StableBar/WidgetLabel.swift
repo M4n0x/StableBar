@@ -45,3 +45,33 @@ extension BarStore {
                      activeApp: widget.content == .activeApp ? activeApp?.localizedName : nil, date: date)
     }
 }
+
+extension WidgetConfiguration {
+    /// The blocks a widget without `layout` draws, matching the look built-in widgets had before
+    /// they were drawn through blocks: its icon and text in a row at least a line of text tall, after
+    /// a 40 × 16 graph for output with a `value`, or after the app's icon for the active app.
+    /// `appIcon` says whether the frontmost app has one. Workspaces, spacers and scripts without
+    /// output have none.
+    func defaultLayout(_ label: WidgetLabel, output: ScriptOutput?, appIcon: Bool) -> PopupBlock? {
+        let icon = label.icon.map { _ in PopupBlock(content: .symbol(name: "", source: "icon")) }
+        let text = PopupBlock(content: .field("text"), hideWhenEmpty: "text", monospacedDigits: false)
+        switch content {
+        case .text:
+            return PopupBlock(content: .row([icon, text].compactMap { $0 }), keepsLineHeight: true)
+        case .clock:
+            return PopupBlock(content: .row([icon, PopupBlock(content: .field("text"), hideWhenEmpty: "text")].compactMap { $0 }),
+                              keepsLineHeight: true)
+        case .activeApp:
+            let app = appIcon ? PopupBlock(content: .appIcon) : nil
+            return PopupBlock(content: .row([app, PopupBlock(content: .field("text"), monospacedDigits: false)].compactMap { $0 }))
+        case .script, .provider:
+            guard let output else { return nil }
+            let graph = output.value == nil ? nil
+                : PopupBlock(content: .graph(height: 16, source: nil, lineWidth: 1.2), style: WidgetStyle(width: 40))
+            let label = PopupBlock(content: .row([icon, text].compactMap { $0 }), keepsLineHeight: true)
+            return PopupBlock(content: .row([graph, label].compactMap { $0 }))
+        case .workspaces, .spacer:
+            return nil
+        }
+    }
+}
