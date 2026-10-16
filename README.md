@@ -186,14 +186,17 @@ Other names work too. `hover`, `open`, `focused`, `visible` and `empty` are Stab
 "defaults": {
   "states": {
     "warning": { "foreground": "#f5b041" },
-    "critical": { "foreground": "#ffffff", "background": "#c0392b" },
+    "critical": {
+      "foreground": "#ffffff", "background": "#c0392b",
+      "states": { "hover": { "background": "#a93226" } }
+    },
     "active": { "foreground": "#69d2b0" },
     "muted": { "opacity": 0.5 }
   }
 }
 ```
 
-A widget's own `states` override the theme's property by property. The data state applies first, so `hover` and `open` still show over it. It also reaches the widget's `layout` and `overlay` blocks, which apply their own `states` for it. Popups keep their own styles.
+A widget's own `states` override the theme's property by property. The data state applies first, so `hover` and `open` still show over it. Hover applies over the data state, so a state that sets a background should also set its hover background in its own `states`. A data state also reaches the widget's `layout` and `overlay` blocks, which apply their own `states` for it. Popups keep their own styles.
 
 Native providers can't return `state`, so a widget can set it with `rules`. The first rule that matches the latest output sets the state; a `state` in the output takes precedence:
 

@@ -13,7 +13,11 @@
     "states": {
       "hover": { "background": "#29384b" },
       "warning": { "foreground": "#f5c26b" },
-      "critical": { "foreground": "#18212d", "background": "#f28b82" },
+      "critical": {
+        "foreground": "#18212d",
+        "background": "#f28b82",
+        "states": { "hover": { "background": "#f5a59e" } }
+      },
       "active": { "foreground": "#8bd5ca" },
       "muted": { "opacity": 0.5 }
     }

@@ -364,7 +364,15 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     let modular = try loader.load(repository.appending(path: "examples/modular/config.json"))
     #expect(modular.defaults.hoverBackground == HexColor(0x29384bff))
     #expect(modular.defaults.states?["warning"]?.foreground == HexColor(0xf5c26bff))
-    #expect(modular.widgets.first { $0.id == "cpu" }?.rules.map(\.state) == ["critical", "warning"])
+    let cpu = try #require(modular.widgets.first { $0.id == "cpu" })
+    #expect(cpu.rules.map(\.state) == ["critical", "warning"])
+    let critical = ResolvedWidgetStyle(base: resolveStyle([modular.defaults, cpu.style]), state: "critical")
+    #expect(critical.style(hovered: false).background == HexColor(0xf28b82ff))
+    #expect(critical.style(hovered: true).background == HexColor(0xf5a59eff))
+    #expect(critical.style(hovered: true).foreground == HexColor(0x18212dff))
+    for (name, state) in modular.defaults.states ?? [:] where state.background != nil && !StyleStates.reservedNames.contains(name) {
+        #expect(state.states?["hover"]?.background != nil, "\(name) needs its own hover background")
+    }
     let interactive = try loader.load(repository.appending(path: "examples/interactive/config.json"))
     #expect(interactive.defaults.states?["open"]?.borderWidth == 1)
     _ = try loader.load(repository.appending(path: "Resources/config.json"))
