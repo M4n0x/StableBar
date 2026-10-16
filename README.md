@@ -349,7 +349,7 @@ A `workspaces` widget (also accepted as `aerospace`) accepts `workspace` with:
 - `indicatorStyle`: underline `height`, `width`, `background`, `cornerRadius`, `offsetX`, `offsetY`.
 - `style`, `focusedStyle`, `visibleStyle`, `emptyStyle`: cell typography, foreground, width, height, horizontal/side padding and spacing. The background indicator uses the state's background or border color.
 - `showEmpty` and `showApps`: control empty workspaces and app icons.
-- `appStyle`, `focusedAppStyle`, `visibleAppStyle`: font and foreground for app glyphs, width and height for native app icons.
+- `appStyle`, `focusedAppStyle`, `visibleAppStyle`: font and foreground for app glyphs, width and height in screen points for native app icons (14 × 14 by default).
 - `appGlyphs`: app bundle ID or app name to text glyph. Set `appStyle.fontName` to an installed icon font to use its ligatures. A key ending in `*` matches app names that start with the rest of the key, such as `Adobe Photoshop*` for `Adobe Photoshop 2026`. Exact bundle IDs and names win over these keys, and among them the longest key wins. Use `"*"` alone for the fallback glyph; otherwise unmapped apps retain native icons.
 
 For a sliding underline, set `workspace.indicator` to `underline`, `workspace.style.height` to the bar's height, and `workspace.indicatorStyle` to `{ "height": 2, "background": "#f1efe8" }`. The widget's `animation` controls its motion.

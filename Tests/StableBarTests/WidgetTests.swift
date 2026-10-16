@@ -235,6 +235,54 @@ import Testing
     #expect(icons.image(for: "com.example.new-app") === image)
 }
 
+@Test @MainActor func nativeWorkspaceIconsUseDetailedArtworkOnStandardAndRetinaDisplays() throws {
+    let source = NSImage(size: NSSize(width: 32, height: 32))
+    for (pixels, color) in [(32, NSColor.red), (256, NSColor.blue)] {
+        let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels,
+                                                  bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                                  isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        bitmap.size = NSSize(width: pixels, height: pixels)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        color.setFill()
+        NSRect(origin: .zero, size: bitmap.size).fill()
+        NSGraphicsContext.restoreGraphicsState()
+        source.addRepresentation(bitmap)
+    }
+    let icons = WorkspaceAppIcons { _ in source }
+    for scale in [1.0, 2.0] {
+        let size = NSSize(width: 20, height: 20)
+        let image = try #require(icons.image(for: "com.example.multiresolution", size: size, scale: scale))
+        let pixels = try #require(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        #expect(pixels.width == Int(20 * scale))
+        #expect(pixels.height == Int(20 * scale))
+        #expect(image.size == size)
+        #expect(icons.image(for: "com.example.multiresolution", size: size, scale: scale) === image)
+        let native = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(20 * scale), pixelsHigh: Int(20 * scale),
+                                                  bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                                  isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        native.size = NSSize(width: 20, height: 20)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: native)
+        image.draw(in: NSRect(origin: .zero, size: native.size), from: .zero, operation: .copy, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        let nativeCenter = try #require(native.colorAt(x: native.pixelsWide / 2, y: native.pixelsHigh / 2)?.usingColorSpace(.deviceRGB))
+        #expect(nativeCenter.blueComponent > 0.9)
+        #expect(nativeCenter.redComponent < 0.1)
+
+        let renderer = ImageRenderer(content: Image(nsImage: image).resizable().interpolation(.high).frame(width: 20, height: 20))
+        renderer.scale = scale
+        let rendered = try #require(renderer.cgImage)
+        #expect(rendered.width == Int(20 * scale))
+        #expect(rendered.height == Int(20 * scale))
+        let bitmap = NSBitmapImageRep(cgImage: rendered)
+        let center = try #require(bitmap.colorAt(x: rendered.width / 2, y: rendered.height / 2)?.usingColorSpace(.deviceRGB))
+        #expect(center.blueComponent > 0.9)
+        #expect(center.redComponent < 0.1)
+    }
+    #expect(source.size == NSSize(width: 32, height: 32))
+}
+
 @Test func notchGroupsStayOutsideAnOffCenterNotch() {
     let layout = BarLayout(inset: 12, spacing: 8, notchSpacing: 16, notch: 720...940)
     let x = layout.origins(width: 1728, sizes: [180, 260, 0, 200, 340])

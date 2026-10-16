@@ -438,6 +438,7 @@ struct WorkspaceView: View {
     var animation: WidgetAnimation?
     var defaults = WidgetStyle()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     @Namespace private var selection
     @State private var hoveredWorkspace: String?
     @State private var appIcons = WorkspaceAppIcons()
@@ -467,10 +468,14 @@ struct WorkspaceView: View {
                                         .foregroundStyle((hoveredWorkspace == workspace.name ? appStyle.hoverForeground?.color : nil)
                                                          ?? appStyle.foreground?.color ?? appearance.foreground)
                                         .help(app.name)
-                                } else if let image = appIcons.image(for: app.bundleID) {
+                                } else if let image = appIcons.image(for: app.bundleID,
+                                                                   size: NSSize(width: appStyle.width ?? 14, height: appStyle.height ?? 14),
+                                                                   scale: displayScale) {
                                     Image(nsImage: image)
                                         .renderingMode(.original)
-                                        .resizable().frame(width: appStyle.width ?? 14, height: appStyle.height ?? 14)
+                                        .resizable()
+                                        .interpolation(.high)
+                                        .frame(width: appStyle.width ?? 14, height: appStyle.height ?? 14)
                                         .help(app.name)
                                 }
                             }
