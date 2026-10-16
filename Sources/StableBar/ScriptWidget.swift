@@ -155,7 +155,7 @@ final class ScriptWidget {
                             try Task.checkCancellation()
                             throw CommandFailure(message: "Streaming provider exited.")
                         default:
-                            try accept(metrics.sample(provider.type))
+                            try accept(metrics.sample(provider))
                         }
                     }
                     diagnostics.consecutiveFailures = 0

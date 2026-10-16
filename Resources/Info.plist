@@ -12,4 +12,5 @@
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSAppleEventsUsageDescription</key><string>Read app status and run actions configured in your widgets.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key><string>Show your next meeting and today's agenda in calendar widgets.</string>
 </dict></plist>
