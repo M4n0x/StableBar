@@ -302,7 +302,7 @@ struct WidgetPackageStore {
     }
 }
 
-// Unlike manifests, the index ignores unknown keys, because older apps read the same index.
+// Unlike manifests, the index ignores unknown keys and entries of unknown kinds, because older apps read the same index.
 struct PackageIndex: Decodable {
     struct Entry: Decodable {
         let id: String
@@ -318,6 +318,18 @@ struct PackageIndex: Decodable {
     static let url = URL(string: "https://github.com/Seb-GRAF/stablebar-packages/releases/download/store/index.json")!
 
     let packages: [Entry]
+
+    init(from decoder: Decoder) throws {
+        var entries = try decoder.container(keyedBy: ConfigurationKey.self).nestedUnkeyedContainer(forKey: ConfigurationKey(stringValue: "packages"))
+        var packages: [Entry] = []
+        while !entries.isAtEnd {
+            let entry = try entries.superDecoder()
+            if let kind = try entry.container(keyedBy: ConfigurationKey.self).decodeIfPresent(String.self, forKey: ConfigurationKey(stringValue: "kind")),
+               WidgetPackageManifest.Kind(rawValue: kind) == nil { continue }
+            packages.append(try Entry(from: entry))
+        }
+        self.packages = packages
+    }
 
     static func load(from url: URL) async throws -> PackageIndex {
         try JSONDecoder().decode(PackageIndex.self, from: await fetch(url))

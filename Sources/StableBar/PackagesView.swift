@@ -7,6 +7,8 @@ struct PackagesView: View {
     @State private var selections: [WidgetPackageSelection] = []
     @State private var inspection: WidgetPackageInspection?
     @State private var storeEntries: [PackageIndex.Entry] = []
+    @State private var storeError: String?
+    @State private var downloading: String?
     @State private var additions: [String] = []
     @State private var settings: [String: ConfigurationValue] = [:]
     @State private var error: String?
@@ -18,11 +20,15 @@ struct PackagesView: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                List(selection: Binding(get: { inspection.map { isInstalled($0) ? $0.manifest.versionKey : "store/\($0.manifest.versionKey)" } }, set: { key in
+                List(selection: Binding(get: { downloading ?? inspection.map { isInstalled($0) ? $0.manifest.versionKey : "store/\($0.manifest.versionKey)" } }, set: { key in
                     if let manifest = installed.first(where: { $0.versionKey == key || "store/\($0.versionKey)" == key }) {
                         perform { try select(packages.directory(id: manifest.id, version: manifest.version)) }
                     } else if let entry = storeEntries.first(where: { "store/\($0.id)/\($0.version)" == key }) {
-                        Task { await perform { try select(await packages.download(entry, from: PackageIndex.url)) } }
+                        downloading = key
+                        Task {
+                            await perform { try select(await packages.download(entry, from: PackageIndex.url)) }
+                            downloading = nil
+                        }
                     }
                 })) {
                     Section("Installed") {
@@ -48,6 +54,11 @@ struct PackagesView: View {
                         }
                     }
                     Section {
+                        if let storeError {
+                            Label(storeError, systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         ForEach(storeEntries, id: \.id) { entry in
                             let installedVersions = installed.filter { $0.id == entry.id }.map(\.version)
                             let tooOld = entry.minimumVersion.map(packages.requiresNewerApp) == true
@@ -89,7 +100,7 @@ struct PackagesView: View {
                         HStack {
                             Text("Store")
                             Spacer()
-                            Button("Reload Store", systemImage: "arrow.clockwise") { Task { await perform(loadStore) } }
+                            Button("Reload Store", systemImage: "arrow.clockwise") { Task { await loadStore() } }
                                 .labelStyle(.iconOnly)
                                 .buttonStyle(.borderless)
                                 .help("Reload the store")
@@ -109,7 +120,10 @@ struct PackagesView: View {
             .frame(minWidth: 220, maxWidth: 300, maxHeight: .infinity)
 
             VStack(spacing: 0) {
-                if let inspection {
+                if downloading != nil {
+                    ProgressView("Downloading…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let inspection {
                     packageDetails(inspection)
                 } else {
                     ContentUnavailableView {
@@ -136,7 +150,7 @@ struct PackagesView: View {
             .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear { perform(loadInstalled) }
-        .task { await perform(loadStore) }
+        .task { await loadStore() }
         .onChange(of: store.effectiveDocument) { _, _ in perform(loadInstalled) }
         .onChange(of: settings) { _, values in
             if let inspection {
@@ -313,8 +327,13 @@ struct PackagesView: View {
         return inspection.directory.standardizedFileURL == installedDirectory.standardizedFileURL
     }
 
-    private func loadStore() async throws {
-        storeEntries = try await PackageIndex.load(from: PackageIndex.url).packages
+    private func loadStore() async {
+        do {
+            storeEntries = try await PackageIndex.load(from: PackageIndex.url).packages
+            storeError = nil
+        } catch {
+            storeError = errorMessage(error)
+        }
     }
 
     private func loadInstalled() throws {

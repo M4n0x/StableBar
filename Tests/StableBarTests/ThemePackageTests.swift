@@ -436,11 +436,13 @@ private func writePackageFile(_ text: String, to url: URL) throws {
         #expect(error?.localizedDescription == message)
     }
     try writePackageFile(#"""
-    {"packages":[{"id":"clock","name":"Clock","version":"1","kind":"widgets","archive":"clock-1.tar.gz","sha256":"\#(sha256)",
+    {"packages":[{"id":"agent","name":"Agent","version":"1","kind":"plugin","archive":"agent-1.tar.gz","sha256":"\#(sha256)"},
+      {"id":"clock","name":"Clock","version":"1","kind":"widgets","archive":"clock-1.tar.gz","sha256":"\#(sha256)",
       "source":"https://example.com/packages/clock","rating":5}],"updated":"2026-10-16"}
     """#, to: index)
-    let entry = try await PackageIndex.load(from: index).packages[0]
-    let installed = try store.install(try await store.download(entry, from: index))
+    let packages = try await PackageIndex.load(from: index).packages
+    #expect(packages.map(\.id) == ["clock"])
+    let installed = try store.install(try await store.download(packages[0], from: index))
     #expect(installed.directory == directory.appending(path: "packages/clock/1"))
     #expect(installed.manifest.kind == .widgets)
 }
