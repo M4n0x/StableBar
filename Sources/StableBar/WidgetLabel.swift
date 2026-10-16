@@ -75,3 +75,16 @@ extension WidgetConfiguration {
         }
     }
 }
+
+extension WidgetLabel {
+    /// This label with `fields` shown over its own. A `text` or `icon` field replaces the text or
+    /// icon; an empty `icon` hides it.
+    func overlaid(by fields: [String: String]?) -> WidgetLabel {
+        guard let fields else { return self }
+        var label = self
+        label.fields.merge(fields) { $1 }
+        if let text = fields["text"] { label.text = text }
+        if let icon = fields["icon"] { label.icon = icon.isEmpty ? nil : icon }
+        return label
+    }
+}

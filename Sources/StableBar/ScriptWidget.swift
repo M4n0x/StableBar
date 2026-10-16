@@ -55,6 +55,8 @@ struct ScriptOutput: Decodable, Sendable {
     /// The widget's data state. Earlier versions ignored this field, so any JSON value decodes;
     /// `dataState(_:rules:)` uses only a string.
     var state: ConfigurationValue?
+    /// Fields shown over this output's own for a while, such as the volume after a change.
+    var temporary: TemporaryOutput?
 
     static func read(_ data: Data) throws -> ScriptOutput {
         let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -67,6 +69,27 @@ struct ScriptOutput: Decodable, Sendable {
     }
 }
 
+/// Fields an output shows over its own for `duration` seconds before the widget returns to it.
+struct TemporaryOutput: Decodable, Equatable, Sendable {
+    let fields: [String: String]
+    let duration: Double
+
+    static let longestDuration = 86_400.0
+
+    enum CodingKeys: String, CodingKey, CaseIterable { case fields, duration }
+
+    init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        fields = try values.decode([String: String].self, forKey: .fields)
+        duration = try values.decode(Double.self, forKey: .duration)
+        guard duration > 0, duration <= Self.longestDuration else {
+            throw DecodingError.dataCorruptedError(forKey: .duration, in: values,
+                                                   debugDescription: "A temporary duration must be greater than zero and at most one day (86400 seconds).")
+        }
+    }
+}
+
 @MainActor @Observable
 final class ScriptWidget {
     var output = ScriptOutput(text: "…")
@@ -75,6 +98,10 @@ final class ScriptWidget {
     var diagnostics = ScriptDiagnostics()
     /// Called after each new output or failure, so the store can re-resolve the styles it affects.
     @ObservationIgnored var onUpdate: (() -> Void)?
+    /// Numbers each accepted output, unique across scripts, so the store can tell a new output from
+    /// one it applies again. 0 before the first.
+    @ObservationIgnored private(set) var outputNumber = 0
+    private static var acceptedOutputs = 0
     private var task: Task<Void, Never>?
     private var timer: Task<Void, Never>?
     private var events: AsyncStream<ScriptEvent>.Continuation?
@@ -216,6 +243,8 @@ final class ScriptWidget {
         }
         error = nil
         diagnostics.lastUpdated = Date()
+        Self.acceptedOutputs += 1
+        outputNumber = Self.acceptedOutputs
         onUpdate?()
     }
 

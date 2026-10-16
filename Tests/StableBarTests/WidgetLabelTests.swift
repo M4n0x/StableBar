@@ -86,3 +86,12 @@ private func output(_ json: String) throws -> ScriptOutput {
     }
     #expect(clock.count == 5 && clock.contains(":"))
 }
+
+@Test func temporaryFieldsReplaceTheTextAndIconTheyName() {
+    let label = WidgetLabel(text: "", icon: "speaker.wave.2", fields: ["text": "", "icon": "speaker.wave.2", "device": "Speakers"])
+    #expect(label.overlaid(by: nil) == label)
+    #expect(label.overlaid(by: ["text": "62"])
+        == WidgetLabel(text: "62", icon: "speaker.wave.2", fields: ["text": "62", "icon": "speaker.wave.2", "device": "Speakers"]))
+    #expect(label.overlaid(by: ["text": "62", "icon": ""]).icon == nil)
+    #expect(label.overlaid(by: ["device": "Headphones"]).fields["device"] == "Headphones")
+}

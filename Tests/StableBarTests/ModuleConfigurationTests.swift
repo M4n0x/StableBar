@@ -368,6 +368,8 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     #expect(cpu.rules.map(\.state) == ["critical", "warning"])
     #expect(modular.widgets.first { $0.id == "status" }?.transition == .fade)
     #expect(modular.widgets.first { $0.id == "clock" }?.transition == .numeric)
+    #expect(modular.widgets.first { $0.id == "volume" }?.content == .script(command: #"/bin/sh "$CONFIG_DIR/volume.sh""#, interval: 30))
+    #expect(FileManager.default.fileExists(atPath: repository.appending(path: "examples/modular/volume.sh").path))
     let critical = ResolvedWidgetStyle(base: resolveStyle([modular.defaults, cpu.style]), state: "critical")
     #expect(critical.style(hovered: false).background == HexColor(0xf28b82ff))
     #expect(critical.style(hovered: true).background == HexColor(0xf5a59eff))

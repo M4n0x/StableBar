@@ -298,6 +298,7 @@ final class BarStore: NSObject {
                                              hidden: script?.output.hidden == true && script?.error == nil,
                                              display: script?.output.display,
                                              visibility: visibilityAnimation(widget.transition, animation: animation, reduceMotion: reduceMotion))
+            presentations[widget.id]?.show(script?.output.temporary, output: script?.outputNumber ?? 0)
         }
         let bar = resolveStyle(barStyleLayers(configuration.bar.style, widgets: configuration.widgets, output: output))
         if barStyle != bar { barStyle = bar }
@@ -401,6 +402,8 @@ final class BarStore: NSObject {
                 result["error"] = script.error.map(ConfigurationValue.string) ?? .null
                 result["values"] = .object((script.output.values ?? [:]).mapValues(ConfigurationValue.number))
                 result["state"] = presentations[id]?.style.state.map(ConfigurationValue.string) ?? .null
+                result["temporaryFields"] = presentations[id]?.temporaryFields
+                    .map { ConfigurationValue.object($0.mapValues(ConfigurationValue.string)) } ?? .null
             }
             return .object(result)
         }
@@ -510,6 +513,13 @@ final class WidgetPresentation {
     private(set) var display: DisplaySelection?
     /// The view that anchors this widget's open popup: only that instance shows `open`.
     private(set) var popupAnchor: ObjectIdentifier?
+    /// Fields from the latest output's `temporary`, shown over the widget's own until they expire.
+    private(set) var temporaryFields: [String: String]?
+    /// The `temporary` that shows.
+    @ObservationIgnored private var temporary: TemporaryOutput?
+    /// The number of the last output `show` was given.
+    @ObservationIgnored private var shownOutput = 0
+    @ObservationIgnored private(set) var expiry: Task<Void, Never>?
 
     /// Assigns only what changed: equal assignments must not invalidate the widget's views. With a
     /// `visibility` animation, a change of `hidden` animates the widget in or out.
@@ -523,5 +533,23 @@ final class WidgetPresentation {
 
     func setPopupAnchor(_ anchor: ObjectIdentifier?) {
         if popupAnchor != anchor { popupAnchor = anchor }
+    }
+
+    /// Shows the `temporary` of a new output for its duration. `output` numbers the output, so the
+    /// same output applied again changes nothing. An output without one, or with the same one while
+    /// it shows, lets the current one run out.
+    func show(_ next: TemporaryOutput?, output: Int) {
+        guard output != shownOutput else { return }
+        shownOutput = output
+        guard let next, next != temporary else { return }
+        temporary = next
+        expiry?.cancel()
+        if temporaryFields != next.fields { temporaryFields = next.fields }
+        expiry = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(next.duration))
+            guard !Task.isCancelled, let self else { return }
+            temporary = nil
+            temporaryFields = nil
+        }
     }
 }

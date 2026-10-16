@@ -415,7 +415,7 @@ struct WidgetBlocks: View {
 
     var body: some View {
         let script = store.scripts[widget.id]
-        let label = store.label(for: widget, date: date)
+        let label = store.label(for: widget, date: date).overlaid(by: store.presentations[widget.id]?.temporaryFields)
         let appIcon = widget.content == .activeApp ? store.activeApp?.icon : nil
         if let layout = block ?? widget.layout ?? widget.defaultLayout(label, output: script?.output, appIcon: appIcon != nil) {
             PopupBlockView(block: layout, inheritedStyle: style.inherited, fields: label.fields,
