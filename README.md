@@ -412,6 +412,8 @@ Script output can also set `onClick` for a state-dependent click action; popups 
 
 Keep `onClick` for the primary action. To open a URL or an app without a shell, set `open` instead: an `http`, `https`, `mailto` or `x-apple.systempreferences` URL, or an application bundle identifier. StableBar opens it through macOS. Any other value is a configuration error, and a widget cannot set both `onClick` and `open`. A popup or menu takes precedence over either.
 
+The whole widget tile, including its padding and configured width and height, is clickable when it has a primary action, popup or menu.
+
 ```json
 { "id": "date", "type": "clock", "position": "right", "format": "EEE d MMM", "open": "com.apple.iCal" }
 ```

@@ -266,30 +266,32 @@ struct WidgetView: View {
         let output = store.scripts[widget.id]?.output
         let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let animation = output?.animation ?? widget.animation ?? WidgetAnimation(duration: animationDuration)
+        let tile = content(appearance)
+            .padding(.leading, style.paddingLeading ?? appearance.paddingHorizontal)
+            .padding(.trailing, style.paddingTrailing ?? appearance.paddingHorizontal)
+            .padding(.top, style.paddingTop ?? appearance.paddingVertical)
+            .padding(.bottom, style.paddingBottom ?? appearance.paddingVertical)
+            .frame(width: appearance.width, height: style.height.map { CGFloat($0) })
+            .frame(minWidth: style.minWidth.map { CGFloat($0) }, maxWidth: style.maxWidth.map { CGFloat($0) })
+            .contentShape(Rectangle())
         Group {
             if let popup = widgetPopup(widget, store: store) {
                 Button {
                     store.popup.toggle(popup, widget: widget, defaults: defaults, store: store, anchor: popupAnchor)
-                } label: { content(appearance) }
+                } label: { tile }
                 .buttonStyle(.plain)
             } else if let command = output?.onClick ?? widget.onClick {
-                Button { runAction(command, sender: "mouse.clicked", button: "left") } label: { content(appearance) }
+                Button { runAction(command, sender: "mouse.clicked", button: "left") } label: { tile }
                     .buttonStyle(.plain)
             } else if let open = widget.open {
-                Button { OpenTarget(open)!.open() } label: { content(appearance) }
+                Button { OpenTarget(open)!.open() } label: { tile }
                     .buttonStyle(.plain)
             } else {
-                content(appearance)
+                tile
             }
         }
         .font(appearance.font)
         .foregroundStyle(hovered ? appearance.hoverForeground : appearance.foreground)
-        .padding(.leading, style.paddingLeading ?? appearance.paddingHorizontal)
-        .padding(.trailing, style.paddingTrailing ?? appearance.paddingHorizontal)
-        .padding(.top, style.paddingTop ?? appearance.paddingVertical)
-        .padding(.bottom, style.paddingBottom ?? appearance.paddingVertical)
-        .frame(width: appearance.width, height: style.height.map { CGFloat($0) })
-        .frame(minWidth: style.minWidth.map { CGFloat($0) }, maxWidth: style.maxWidth.map { CGFloat($0) })
         .background(hovered ? appearance.hoverBackground : appearance.background,
                     in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
         .overlay {
