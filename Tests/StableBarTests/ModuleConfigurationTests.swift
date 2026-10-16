@@ -347,7 +347,8 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
         "actions": WidgetActions.CodingKeys.allCases, "menuItem": WidgetMenuItem.CodingKeys.allCases,
         "provider": ProviderConfiguration.CodingKeys.allCases, "group": WidgetGroupConfiguration.CodingKeys.allCases,
         "profile": ConfigurationProfile.CodingKeys.allCases, "conditions": ProfileConditions.CodingKeys.allCases,
-        "packageSelection": WidgetPackageSelection.CodingKeys.allCases
+        "packageSelection": WidgetPackageSelection.CodingKeys.allCases, "rule": StyleRule.CodingKeys.allCases,
+        "ruleCondition": RuleCondition.CodingKeys.allCases
     ]
     for (name, keys) in decoders {
         #expect(try properties(definitions[name]) == Set(keys.map(\.stringValue) + (name == "widget" ? ["template"] : [])), "\(name)")
@@ -363,6 +364,7 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     let modular = try loader.load(repository.appending(path: "examples/modular/config.json"))
     #expect(modular.defaults.hoverBackground == HexColor(0x29384bff))
     #expect(modular.defaults.states?["warning"]?.foreground == HexColor(0xf5c26bff))
+    #expect(modular.widgets.first { $0.id == "cpu" }?.rules.map(\.state) == ["critical", "warning"])
     let interactive = try loader.load(repository.appending(path: "examples/interactive/config.json"))
     #expect(interactive.defaults.states?["open"]?.borderWidth == 1)
     _ = try loader.load(repository.appending(path: "Resources/config.json"))

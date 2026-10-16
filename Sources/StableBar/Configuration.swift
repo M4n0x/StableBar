@@ -267,10 +267,11 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let group: String?
     let priority: Int
     let overflow: WidgetOverflow
+    let rules: [StyleRule]
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id, position, type, icon, onClick, open, menu, popup, popupName, style, format, text, command, interval
-        case display, layout, overlay, animation, workspace, events, environment, timeout, actions, enabled, provider, group, priority, overflow
+        case display, layout, overlay, animation, workspace, events, environment, timeout, actions, enabled, provider, group, priority, overflow, rules
     }
 
     init(from decoder: Decoder) throws {
@@ -307,6 +308,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
         group = try values.decodeIfPresent(String.self, forKey: .group)
         priority = try values.decodeIfPresent(Int.self, forKey: .priority) ?? 0
         overflow = try values.decodeIfPresent(WidgetOverflow.self, forKey: .overflow) ?? .automatic
+        rules = try values.decodeIfPresent([StyleRule].self, forKey: .rules) ?? []
         switch try values.decode(String.self, forKey: .type) {
         case "spacer": content = .spacer
         case "provider": content = .provider(try values.decode(String.self, forKey: .provider))
@@ -325,6 +327,13 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
                 throw DecodingError.dataCorruptedError(forKey: .type, in: values, debugDescription: "Unknown widget type.")
             }
             content = .provider(type)
+        }
+        if !rules.isEmpty {
+            switch content {
+            case .script, .provider: break
+            default:
+                throw DecodingError.dataCorruptedError(forKey: .rules, in: values, debugDescription: "Rules need a script or provider widget.")
+            }
         }
     }
 }

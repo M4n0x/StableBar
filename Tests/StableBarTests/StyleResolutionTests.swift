@@ -324,3 +324,66 @@ private func workspace(_ json: String) throws -> WorkspaceConfiguration {
     #expect(resolution.style(hovered: false, open: true).foreground == HexColor(0xff0000ff))
     #expect(resolution.style(hovered: false, open: false).background == HexColor(0x110000ff))
 }
+
+private func rules(_ json: String) throws -> [StyleRule] {
+    try JSONDecoder().decode([StyleRule].self, from: Data(json.utf8))
+}
+
+@Test func rulesMatchAtTheirThresholdsAndTheFirstMatchWins() throws {
+    let battery = try rules(#"""
+    [{"when":{"value":"percent","below":0.1},"state":"critical"},
+     {"when":{"value":"percent","below":0.2},"state":"warning"},
+     {"when":{"value":"percent","above":0.4,"below":0.6},"state":"muted"},
+     {"when":{"field":"state","equals":"charging"},"state":"active"}]
+    """#)
+    func state(_ json: String) throws -> String? { dataState(try output(json), rules: battery) }
+    #expect(try state(#"{"text":"","values":{"percent":0.2}}"#) == "warning")
+    #expect(try state(#"{"text":"","values":{"percent":0.1}}"#) == "critical")
+    #expect(try state(#"{"text":"","values":{"percent":0.05}}"#) == "critical")
+    #expect(try state(#"{"text":"","values":{"percent":0.21}}"#) == nil)
+    #expect(try state(#"{"text":"","values":{"percent":0.4}}"#) == "muted")
+    #expect(try state(#"{"text":"","values":{"percent":0.6}}"#) == "muted")
+    #expect(try state(#"{"text":"","values":{"percent":0.61},"fields":{"state":"charging"}}"#) == "active")
+    #expect(try state(#"{"text":"","values":{"percent":0.15},"fields":{"state":"charging"}}"#) == "warning")
+    #expect(try state(#"{"text":"AC","fields":{"state":"Charging"}}"#) == nil)
+    #expect(try state(#"{"text":"AC"}"#) == nil)
+    #expect(try state(#"{"text":"","values":{"percent":0.15},"state":"active"}"#) == "active")
+    #expect(try state(#"{"text":"","values":{"percent":0.15},"state":"open"}"#) == "warning")
+}
+
+@Test func invalidRulesNameTheirProblem() throws {
+    let url = FileManager.default.temporaryDirectory.appending(path: "rules.json")
+    var loader = ConfigurationLoader()
+    let comparison = "Compare a value with below or above, or a field with equals."
+    for (rule, message) in [
+        (#"{"state":"warning"}"#, "widgets.power: rules.0: Missing property when."),
+        (#"{"when":{"value":"percent","field":"state","below":0.2},"state":"warning"}"#, "widgets.power: rules.0.when: \(comparison)"),
+        (#"{"when":{"value":"percent","equals":"low"},"state":"warning"}"#, "widgets.power: rules.0.when: \(comparison)"),
+        (#"{"when":{"field":"state","below":1},"state":"warning"}"#, "widgets.power: rules.0.when: \(comparison)"),
+        (#"{"when":{"value":"percent"},"state":"warning"}"#, "widgets.power: rules.0.when: \(comparison)"),
+        (#"{"when":{"value":"percent","below":0.2},"state":"hover"}"#,
+         "widgets.power: rules.0.state: hover is set by StableBar. Use a data state such as warning."),
+        (#"{"when":{"value":"percent","below":0.2},"state":"warning","color":"red"}"#, "widgets.power: rules.0.color: Unknown property.")
+    ] {
+        let json = #"{"widgets":[{"id":"power","type":"battery","position":"right","rules":["# + rule + "]}]}"
+        let error = #expect(throws: (any Error).self) { try loader.load(url, data: Data(json.utf8)) }
+        #expect(error.map(errorMessage) == message)
+    }
+    let clock = #"{"widgets":[{"id":"time","type":"clock","position":"right","rules":[{"when":{"value":"x","below":1},"state":"warning"}]}]}"#
+    let error = #expect(throws: (any Error).self) { try loader.load(url, data: Data(clock.utf8)) }
+    #expect(error.map(errorMessage) == "widgets.time: rules: Rules need a script or provider widget.")
+}
+
+@Test func rulesComeFromTemplatesTokensAndOverridesLikeOtherWidgetProperties() throws {
+    var loader = ConfigurationLoader()
+    let configuration = try loader.load(FileManager.default.temporaryDirectory.appending(path: "rules.json"), data: Data(#"""
+    {"tokens":{"low":0.2},
+     "templates":{"meter":{"type":"battery","position":"right","rules":[{"when":{"value":"percent","below":"@token.low"},"state":"warning"}]}},
+     "widgets":[{"id":"power","template":"meter"},{"id":"spare","template":"meter"}],
+     "widgetOverrides":{"spare":{"rules":[{"when":{"value":"percent","below":0.1},"state":"critical"}]}}}
+    """#.utf8))
+    #expect(configuration.widgets[0].rules.map(\.state) == ["warning"])
+    #expect(configuration.widgets[0].rules.first?.when.below == 0.2)
+    #expect(configuration.widgets[1].rules.map(\.state) == ["critical"])
+    #expect(configuration.widgets[1].rules.first?.when.below == 0.1)
+}

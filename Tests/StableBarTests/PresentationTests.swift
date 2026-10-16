@@ -276,3 +276,31 @@ private func output(_ json: String) throws -> ScriptOutput {
     }
     #expect(snapshot["state"] == .string("warning"))
 }
+
+@Test @MainActor func rulesRunWhenOutputArrivesForEachWidgetOfASharedProvider() async throws {
+    let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).json"))
+    store.configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
+    {"widgets":[
+      {"id":"compact","type":"battery","position":"right","rules":[{"when":{"value":"percent","below":0.2},"state":"warning"}]},
+      {"id":"detail","type":"battery","position":"right","rules":[{"when":{"value":"percent","below":0.5},"state":"muted"}]},
+      {"id":"clock","type":"clock","position":"right"}]}
+    """#.utf8))
+    let battery = ScriptWidget()
+    store.scripts = ["compact": battery, "detail": battery]
+    store.preparePresentations()
+    let compact = try #require(store.presentations["compact"])
+    let detail = try #require(store.presentations["detail"])
+    let clock = try #require(store.presentations["clock"])
+    try battery.accept(output(#"{"text":"40%","values":{"percent":0.4}}"#))
+    #expect(compact.style.state == nil)
+    #expect(detail.style.state == "muted")
+    try await confirmation("compact enters warning", expectedCount: 1) { changed in
+        try await confirmation("the others stay valid", expectedCount: 0) { invalidated in
+            withObservationTracking { _ = compact.style } onChange: { changed() }
+            withObservationTracking { _ = detail.style; _ = clock.style } onChange: { invalidated() }
+            try battery.accept(output(#"{"text":"15%","values":{"percent":0.15}}"#))
+        }
+    }
+    #expect(compact.style.state == "warning")
+    #expect(detail.style.state == "muted")
+}

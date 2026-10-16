@@ -125,7 +125,7 @@ Widget properties override their template recursively. `widgetOverrides` applies
 
 Included files are watched even outside the main directory. A missing module or directory is watched for repair; the last working bar remains visible meanwhile.
 
-[examples/modular](examples/modular/config.json) is a complete, dependency-free starter with a theme, template, event-only status, and an optional volume widget. Try it without replacing your personal configuration:
+[examples/modular](examples/modular/config.json) is a complete, dependency-free starter with a theme that styles the shared data states, a template, an event-only status, a CPU widget whose rules set those states, and an optional volume widget. Try it without replacing your personal configuration:
 
 ```sh
 ./dist/StableBar.app/Contents/MacOS/StableBar --validate examples/modular/config.json
@@ -194,6 +194,21 @@ Other names work too. `hover`, `open`, `focused`, `visible` and `empty` are Stab
 ```
 
 A widget's own `states` override the theme's property by property. The data state applies first, so `hover` and `open` still show over it. It also reaches the widget's `layout` and `overlay` blocks, which apply their own `states` for it. Popups keep their own styles.
+
+Native providers can't return `state`, so a widget can set it with `rules`. The first rule that matches the latest output sets the state; a `state` in the output takes precedence:
+
+```json
+{
+  "id": "power", "type": "battery", "position": "right",
+  "rules": [
+    { "when": { "value": "percent", "below": 0.1 }, "state": "critical" },
+    { "when": { "value": "percent", "below": 0.2 }, "state": "warning" },
+    { "when": { "field": "state", "equals": "charging" }, "state": "active" }
+  ]
+}
+```
+
+`when` compares one entry of the output: `value` names a number in `values`, which matches `below` when it is at or below that number and `above` when it is at or above it (give both for a range); `field` names a string in `fields`, which matches `equals` exactly. A missing value or field doesn't match. Rules are checked when output arrives and belong to the widget, so widgets that share a provider can use different thresholds. Only script and provider widgets accept rules.
 
 ### Theme tokens and automatic profiles
 
@@ -700,6 +715,8 @@ Native providers use public macOS APIs and launch no shell commands:
 
 Fractions use 0–1. CPU and network rates are deltas; their first sample after startup or resume is zero. Native audio is a data source; use a control's `onChange` command to change volume or devices.
 
+Native providers can't return `state`. Give their widgets `rules` to set a data state from `values` or `fields`, such as a battery `warning` at 20 %; see [Data states](#data-states).
+
 Scripts and providers expose diagnostics in **Customize → Diagnostics** and the runtime query: running/suspended state, last event/start/update, execution duration, bounded stdout/stderr, execution/failure/restart counts and next retry delay. CPU time is cumulative completed-command CPU time, not a live resource meter for a running stream. Diagnostics and graph history survive style-only edits and suspension. The existing process-group cancellation limit for deliberately detached descendants also applies to streams.
 
 ### Calendar
@@ -908,7 +925,7 @@ For new native widget types, add a case to `WidgetContent`, decode its settings 
 ## Architecture
 
 - [Configuration.swift](Sources/StableBar/Configuration.swift): config, widget definitions and style inheritance.
-- [StyleResolution.swift](Sources/StableBar/StyleResolution.swift): style layers and states resolved in one place for bar widgets, workspace cells, layout blocks and the bar.
+- [StyleResolution.swift](Sources/StableBar/StyleResolution.swift): style layers and states resolved in one place for bar widgets, workspace cells, layout blocks and the bar, and the rules that set data states.
 - [BarStore.swift](Sources/StableBar/BarStore.swift): live reload, shared provider lifetimes, visibility, sleep and each widget's resolved style.
 - [ConfigurationLoader.swift](Sources/StableBar/ConfigurationLoader.swift): includes, profiles, tokens and provenance.
 - [ConfigurationEdits.swift](Sources/StableBar/ConfigurationEdits.swift): file-preserving edits shared by CLI and editor.

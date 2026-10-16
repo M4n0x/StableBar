@@ -1009,6 +1009,55 @@
               "type": "null"
             }
           ]
+        },
+        "rules": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/rule"
+          },
+          "description": "Data states from script or provider output. The first matching rule sets the state."
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "when": {
+          "$ref": "#/definitions/ruleCondition"
+        },
+        "state": {
+          "$ref": "#/definitions/string",
+          "description": "Data state to set, such as warning, critical, active or muted."
+        }
+      }
+    },
+    "ruleCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "$ref": "#/definitions/string",
+          "description": "Name of a number in the output's values."
+        },
+        "field": {
+          "$ref": "#/definitions/string",
+          "description": "Name of a string in the output's fields."
+        },
+        "below": {
+          "$ref": "#/definitions/number",
+          "description": "Matches a value at or below this number."
+        },
+        "above": {
+          "$ref": "#/definitions/number",
+          "description": "Matches a value at or above this number."
+        },
+        "equals": {
+          "$ref": "#/definitions/string",
+          "description": "Matches a field with exactly this text."
         }
       }
     },

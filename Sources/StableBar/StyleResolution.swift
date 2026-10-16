@@ -133,8 +133,63 @@ extension PopupBlock {
     }
 }
 
-/// A widget's data state: its output's `state` when that is a string other than a reserved name.
-func dataState(_ output: ScriptOutput?) -> String? {
-    guard case let .string(name)? = output?.state, !StyleStates.reservedNames.contains(name) else { return nil }
-    return name
+/// A widget's data state: its output's `state` when that is a string other than a reserved name,
+/// otherwise the state of the first rule that matches the output.
+func dataState(_ output: ScriptOutput?, rules: [StyleRule] = []) -> String? {
+    guard let output else { return nil }
+    if case let .string(name)? = output.state, !StyleStates.reservedNames.contains(name) { return name }
+    return rules.first { $0.when.matches(output) }?.state
+}
+
+/// Sets a widget's data state while its output matches `when`.
+struct StyleRule: Decodable, Equatable, Sendable {
+    let when: RuleCondition
+    let state: String
+
+    enum CodingKeys: String, CodingKey, CaseIterable { case when, state }
+
+    init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        when = try values.decode(RuleCondition.self, forKey: .when)
+        state = try values.decode(String.self, forKey: .state)
+        guard !StyleStates.reservedNames.contains(state) else {
+            throw DecodingError.dataCorruptedError(forKey: .state, in: values,
+                                                   debugDescription: "\(state) is set by StableBar. Use a data state such as warning.")
+        }
+    }
+}
+
+/// Compares one entry of a widget's output: a number in `values` at or below `below` and at or
+/// above `above`, or a string in `fields` equal to `equals`. A missing entry never matches.
+struct RuleCondition: Decodable, Equatable, Sendable {
+    let value: String?
+    let field: String?
+    let below: Double?
+    let above: Double?
+    let equals: String?
+
+    enum CodingKeys: String, CodingKey, CaseIterable { case value, field, below, above, equals }
+
+    init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        value = try values.decodeIfPresent(String.self, forKey: .value)
+        field = try values.decodeIfPresent(String.self, forKey: .field)
+        below = try values.decodeIfPresent(Double.self, forKey: .below)
+        above = try values.decodeIfPresent(Double.self, forKey: .above)
+        equals = try values.decodeIfPresent(String.self, forKey: .equals)
+        let comparesValue = value != nil && field == nil && equals == nil && (below != nil || above != nil)
+        let comparesField = field != nil && value == nil && below == nil && above == nil && equals != nil
+        guard comparesValue || comparesField else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                    debugDescription: "Compare a value with below or above, or a field with equals."))
+        }
+    }
+
+    func matches(_ output: ScriptOutput) -> Bool {
+        if let field { return output.fields?[field] == equals }
+        guard let value, let number = output.values?[value] else { return false }
+        return (below.map { number <= $0 } ?? true) && (above.map { number >= $0 } ?? true)
+    }
 }

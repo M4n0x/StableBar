@@ -292,7 +292,7 @@ final class BarStore: NSObject {
             let script = scripts[widget.id]
             let base = resolveStyle(widgetStyleLayers(widget, defaults: configuration.defaults, widgets: configuration.widgets,
                                                       output: output))
-            presentations[widget.id]?.update(style: ResolvedWidgetStyle(base: base, state: dataState(script?.output)),
+            presentations[widget.id]?.update(style: ResolvedWidgetStyle(base: base, state: dataState(script?.output, rules: widget.rules)),
                                              hidden: script?.output.hidden == true && script?.error == nil,
                                              display: script?.output.display)
         }
