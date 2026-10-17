@@ -11,7 +11,7 @@ final class BarStore: NSObject {
     var scripts: [String: ScriptWidget] = [:]
     let workspaceStore = WorkspaceStore()
     let windowClearance = WindowClearance()
-    let popup = WidgetPopup()
+    let popup: WidgetPopup
     let configurationURL: URL
     let registry: DataSourceRegistry
     var onConfigurationChange: (() -> Void)?
@@ -32,6 +32,7 @@ final class BarStore: NSObject {
     private var inspectedWidgetID: String?
     private var inspectorOpen = false
     private var configurationLoader = ConfigurationLoader()
+    private var managesConnections = false
     private let configurationWatcher = ConfigurationWatcher()
     private var reloadTask: Task<Void, Never>?
     private var eventObservers: [NSObjectProtocol] = []
@@ -39,11 +40,18 @@ final class BarStore: NSObject {
     private var actions: [UUID: Task<Void, Never>] = [:]
     private var actionTails: [String: (id: UUID, task: Task<Void, Never>)] = [:]
 
-    init(configurationURL: URL = LaunchCommand.configurationURL, registry: DataSourceRegistry = .builtIn) {
+    init(configurationURL: URL = LaunchCommand.configurationURL, registry: DataSourceRegistry = .builtIn,
+         popup: WidgetPopup = WidgetPopup(), themesDirectory: URL? = bundledThemesDirectory) {
         self.configurationURL = configurationURL
         self.registry = registry
+        self.popup = popup
         super.init()
+        configurationLoader.themesDirectory = themesDirectory
         configurationWatcher.onChange = { [weak self] in self?.scheduleReload() }
+        workspaceStore.onModeChange = { [weak self] mode in
+            self?.updatePresentations()
+            if self?.managesConnections == true { self?.send(.aerospaceMode, ["INFO": mode ?? ""]) }
+        }
     }
 
     func start() {
@@ -57,9 +65,6 @@ final class BarStore: NSObject {
             popup.close()
             let focused = workspaceStore.workspaces.first(where: \.isFocused)
             send(.workspace, ["INFO": focused?.name ?? "", "SID": String(focused?.monitor ?? activeDisplayID)])
-        }
-        workspaceStore.onModeChange = { [weak self] mode in
-            self?.send(.aerospaceMode, ["INFO": mode])
         }
         do {
             let directory = configurationURL.deletingLastPathComponent()
@@ -242,13 +247,8 @@ final class BarStore: NSObject {
             }
         }
         let needsWorkspaces = next.widgets.contains { $0.enabled && ($0.content == .workspaces || $0.display == .active) }
-        let hadWorkspaces = previous.contains { $0.enabled && ($0.content == .workspaces || $0.display == .active) }
-        let sourceChanged = workspaceStore.source != next.workspaceSource
-        workspaceStore.source = next.workspaceSource
-        if sourceChanged { workspaceStore.workspaces = []; workspaceStore.error = nil }
-        if needsWorkspaces && (!hadWorkspaces || sourceChanged) { workspaceStore.start() }
-        if !needsWorkspaces && hadWorkspaces { workspaceStore.stop() }
         configuration = next
+        managesConnections = true
         preparePresentations()
         effectiveDocument = configurationLoader.document
         origins = configurationLoader.origins
@@ -290,20 +290,38 @@ final class BarStore: NSObject {
     func updatePresentations() {
         guard let configuration else { return }
         let output = { (id: String) in self.scripts[id]?.output }
+        let overrides = OrderedStyleOverrides(widgets: configuration.widgets, output: output)
+        let outputNeedsMode = overrides.bar.usesModeStates || overrides.widgets.values.contains(where: \.usesModeStates)
+            || scripts.values.contains { $0.output.style?.usesModeStates == true || $0.output.styles?.values.contains(where: \.usesModeStates) == true }
+        if managesConnections {
+            workspaceStore.configure(source: configuration.workspaceSource,
+                                     workspaces: configuration.widgets.contains { $0.enabled && ($0.content == .workspaces || $0.display == .active) },
+                                     mode: configuration.needsModeConnection || outputNeedsMode)
+        }
+        let mode = modePresentation
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         for widget in configuration.widgets {
             let script = scripts[widget.id]
-            let base = resolveStyle(widgetStyleLayers(widget, defaults: configuration.defaults, widgets: configuration.widgets,
-                                                      output: output))
+            let base = resolveStyle(widgetStyleLayers(widget, defaults: configuration.defaults, overrides: overrides, own: script?.output,
+                                                      role: configuration.roleStyle(widget.role)))
+            let usesMode = base.usesModeStates || widget.layout?.usesModeStates(roles: configuration.roles) == true
+                || widget.overlay?.usesModeStates(roles: configuration.roles) == true
+                || script?.output.styles?.values.contains(where: \.usesModeStates) == true
             let animation = script?.output.animation ?? widget.animation ?? WidgetAnimation(duration: configuration.bar.animationDuration)
-            presentations[widget.id]?.update(style: ResolvedWidgetStyle(base: base, state: dataState(script?.output, rules: widget.rules)),
+            presentations[widget.id]?.update(style: ResolvedWidgetStyle(base: base, state: dataState(script?.output, rules: widget.rules),
+                                                                       mode: usesMode ? mode : ModePresentation()),
                                              hidden: script?.output.hidden == true && script?.error == nil,
                                              display: script?.output.display,
                                              visibility: visibilityAnimation(widget.transition, animation: animation, reduceMotion: reduceMotion))
             presentations[widget.id]?.show(script?.output.temporary, output: script?.outputNumber ?? 0)
         }
-        let bar = resolveStyle(barStyleLayers(configuration.bar.style, widgets: configuration.widgets, output: output))
+        let bar = resolveStyle(barStyleLayers(configuration.bar.style, overrides: overrides), states: StyleStates(mode: mode))
         if barStyle != bar { barStyle = bar }
+    }
+
+    var modePresentation: ModePresentation {
+        ModePresentation(mode: configuration?.workspaceSource == .aerospace ? workspaceStore.mode : nil,
+                         aliases: configuration?.modeAliases ?? [:])
     }
 
     func setVisibleWidgets(ids: Set<String>, displayID: Int) {
@@ -391,7 +409,21 @@ final class BarStore: NSObject {
             var result: [String: ConfigurationValue] = ["configuration": .object(definition),
                 "defaults": effectiveDocument["defaults"] ?? .object([:]),
                 "origins": .object(origins.filter { $0.key.hasPrefix("widgets.\(id).") }.mapValues { .string($0.description) })]
+            result["mode"] = workspaceStore.mode.map(ConfigurationValue.string) ?? .null
+            result["modeStates"] = .array(StyleStates(mode: modePresentation).names.map(ConfigurationValue.string))
+            result["modeConnectionError"] = workspaceStore.connectionError.map(ConfigurationValue.string) ?? .null
             if let widget = configuration?.widgets.first(where: { $0.id == id }) {
+                let prefixes = ["widgets.\(id)", "defaults", "popupDefaults", "workspaceDefaults", "modeAliases", "roles"]
+                    + (widget.popupName.map { ["popups.\($0)"] } ?? [])
+                result["origins"] = .object(origins.filter { entry in
+                    prefixes.contains { entry.key == $0 || entry.key.hasPrefix($0 + ".") }
+                }.mapValues { .string($0.description) })
+                result["role"] = widget.role.map { .string($0.rawValue) } ?? .null
+                result["resolvedStyle"] = presentations[id]?.style.style(hovered: false).configurationValue ?? .object([:])
+                result["presentationLayers"] = .array(presentationLayers(for: widget))
+                if widget.content == .workspaces {
+                    result["workspacePresentation"] = .object(try configuration!.workspaceDefaults.mergedProperties(definition["workspace"]))
+                }
                 let shown = label(for: widget)
                 result["text"] = .string(shown.text)
                 result["icon"] = shown.icon.map(ConfigurationValue.string) ?? .null
@@ -417,10 +449,42 @@ final class BarStore: NSObject {
             }
             return .object(result)
         }
+        let barLayers: [ConfigurationValue] = [.object(["source": .string("bar.style"),
+            "style": configuration?.bar.style.configurationValue ?? .object([:])])]
+            + (configuration?.widgets ?? []).compactMap { widget in
+                scripts[widget.id]?.output.barStyle.map { .object(["source": .string("output.\(widget.id).barStyle"),
+                                                                 "style": $0.configurationValue]) }
+            }
         return .object(["configuration": .object(effectiveDocument),
+                        "mode": workspaceStore.mode.map(ConfigurationValue.string) ?? .null,
+                        "modeStates": .array(StyleStates(mode: modePresentation).names.map(ConfigurationValue.string)),
+                        "modeConnectionError": workspaceStore.connectionError.map(ConfigurationValue.string) ?? .null,
+                        "resolvedBarStyle": barStyle.configurationValue,
+                        "barPresentationLayers": .array(barLayers),
+                        "origins": .object(origins.mapValues { .string($0.description) }),
                         "profiles": .array(activeProfiles.map(ConfigurationValue.string)),
                         "sessionEdits": .number(Double(sessionEdits.count)),
                         "error": configurationError.map(ConfigurationValue.string) ?? .null])
+    }
+
+    private func presentationLayers(for widget: WidgetConfiguration) -> [ConfigurationValue] {
+        guard let configuration else { return [] }
+        func layer(_ source: String, _ style: WidgetStyle) -> ConfigurationValue {
+            .object(["source": .string(source), "style": style.configurationValue])
+        }
+        var layers = [layer("defaults", configuration.defaults)]
+        if let role = widget.role { layers.append(layer("roles.\(role.rawValue)", configuration.roleStyle(role))) }
+        layers.append(layer("widgets.\(widget.id).style", widget.style))
+        for source in configuration.widgets {
+            if let style = scripts[source.id]?.output.widgetStyles?[widget.id] {
+                layers.append(layer("output.\(source.id).widgetStyles.\(widget.id)", style))
+            }
+        }
+        if let own = scripts[widget.id]?.output {
+            if let style = own.style { layers.append(layer("output.\(widget.id).style", style)) }
+            if let color = own.color { layers.append(layer("output.\(widget.id).color", WidgetStyle(foreground: color))) }
+        }
+        return layers
     }
 
     private func commandEnvironment(_ widget: WidgetConfiguration, configuration: Configuration) -> [String: String] {
@@ -488,6 +552,7 @@ final class BarStore: NSObject {
     }
 
     func stop() {
+        managesConnections = false
         popup.close()
         windowClearance.stop()
         reloadTask?.cancel()

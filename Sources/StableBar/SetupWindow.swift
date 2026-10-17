@@ -251,7 +251,7 @@ struct SetupView: View {
                     .font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, 16).frame(height: 24)
                 }
                 BarView(store: preview, display: BarDisplay(id: 1, isBuiltIn: true, isMain: true, notch: nil))
-                    .frame(height: preview.configuration?.bar.height ?? 40)
+                    .frame(height: preview.configuration?.barGeometry(for: BarDisplay(id: 1, isBuiltIn: true, isMain: true, notch: nil)).panelHeight ?? 40)
                     .allowsHitTesting(false)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Preview of your bar")

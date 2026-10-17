@@ -404,7 +404,7 @@ struct ConfigurationLoader {
         switch manifest.kind {
         case .theme?: try validateThemeDocument(layer.values)
         case .widgets?: try validateWidgetsDocument(layer.values)
-        case nil: break
+        case nil: try validateCommandPackagePresentation(layer.values)
         }
         var values = try manifest.values(settings)
         for (name, setting) in manifest.settings where setting.type == "secret" {

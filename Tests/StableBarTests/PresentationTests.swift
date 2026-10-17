@@ -139,6 +139,7 @@ private func output(_ json: String) throws -> ScriptOutput {
     func invalidated(by extra: String) throws -> [String] {
         let views = OSAllocatedUnfairLock(initialState: [String]())
         withObservationTracking { _ = bar.body } onChange: { views.withLock { $0.append("bar") } }
+        withObservationTracking { _ = store.barStyle } onChange: { views.withLock { $0.append("decoration") } }
         for (id, view) in widgets {
             withObservationTracking { _ = view.body } onChange: { views.withLock { $0.append(id) } }
         }
@@ -152,7 +153,7 @@ private func output(_ json: String) throws -> ScriptOutput {
     #expect(try invalidated(by: "") == ["a"])
     #expect(try invalidated(by: style) == ["a"])
     #expect(try invalidated(by: style + widgetStyles) == ["a", "c"])
-    #expect(try invalidated(by: style + widgetStyles + barStyle) == ["a", "bar"])
+    #expect(try invalidated(by: style + widgetStyles + barStyle) == ["a", "decoration"])
     #expect(try invalidated(by: style + widgetStyles + barStyle + #","hidden":true"#) == ["a", "bar"])
     #expect(try invalidated(by: style + widgetStyles + barStyle + #","display":"main""#) == ["a", "bar"])
 }

@@ -23,6 +23,7 @@ final class PopupRevealView: NSView {
 
 @MainActor
 final class WidgetPopup {
+    private let present: (PopupPanel) -> Void
     private var panel: PopupPanel?
     private var widgetID: String?
     private weak var store: BarStore?
@@ -30,6 +31,12 @@ final class WidgetPopup {
     private var localMonitor: Any?
     private var globalMonitor: Any?
     private var animation: WidgetAnimation?
+
+    init(present: @escaping (PopupPanel) -> Void = { $0.makeKeyAndOrderFront(nil) }) {
+        self.present = present
+    }
+
+    var isOpen: Bool { panel != nil }
 
     func toggle(_ popup: PopupConfiguration, widget: WidgetConfiguration, defaults: WidgetStyle,
                 store: BarStore, anchor: NSView) {
@@ -41,7 +48,8 @@ final class WidgetPopup {
         let window = anchor.window!
         let screen = window.screen!
         let frame = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
-        let style = resolveStyle([defaults, widget.style, popup.style])
+        let popupTop = popupAttachmentTop(anchor: frame, window: window.frame, geometry: (window as? BarPanel)?.barGeometry)
+        let style = popup.baseStyle(widget: widget, defaults: defaults)
         let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let shadowInset = CGFloat(appearance.shadowRadius * 2 + 2)
         let width = min(CGFloat(popup.style.width ?? 360), screen.visibleFrame.width - shadowInset * 2 - 16)
@@ -50,14 +58,14 @@ final class WidgetPopup {
             .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
             .padding(shadowInset))
         let height = min(popup.height.map { CGFloat($0) } ?? host.fittingSize.height - shadowInset * 2,
-                         frame.minY - screen.visibleFrame.minY - shadowInset * 2 - 8)
+                         popupTop - screen.visibleFrame.minY - shadowInset * 2 - 8 - popup.offset)
         let alignedX: CGFloat = switch popup.alignment {
         case .leading: frame.minX
         case .center: frame.midX - width / 2
         case .trailing: frame.maxX - width
         }
         let x = min(max(alignedX, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - width - 8)
-        let panel = PopupPanel(contentRect: NSRect(x: x - shadowInset, y: frame.minY - height - popup.offset - shadowInset,
+        let panel = PopupPanel(contentRect: NSRect(x: x - shadowInset, y: popupTop - height - popup.offset - shadowInset,
                                                   width: width + shadowInset * 2, height: height + shadowInset * 2),
                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.title = "\(widget.id) popup"
@@ -103,7 +111,7 @@ final class WidgetPopup {
                 panel.setFrame(NSRect(x: fullFrame.minX, y: fullFrame.maxY - 1, width: fullFrame.width, height: 1), display: false)
             }
         }
-        panel.makeKeyAndOrderFront(nil)
+        present(panel)
         if let animation = popup.animation {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = animation.duration
@@ -150,8 +158,12 @@ final class WidgetPopup {
 struct PopupAnchor: NSViewRepresentable {
     let view: NSView
     let popup: WidgetPopup
+    var id: String?
 
-    func makeNSView(context: Context) -> NSView { view }
+    func makeNSView(context: Context) -> NSView {
+        view.identifier = id.map { NSUserInterfaceItemIdentifier($0) }
+        return view
+    }
     func updateNSView(_ nsView: NSView, context: Context) {}
     func makeCoordinator() -> WidgetPopup { popup }
 

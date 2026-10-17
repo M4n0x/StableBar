@@ -396,3 +396,15 @@ private func rules(_ json: String) throws -> [StyleRule] {
     #expect(configuration.widgets[1].rules.map(\.state) == ["critical"])
     #expect(configuration.widgets[1].rules.first?.when.below == 0.1)
 }
+
+@Test func unannotatedNestedBlocksPreserveThemeCornersAndMenuHover() throws {
+    let theme = try style(##"{"cornerRadius":0,"states":{"hover":{"background":"#123456"}}}"##)
+    let column = PopupBlock(content: .column([]))
+    let inherited = column.resolvedStyle(inherited: theme, styles: [:], fields: [:], states: StyleStates()).inherited
+    let row = PopupBlock(content: .row([]), style: WidgetStyle(background: HexColor(0xabcdefef)))
+    let resolved = row.resolvedStyle(inherited: inherited, styles: [:], fields: [:], states: StyleStates())
+    #expect(WidgetAppearance(resolved.text, defaults: WidgetStyle()).cornerRadius == 0)
+    let menu = PopupBlock(content: .menu).resolvedStyle(inherited: resolved.inherited, styles: [:], fields: [:], states: StyleStates())
+    #expect(menu.text.hoverBackground == HexColor(0x123456ff))
+    #expect(menu.text.cornerRadius == 0)
+}

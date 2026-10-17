@@ -11,6 +11,9 @@ struct AppearanceView: View {
     @State private var themes: [ThemeChoice] = []
     @State private var looks: [String: Configuration] = [:]
     @State private var fontFamilies = NSFontManager.shared.availableFontFamilies
+    @State private var selectedRole = PresentationRole.time
+    @State private var modeName = ""
+    @State private var modeAlias = ""
 
     private var store: BarStore { editor.store }
 
@@ -35,11 +38,11 @@ struct AppearanceView: View {
         Form {
             Section {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
-                    ThemeCard(title: "Built-in", look: looks[""], isSelected: selected == nil) {
+                    ThemeCard(title: "Built-in", look: looks[""], isSelected: selected == nil, mode: store.modePresentation) {
                         editor.change(ConfigurationEdit(action: .theme))
                     }
                     ForEach(themes, id: \.key) { choice in
-                        ThemeCard(title: choice.title, look: looks[choice.key], isSelected: selected == choice.key) {
+                        ThemeCard(title: choice.title, look: looks[choice.key], isSelected: selected == choice.key, mode: store.modePresentation) {
                             editor.change(ConfigurationEdit(action: .theme, properties: choice.selection))
                         }
                     }
@@ -96,10 +99,56 @@ struct AppearanceView: View {
                 popups.color("Shadow", "shadowColor")
                 popups.weight()
             }
+            Section("Presentation roles") {
+                Picker("Role", selection: $selectedRole) {
+                    ForEach(PresentationRole.allCases, id: \.rawValue) { Text($0.rawValue.capitalized).tag($0) }
+                }
+                let role = roleFields(selectedRole)
+                role.font(fontFamilies)
+                role.weight()
+                role.number("Font size", "fontSize", default: 12)
+                role.color("Text", "foreground")
+                role.color("Background", "background")
+                role.color("Border", "borderColor")
+                role.color("Accent", "accent")
+                role.number("Border width", "borderWidth", default: 0)
+                role.number("Corner radius", "cornerRadius", default: 0)
+                role.number("Horizontal padding", "paddingHorizontal", default: 0)
+                role.number("Vertical padding", "paddingVertical", default: 0)
+                Text("Only widgets and layout blocks explicitly assigned this role use it. A bar widget’s role does not style its popup.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            Section("Workspace defaults") {
+                WorkspacePresentationFields(store: store, path: "workspaceDefaults", values: document("workspaceDefaults"),
+                    set: { editor.change(ConfigurationEdit(action: .workspaceDefaults, properties: $0)) },
+                    unset: { unset(["workspaceDefaults": .object($0)]) })
+            }
+            Section("AeroSpace mode aliases") {
+                ForEach((store.configuration?.modeAliases ?? [:]).keys.sorted(), id: \.self) { name in
+                    let origin = store.origins["modeAliases.\(name)"]
+                    OverrideRow(title: name, source: origin.map { "From \(store.sourceText($0))" },
+                                reset: origin.map(store.setsInMainFile) == true ? { unset(["modeAliases": .object([name: .null])]) } : nil) {
+                        Text("mode.\(store.configuration?.modeAliases[name] ?? "")")
+                        Button("Remove") { editor.change(ConfigurationEdit(action: .modeAliases, properties: [name: .null])) }
+                    }
+                }
+                HStack {
+                    TextField("Local mode, e.g. tailing", text: $modeName)
+                    TextField("Alias, e.g. command", text: $modeAlias)
+                    Button("Set mapping") {
+                        editor.change(ConfigurationEdit(action: .modeAliases, properties: [modeName: .string(modeAlias)]))
+                        if editor.error == nil { modeName = ""; modeAlias = "" }
+                    }.disabled(modeName.isEmpty || modeAlias.isEmpty)
+                }
+                Text("Your configuration maps mode names; the selected theme controls their colors and borders.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
             Section("Bar") {
                 barStyle.color("Background", "background")
                 barStyle.color("Border", "borderColor")
                 barStyle.number("Border width", "borderWidth", default: 0)
+                barStyle.choice("Border edges", "borderEdges", choices: BarBorderEdges.allCases.map(\.rawValue),
+                                default: BarBorderEdges.bottom.rawValue)
                 barStyle.number("Corner radius", "cornerRadius", default: 0)
                 bar.number("Height", "height", default: 40)
                 bar.number("Offset from top", "offset", default: 0)
@@ -141,6 +190,14 @@ struct AppearanceView: View {
         (try? store.effectiveDocument[key]?.decoded([String: ConfigurationValue].self)) ?? [:]
     }
 
+    private func roleFields(_ role: PresentationRole) -> StyleFields {
+        let style = (store.configuration?.roleStyle(role).inheriting(store.configuration?.defaults ?? WidgetStyle()) ?? WidgetStyle()).configurationValue
+        return StyleFields(store: store, path: "roles.\(role.rawValue)", defaultsPath: "defaults",
+            values: (try? style.decoded([String: ConfigurationValue].self)) ?? [:],
+            set: { editor.change(ConfigurationEdit(action: .roles, properties: [role.rawValue: .object($0)])) },
+            unset: { unset(["roles": .object([role.rawValue: .object($0)])]) })
+    }
+
     private func unset(_ properties: [String: ConfigurationValue]) {
         editor.change(ConfigurationEdit(action: .unset, properties: properties))
     }
@@ -160,6 +217,7 @@ private struct ThemeCard: View {
     let title: String
     let look: Configuration?
     let isSelected: Bool
+    let mode: ModePresentation
     let select: () -> Void
 
     var body: some View {
@@ -190,8 +248,8 @@ private struct ThemeCard: View {
         ZStack(alignment: .top) {
             Color(nsColor: .underPageBackgroundColor)
             if let look {
-                let tile = WidgetAppearance(look.defaults, defaults: WidgetStyle())
-                let bar = look.bar.style
+                let tile = WidgetAppearance(look.roleStyle(.time).inheriting(look.defaults).resolved(for: StyleStates(mode: mode)), defaults: WidgetStyle())
+                let bar = look.bar.style.resolved(for: StyleStates(mode: mode))
                 HStack(spacing: tile.spacing) {
                     Circle().fill(tile.accent).frame(width: 7, height: 7)
                     Text("9:41")
@@ -207,8 +265,17 @@ private struct ThemeCard: View {
                 .shadow(color: tile.shadowColor, radius: tile.shadowRadius, y: 1)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background((bar.background ?? look.bar.background).color, in: RoundedRectangle(cornerRadius: bar.cornerRadius ?? 0))
-                .overlay(alignment: .bottom) {
-                    (bar.borderColor?.color ?? .clear).frame(height: bar.borderWidth ?? 0)
+                .overlay { BarBorder(style: bar) }
+                .overlay(alignment: .bottomLeading) {
+                    if let workspace = try? look.workspaceDefaults.merging(nil), workspace.indicator == .underline {
+                        let underline = workspace.cellStyle(.focused, mode: mode).underline
+                        if underline.placement == .belowBar {
+                            (underline.background?.color ?? tile.accent)
+                                .frame(width: 20, height: max(0, underline.height ?? 2))
+                                .offset(x: look.bar.inset, y: max(0, underline.height ?? 2) + (underline.offsetY ?? 0))
+                                .allowsHitTesting(false)
+                        }
+                    }
                 }
                 .padding(look.bar.margin)
                 .frame(height: look.bar.height)

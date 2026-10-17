@@ -3,6 +3,7 @@ import SwiftUI
 struct BarView: View {
     let store: BarStore
     let display: BarDisplay
+    var nativeDecorations = false
     @State private var measuredWidths: [String: CGFloat] = [:]
     /// The units the last measurement had: only an active app that stayed in the bar animates a resize.
     @State private var measuredUnits: Set<String> = []
@@ -14,7 +15,7 @@ struct BarView: View {
         Group {
             if let config = store.configuration {
                 let scale = CGFloat(config.bar.scale(for: display))
-                let style = store.barStyle
+                let barGeometry = config.barGeometry(for: display)
                 let notch = display.notch.map { range in
                     let range: ClosedRange<CGFloat> = ((range.lowerBound - config.bar.margin) / scale)...((range.upperBound - config.bar.margin) / scale)
                     return config.bar.notchWidth.map { width in
@@ -43,7 +44,7 @@ struct BarView: View {
                         .plan(width: geometry.size.width / scale, items: items)
                     let visible = Set(units.filter { plan.placements[$0.id] != nil }.flatMap { $0.widgets.map(\.id) })
                     ZStack(alignment: .topLeading) {
-                        (style.background ?? config.bar.background).color
+                        Color.clear.allowsHitTesting(false)
                         ForEach(units) { unit in
                             if let placement = plan.placements[unit.id] {
                                 let alignment: Alignment = switch unit.position {
@@ -54,6 +55,9 @@ struct BarView: View {
                                 unitView(unit, config: config, width: placement.width)
                                     .geometryGroup()
                                     .frame(width: placement.width, height: geometry.size.height / scale, alignment: alignment)
+                                    .transformAnchorPreference(key: BarAnchorPreference.self, value: .bounds) { anchors, bounds in
+                                        anchors.viewports[unit.id] = bounds
+                                    }
                                     .offset(x: placement.x)
                                     .transition(visibilityTransition(unit.transition, still: reduceMotion))
                             }
@@ -96,10 +100,7 @@ struct BarView: View {
                     .frame(width: geometry.size.width / scale, height: geometry.size.height / scale)
                     .scaleEffect(scale, anchor: .topLeading)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius ?? 0))
-                .overlay(alignment: .bottom) {
-                    (style.borderColor?.color ?? .clear).frame(height: style.borderWidth ?? 0)
-                }
+                .modifier(BarSurface(store: store, settings: config.bar))
                 .overlay(alignment: .topTrailing) {
                     if let error = store.configurationError {
                         Button { store.onCustomize?() } label: {
@@ -110,10 +111,13 @@ struct BarView: View {
                     }
                 }
                 .padding(config.bar.margin)
-                .animation(reduceMotion ? nil : .easeOut(duration: config.bar.animationDuration), value: style)
+                .frame(height: barGeometry.layoutHeight)
+                .modifier(BarDecorationLayer(geometry: barGeometry, scale: scale, native: nativeDecorations))
+                .frame(height: nativeDecorations ? barGeometry.layoutHeight : barGeometry.panelHeight, alignment: .top)
             }
         }
         .environment(\.colorScheme, store.configuration?.bar.appearance?.colorScheme ?? colorScheme)
+        .frame(maxHeight: .infinity, alignment: .top)
         .onDisappear { store.setVisibleWidgets(ids: [], displayID: display.id) }
         .contextMenu {
             Text("StableBar")
@@ -231,6 +235,7 @@ private struct BarUnitView: View {
                 ForEach(unit.widgets) { widget in
                     WidgetView(widget: widget, defaults: config.defaults, popupDefaults: config.popupDefaults, store: store,
                                monitor: display, animationDuration: config.bar.animationDuration)
+                        .environment(\.barUnitID, unit.id)
                         .transition(visibilityTransition(widget.transition, still: reduceMotion || measuring))
                 }
             }
@@ -275,6 +280,8 @@ struct WidgetView: View {
     @State private var hovered = false
     @State private var popupAnchor = NSView()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.measuringBarWidths) private var measuring
+    @Environment(\.barUnitID) private var unitID
 
     private var resolution: ResolvedWidgetStyle {
         store.presentations[widget.id]?.style ?? ResolvedWidgetStyle(base: resolveStyle([defaults, widget.style]))
@@ -347,9 +354,14 @@ struct WidgetView: View {
                 }
             }
         }
+        .background {
+            if !measuring { PopupAnchor(view: popupAnchor, popup: store.popup, id: widget.id) }
+        }
+        .transformAnchorPreference(key: BarAnchorPreference.self, value: .bounds) { anchors, bounds in
+            if !measuring { anchors.widgets[widget.id] = BarWidgetAnchor(bounds: bounds, unit: unitID) }
+        }
         .offset(x: style.offsetX ?? 0, y: style.offsetY ?? 0)
         .opacity(style.opacity ?? 1)
-        .background(PopupAnchor(view: popupAnchor, popup: store.popup))
         .onHover { inside in
             hovered = inside
             if let command = inside ? widget.actions?.mouseEntered : widget.actions?.mouseExited {
@@ -374,7 +386,8 @@ struct WidgetView: View {
             WorkspaceView(workspaceStore: store.workspaceStore, monitor: monitor,
                           appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
                           animationDuration: animationDuration,
-                          configuration: widget.workspace, animation: widget.animation, defaults: widget.style.inheriting(defaults))
+                          configuration: widget.workspace, animation: widget.animation, defaults: resolution.base,
+                          modeAliases: store.configuration?.modeAliases ?? [:], widgetID: widget.id)
         case .spacer where widget.layout == nil:
             Spacer(minLength: resolution.base.minWidth ?? 0)
         default:
@@ -430,7 +443,8 @@ struct WidgetBlocks: View {
                            context: BlockContext(lists: script?.output.lists ?? [:], samples: script?.samples ?? [],
                                                  menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
                                                  targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
-                                                 series: script?.output.series ?? [:], fillsWidth: fillsWidth, open: { $0.open() },
+                                                 series: script?.output.series ?? [:], roles: store.configuration?.roles ?? [:],
+                                                 fillsWidth: fillsWidth, open: { $0.open() },
                                                  states: style.states, tracksHover: style.tracksHover, appIcon: appIcon, motion: motion,
                                                  runAction: runAction))
         }
@@ -459,6 +473,9 @@ struct WorkspaceView: View {
     var configuration: WorkspaceConfiguration?
     var animation: WidgetAnimation?
     var defaults = WidgetStyle()
+    var modeAliases: [String: String] = [:]
+    var widgetID = ""
+    @Environment(\.measuringBarWidths) private var measuring
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
     @Namespace private var selection
@@ -470,7 +487,9 @@ struct WorkspaceView: View {
         let indicator = configuration?.indicator ?? .background
         HStack(spacing: appearance.spacing) {
             ForEach(workspaces) { workspace in
-                let styles = configuration?.cellStyle(WorkspaceState(workspace)) ?? WorkspaceCellStyle()
+                let mode = configuration?.usesModeStates == true
+                    ? ModePresentation(mode: workspaceStore.mode, aliases: modeAliases) : ModePresentation()
+                let styles = configuration?.cellStyle(WorkspaceState(workspace), mode: mode) ?? WorkspaceCellStyle()
                 let hovered = hoveredWorkspace == workspace.name
                 let style = styles.label(hovered: hovered)
                 let glyph = styles.glyph(hovered: hovered)
@@ -513,13 +532,23 @@ struct WorkspaceView: View {
                         }
                     }
                     .overlay(alignment: .bottom) {
-                        if indicator == .underline && workspace.isVisible {
+                        if indicator == .underline && workspace.isVisible && styles.underline.placement != .belowBar {
                             RoundedRectangle(cornerRadius: styles.underline.cornerRadius ?? 0)
                                 .fill(styles.underline.background?.color ?? appearance.accent)
                                 .frame(width: styles.underline.width.map { CGFloat($0) }, height: styles.underline.height ?? 2)
                                 .matchedGeometryEffect(id: "workspace-underline", in: selection)
                                 .offset(x: styles.underline.offsetX ?? 0, y: styles.underline.offsetY ?? 0)
                         }
+                    }
+                    .anchorPreference(key: BarAnchorPreference.self, value: .bounds) { anchor in
+                        guard !measuring, indicator == .underline, workspace.isVisible, styles.underline.placement == .belowBar else {
+                            return BarAnchors()
+                        }
+                        // One visible selection per widget/display keeps its identity as focus moves.
+                        return BarAnchors(underlines: [widgetID: WorkspaceUnderlineAnchor(widget: widgetID, cell: anchor,
+                            selection: workspace.name,
+                            style: styles.underline, color: styles.underline.background?.color ?? appearance.accent,
+                            animation: animation ?? WidgetAnimation(curve: .smooth, duration: animationDuration))])
                     }
                     .contentShape(Rectangle())
                 }

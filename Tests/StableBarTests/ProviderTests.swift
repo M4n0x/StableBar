@@ -159,7 +159,8 @@ private func provider(_ command: String, type: String = "stream", interval: Doub
     #expect(script.diagnostics.nextDelay == 1)
     script.refresh(ScriptEvent(sender: "manual"))
     for _ in 0..<100 {
-        if script.output.text == "good" { break }
+        // Output arrives before the run's finished update resets retry diagnostics.
+        if script.output.text == "good" && script.diagnostics.nextDelay != nil { break }
         try await Task.sleep(for: .milliseconds(20))
     }
     #expect(script.output.text == "good")

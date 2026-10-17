@@ -58,6 +58,14 @@ struct HexColor: Decodable, Equatable, Sendable {
     }
 }
 
+enum BarBorderEdges: String, Decodable, CaseIterable, Sendable {
+    case bottom, all
+}
+
+enum IndicatorPlacement: String, Decodable, CaseIterable, Sendable {
+    case cell, belowBar
+}
+
 struct WidgetStyle: Decodable, Equatable, Sendable {
     var foreground: HexColor?
     var background: HexColor?
@@ -65,6 +73,7 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
     var accent: HexColor?
     var accentText: HexColor?
     var borderWidth: Double?
+    var borderEdges: BarBorderEdges?
     var cornerRadius: Double?
     var fontName: String?
     var fontSize: Double?
@@ -86,14 +95,16 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
     var offsetX: Double?
     var offsetY: Double?
     var opacity: Double?
+    /// Only workspace indicatorStyle consumes placement; ordinary style boxes ignore it.
+    var placement: IndicatorPlacement?
     /// Styles that apply over this one while a state is active, keyed by state name.
     var states: [String: WidgetStyle]?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case foreground, background, hoverBackground, borderColor, accent, accentText, borderWidth, cornerRadius
+        case foreground, background, hoverBackground, borderColor, accent, accentText, borderWidth, borderEdges, cornerRadius
         case fontName, fontSize, fontWeight, iconSize, paddingHorizontal, paddingVertical, spacing, width
         case minWidth, maxWidth, shadowRadius, shadowColor, height, paddingLeading, paddingTrailing, paddingTop
-        case paddingBottom, offsetX, offsetY, opacity, hoverForeground, states
+        case paddingBottom, offsetX, offsetY, opacity, placement, hoverForeground, states
     }
 
     var hoverBackground: HexColor? { states?["hover"]?.background }
@@ -107,6 +118,7 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
             accent: accent ?? defaults.accent,
             accentText: accentText ?? defaults.accentText,
             borderWidth: borderWidth ?? defaults.borderWidth,
+            borderEdges: borderEdges ?? defaults.borderEdges,
             cornerRadius: cornerRadius ?? defaults.cornerRadius,
             fontName: fontName ?? defaults.fontName,
             fontSize: fontSize ?? defaults.fontSize,
@@ -128,6 +140,7 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
             offsetX: offsetX ?? defaults.offsetX,
             offsetY: offsetY ?? defaults.offsetY,
             opacity: opacity ?? defaults.opacity,
+            placement: placement ?? defaults.placement,
             states: states.map { own in own.merging(defaults.states ?? [:]) { $0.inheriting($1) } } ?? defaults.states
         )
     }
@@ -152,6 +165,7 @@ extension WidgetStyle {
         accent = try values.decodeIfPresent(HexColor.self, forKey: .accent)
         accentText = try values.decodeIfPresent(HexColor.self, forKey: .accentText)
         borderWidth = try values.decodeIfPresent(Double.self, forKey: .borderWidth)
+        borderEdges = try values.decodeIfPresent(BarBorderEdges.self, forKey: .borderEdges)
         cornerRadius = try values.decodeIfPresent(Double.self, forKey: .cornerRadius)
         fontName = try values.decodeIfPresent(String.self, forKey: .fontName)
         fontSize = try values.decodeIfPresent(Double.self, forKey: .fontSize)
@@ -173,6 +187,7 @@ extension WidgetStyle {
         offsetX = try values.decodeIfPresent(Double.self, forKey: .offsetX)
         offsetY = try values.decodeIfPresent(Double.self, forKey: .offsetY)
         opacity = try values.decodeIfPresent(Double.self, forKey: .opacity)
+        placement = try values.decodeIfPresent(IndicatorPlacement.self, forKey: .placement)
         let hoverForeground = try values.decodeIfPresent(HexColor.self, forKey: .hoverForeground)
         let hoverBackground = try values.decodeIfPresent(HexColor.self, forKey: .hoverBackground)
         let explicit = try values.decodeIfPresent([String: WidgetStyle?].self, forKey: .states)?.compactMapValues { $0 }
@@ -245,6 +260,7 @@ enum WidgetContent: Equatable, Sendable {
 
 struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let id: String
+    let role: PresentationRole?
     let position: WidgetPosition
     let content: WidgetContent
     let icon: String?
@@ -258,7 +274,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let layout: PopupBlock?
     let overlay: PopupBlock?
     let animation: WidgetAnimation?
-    let workspace: WorkspaceConfiguration?
+    var workspace: WorkspaceConfiguration?
     let events: [String]
     let environment: [String: String]
     let timeout: Double
@@ -271,7 +287,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let transition: WidgetTransition?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case id, position, type, icon, onClick, open, menu, popup, popupName, style, format, text, command, interval
+        case id, role, position, type, icon, onClick, open, menu, popup, popupName, style, format, text, command, interval
         case display, layout, overlay, animation, workspace, events, environment, timeout, actions, enabled, provider, group, priority, overflow, rules, transition
     }
 
@@ -279,6 +295,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(String.self, forKey: .id)
+        role = try values.decodeIfPresent(PresentationRole.self, forKey: .role)
         position = try values.decode(WidgetPosition.self, forKey: .position)
         icon = try values.decodeIfPresent(String.self, forKey: .icon)
         onClick = try values.decodeIfPresent(String.self, forKey: .onClick)
@@ -403,9 +420,12 @@ struct BarSettings: Decodable, Sendable {
 
 struct Configuration: Decodable, Sendable {
     let workspaceSource: WorkspaceSource
+    let modeAliases: [String: String]
     let bar: BarSettings
     let defaults: WidgetStyle
     let popupDefaults: WidgetStyle
+    let roles: [String: WidgetStyle]
+    let workspaceDefaults: WorkspaceDefaults
     let widgets: [WidgetConfiguration]
     let popups: [String: PopupConfiguration]
     let environment: [String: String]
@@ -418,15 +438,29 @@ struct Configuration: Decodable, Sendable {
     /// source sends, a provider of that source, unless a provider of another type has its name.
     let activeProviders: Set<String>
 
-    enum CodingKeys: String, CodingKey, CaseIterable { case workspaceSource, bar, defaults, popupDefaults, widgets, popups, templates, widgetOverrides, environment, providers, groups }
+    enum CodingKeys: String, CodingKey, CaseIterable { case workspaceSource, modeAliases, bar, defaults, popupDefaults, roles, workspaceDefaults, widgets, popups, templates, widgetOverrides, environment, providers, groups }
 
     init(from decoder: Decoder) throws {
         try decoder.rejectUnknownKeys(CodingKeys.self, allowing: ["$schema", "tokens", "packages", "theme"])
         let values = try decoder.container(keyedBy: CodingKeys.self)
         workspaceSource = try values.decodeIfPresent(WorkspaceSource.self, forKey: .workspaceSource) ?? .aerospace
+        modeAliases = try values.decodeIfPresent([String: String?].self, forKey: .modeAliases)?.compactMapValues { $0 } ?? [:]
+        guard modeAliases.allSatisfy({ !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && $0.value.range(of: "^[A-Za-z][A-Za-z0-9_-]*$", options: .regularExpression) != nil }) else {
+            throw DecodingError.dataCorruptedError(forKey: .modeAliases, in: values,
+                debugDescription: "Map nonempty AeroSpace mode names to aliases starting with a letter and containing only letters, digits, _ or -.")
+        }
         bar = try values.decodeIfPresent(BarSettings.self, forKey: .bar) ?? BarSettings()
         defaults = try values.decodeIfPresent(WidgetStyle.self, forKey: .defaults) ?? WidgetStyle()
         popupDefaults = try values.decodeIfPresent(WidgetStyle.self, forKey: .popupDefaults) ?? WidgetStyle()
+        let roleDefinitions = try values.decodeIfPresent([String: WidgetStyle?].self, forKey: .roles) ?? [:]
+        guard roleDefinitions.keys.allSatisfy({ PresentationRole(rawValue: $0) != nil }) else {
+            throw DecodingError.dataCorruptedError(forKey: .roles, in: values,
+                debugDescription: "Unknown presentation role. Use \(PresentationRole.allCases.map(\.rawValue).joined(separator: ", ")).")
+        }
+        roles = roleDefinitions.compactMapValues { $0 }
+        let workspaceDefaults = try values.decodeIfPresent(WorkspaceDefaults.self, forKey: .workspaceDefaults) ?? WorkspaceDefaults()
+        self.workspaceDefaults = workspaceDefaults
         let templates = try values.decodeIfPresent([String: [String: ConfigurationValue]].self, forKey: .templates) ?? [:]
         let overrides = try values.decodeIfPresent([String: [String: ConfigurationValue]].self, forKey: .widgetOverrides) ?? [:]
         for (id, properties) in overrides where properties["id"] != nil {
@@ -439,7 +473,9 @@ struct Configuration: Decodable, Sendable {
                 expanded.merge(properties) { $1.overriding($0) }
             }
             do {
-                return try JSONDecoder().decode(WidgetConfiguration.self, from: JSONEncoder().encode(expanded))
+                var widget = try JSONDecoder().decode(WidgetConfiguration.self, from: JSONEncoder().encode(expanded))
+                if widget.content == .workspaces { widget.workspace = try workspaceDefaults.merging(expanded["workspace"]) }
+                return widget
             } catch {
                 throw CommandFailure(message: "widgets.\(expanded["id"].flatMap { try? $0.decoded(String.self) } ?? "?"): \(errorMessage(error))")
             }
@@ -470,7 +506,7 @@ struct Configuration: Decodable, Sendable {
         var groupPositions: [String: WidgetPosition] = [:]
         var ids = Set<String>()
         for widget in widgets {
-            let style = widget.style.inheriting(defaults)
+            let style = resolveStyle([defaults, roles[widget.role?.rawValue ?? ""] ?? WidgetStyle(), widget.style])
             let states = (style.states ?? [:]).sorted { $0.key < $1.key }.map { $0.value.inheriting(style) }
             for checked in [style] + states {
                 if let min = checked.minWidth, min < 0 { throw CommandFailure(message: "minWidth must be nonnegative.") }

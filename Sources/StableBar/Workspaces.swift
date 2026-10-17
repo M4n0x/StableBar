@@ -31,8 +31,11 @@ struct WorkspaceApp: Decodable, Identifiable, Sendable, Equatable {
     }
 }
 
-private struct AeroSpaceEvent: Decodable {
+struct AeroSpaceEvent: Decodable, Sendable {
+    let event: String?
     let mode: String?
+
+    enum CodingKeys: String, CodingKey { case event = "_event", mode }
 }
 
 enum WorkspaceSource: String, Decodable, Sendable {
@@ -56,12 +59,25 @@ func workspaceSnapshot(workspaces: Data, windows: Data) throws -> [Workspace] {
 
 @MainActor @Observable
 final class WorkspaceStore {
-    var source = WorkspaceSource.aerospace
+    var source = WorkspaceSource.aerospace {
+        didSet {
+            if source != oldValue { stop(); workspaces = []; error = nil; connectionError = nil }
+        }
+    }
     var workspaces: [Workspace] = []
     var error: String?
+    private(set) var connectionError: String?
+    var reconnectDelay: Duration = .seconds(2)
     var onWorkspaceChange: (() -> Void)?
-    var onModeChange: ((String) -> Void)?
-    private var mode: String?
+    var onModeChange: ((String?) -> Void)?
+    private(set) var mode: String?
+    /// Injectable executable lookup lets lifecycle tests use a scratch event stream.
+    var executablePath: (() throws -> String)?
+    private(set) var tracksWorkspaces = true
+    var isRunning: Bool { task != nil }
+    private var refreshTask: Task<Void, Never>?
+    private var refreshPending = false
+    private var stopping = false
     private var task: Task<Void, Never>?
     private var process: Process?
 
@@ -71,15 +87,23 @@ final class WorkspaceStore {
         }
     }
 
+    /// Retain the same subscription while either workspaces or presentation needs it.
+    func configure(source: WorkspaceSource, workspaces: Bool, mode: Bool) {
+        guard !stopping else { return }
+        self.source = source
+        let addedWorkspaces = workspaces && !tracksWorkspaces
+        tracksWorkspaces = workspaces
+        if !workspaces { error = nil }
+        guard workspaces || (source == .aerospace && mode) else { stop(); return }
+        if !isRunning { start() }
+        else if addedWorkspaces { requestRefresh() }
+    }
+
     func start() {
-        stop()
+        cancelConnection()
         if source == .yabai {
-            task = Task {
-                do { try await refresh() }
-                catch {
-                    if !Task.isCancelled { self.error = error.localizedDescription }
-                }
-            }
+            task = Task { }
+            requestRefresh()
             return
         }
         task = Task {
@@ -92,23 +116,22 @@ final class WorkspaceStore {
                                         "window-detected", "mode-changed"]
                     stream.standardOutput = output
                     stream.standardError = FileHandle.standardError
-                    let received = OSAllocatedUnfairLock(initialState: (pending: Data(), mode: String?.none))
-                    let events = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+                    let pending = OSAllocatedUnfairLock(initialState: Data())
+                    let events = AsyncStream<AeroSpaceEvent> { continuation in
                         output.fileHandleForReading.readabilityHandler = { handle in
                             let data = handle.availableData
-                            if data.isEmpty {
-                                continuation.finish()
-                                return
-                            }
-                            received.withLock { received in
-                                received.pending.append(data)
-                                while let newline = received.pending.firstIndex(of: 10) {
-                                    let line = Data(received.pending[..<newline])
-                                    received.pending.removeSubrange(...newline)
-                                    if let mode = try? JSONDecoder().decode(AeroSpaceEvent.self, from: line).mode { received.mode = mode }
+                            if data.isEmpty { continuation.finish(); return }
+                            let parsed = pending.withLock { pending -> [AeroSpaceEvent] in
+                                pending.append(data)
+                                var parsed: [AeroSpaceEvent] = []
+                                while let newline = pending.firstIndex(of: 10) {
+                                    let line = Data(pending[..<newline])
+                                    pending.removeSubrange(...newline)
+                                    if let event = try? JSONDecoder().decode(AeroSpaceEvent.self, from: line) { parsed.append(event) }
                                 }
+                                return parsed
                             }
-                            continuation.yield(())
+                            for event in parsed { continuation.yield(event) }
                         }
                         continuation.onTermination = { _ in output.fileHandleForReading.readabilityHandler = nil }
                     }
@@ -119,24 +142,57 @@ final class WorkspaceStore {
                         output.fileHandleForReading.readabilityHandler = nil
                         if stream.isRunning { stream.terminate() }
                     }
-                    try await refresh()
-                    for await _ in events {
+                    requestRefresh()
+                    // subscribe sends the current mode immediately on every connection. Consume
+                    // that initial snapshot and later events independently of workspace queries.
+                    for await event in events {
                         try Task.checkCancellation()
-                        try await refresh()
-                        let current = received.withLock { $0.mode }
-                        if let current, current != mode {
-                            mode = current
-                            onModeChange?(current)
-                        }
+                        receive(event)
                     }
                     throw CommandFailure(message: "AeroSpace disconnected. Reconnecting…")
                 } catch {
                     if Task.isCancelled { return }
-                    self.error = error.localizedDescription
+                    acceptMode(nil)
+                    refreshTask?.cancel()
+                    refreshTask = nil
+                    refreshPending = false
+                    connectionError = error.localizedDescription
+                    if tracksWorkspaces { self.error = error.localizedDescription }
                 }
-                do {
-                    try await Task.sleep(for: .seconds(2))
-                } catch { return }
+                do { try await Task.sleep(for: reconnectDelay) }
+                catch { return }
+            }
+        }
+    }
+
+    func receive(_ event: AeroSpaceEvent) {
+        guard source == .aerospace else { return }
+        if event.event == "mode-changed" {
+            acceptMode(event.mode)
+            connectionError = nil
+            if !tracksWorkspaces { error = nil }
+        } else {
+            requestRefresh()
+        }
+    }
+
+    func acceptMode(_ mode: String?) {
+        let next = source == .aerospace ? mode : nil
+        guard self.mode != next else { return }
+        self.mode = next
+        onModeChange?(next)
+    }
+
+    private func requestRefresh() {
+        guard tracksWorkspaces else { return }
+        refreshPending = true
+        guard refreshTask == nil else { return }
+        refreshTask = Task {
+            defer { if !Task.isCancelled { refreshTask = nil } }
+            while refreshPending && !Task.isCancelled {
+                refreshPending = false
+                do { try await refresh() }
+                catch { if !Task.isCancelled { self.error = error.localizedDescription } }
             }
         }
     }
@@ -185,6 +241,7 @@ final class WorkspaceStore {
     }
 
     private func executable() throws -> String {
+        if let executablePath { return try executablePath() }
         let directories = shellEnvironment.withLock { $0["PATH"] ?? "" }.split(separator: ":")
         guard let directory = directories.first(where: { FileManager.default.isExecutableFile(atPath: "\($0)/\(source.rawValue)") }) else {
             throw CommandFailure(message: "\(source.title) is not on your login shell's PATH.")
@@ -193,10 +250,30 @@ final class WorkspaceStore {
     }
 
     func trigger() {
-        if source == .yabai && task != nil { start() }
+        if source == .yabai && isRunning { requestRefresh() }
+    }
+
+    func refreshForDisplayChange() {
+        if isRunning { requestRefresh() }
+    }
+
+    func reconnect() {
+        if isRunning { start() }
     }
 
     func stop() {
+        guard !stopping else { return }
+        stopping = true
+        defer { stopping = false }
+        cancelConnection()
+        acceptMode(nil)
+        connectionError = nil
+    }
+
+    private func cancelConnection() {
+        refreshTask?.cancel()
+        refreshTask = nil
+        refreshPending = false
         task?.cancel()
         task = nil
         if let process, process.isRunning { process.terminate() }

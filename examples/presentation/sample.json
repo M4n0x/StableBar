@@ -1,0 +1,38 @@
+{
+  "text": "Sample",
+  "fields": {
+    "track": "Eine kleine Nachtmusik · Allegro",
+    "artist": "Mozart · Tonhalle-Orchester Zürich",
+    "elapsed": "1:24",
+    "duration": "5:42",
+    "cpu": "12%",
+    "memory": "6.4 GB",
+    "network": "Wi-Fi",
+    "nextMeeting": "14:00 Rehearsal",
+    "status": "Ready",
+    "mail": "3",
+    "focus": "Focus",
+    "weather": "18°",
+    "volume": "45%",
+    "battery": "86%"
+  },
+  "values": {
+    "cpu": 0.12,
+    "memory": 0.4,
+    "playback": 0.245
+  },
+  "lists": {
+    "agenda": [
+      {
+        "time": "14:00",
+        "title": "Rehearsal",
+        "detail": "Main hall · 90 min"
+      },
+      {
+        "time": "18:30",
+        "title": "Evening concert",
+        "detail": "Doors open at 18:00"
+      }
+    ]
+  }
+}
