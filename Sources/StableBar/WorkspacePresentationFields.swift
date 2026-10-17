@@ -18,7 +18,7 @@ struct WorkspacePresentationFields: View {
         indicator.choice("Underline placement", "placement", choices: IndicatorPlacement.allCases.map(\.rawValue), default: "cell")
         indicator.color("Underline", "background")
         indicator.number("Underline thickness", "height", default: 2)
-        indicator.number("Underline gap / cell offset", "offsetY", default: 0)
+        indicator.number("Underline gap / cell offset", "offsetY", default: 0, in: -200...200)
         cell.color("Workspace text", "foreground")
         cell.number("Cell height", "height", default: 22)
         cell.number("Cell padding", "paddingHorizontal", default: 7)

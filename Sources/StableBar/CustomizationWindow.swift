@@ -487,7 +487,7 @@ struct StyleFields {
         }
     }
 
-    func number(_ title: String, _ key: String, default fallback: Double) -> some View {
+    func number(_ title: String, _ key: String, default fallback: Double, in range: ClosedRange<Double> = 0...200) -> some View {
         row(title, key) { _ in
             let value = if case let .number(number) = values[key] { number } else { fallback }
             let binding = Binding(get: { value }, set: { if $0 != value { set([key: .number($0)]) } })
@@ -497,7 +497,7 @@ struct StyleFields {
                     .multilineTextAlignment(.trailing)
                     .frame(width: 52)
                 Text("pt").foregroundStyle(.secondary)
-                Stepper(title, value: binding, in: 0...200).labelsHidden()
+                Stepper(title, value: binding, in: range).labelsHidden()
             }
         }
     }
