@@ -1,0 +1,585 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Seb-GRAF/StableBar/main/stablebar.schema.json",
+  "theme": {
+    "id": "tonhalle-line",
+    "version": "1.1.0"
+  },
+  "workspaceSource": "aerospace",
+  "modeAliases": {
+    "tailing": "command"
+  },
+  "bar": {
+    "appearance": "dark"
+  },
+  "providers": {
+    "sample": {
+      "type": "command",
+      "command": "/bin/cat \"$CONFIG_DIR/sample.json\"",
+      "interval": 60
+    }
+  },
+  "groups": {
+    "system-stats": {
+      "style": {
+        "spacing": 12
+      }
+    }
+  },
+  "popups": {
+    "music": {
+      "style": {
+        "width": 440
+      },
+      "layout": {
+        "type": "column",
+        "children": [
+          {
+            "type": "text",
+            "text": "Now playing",
+            "role": "heading"
+          },
+          {
+            "type": "row",
+            "children": [
+              {
+                "type": "symbol",
+                "name": "music.note",
+                "style": {
+                  "width": 72,
+                  "iconSize": 36
+                }
+              },
+              {
+                "type": "column",
+                "children": [
+                  {
+                    "type": "field",
+                    "field": "track",
+                    "role": "primary"
+                  },
+                  {
+                    "type": "field",
+                    "field": "artist",
+                    "role": "secondary"
+                  },
+                  {
+                    "type": "progress",
+                    "role": "meter",
+                    "source": "playback",
+                    "height": 2
+                  },
+                  {
+                    "type": "row",
+                    "children": [
+                      {
+                        "type": "field",
+                        "field": "elapsed",
+                        "role": "key"
+                      },
+                      {
+                        "type": "field",
+                        "field": "duration",
+                        "alignment": "trailing",
+                        "role": "value"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "divider",
+            "role": "separator"
+          },
+          {
+            "type": "row",
+            "children": [
+              {
+                "type": "text",
+                "text": "Open Music",
+                "open": "com.apple.Music",
+                "role": "button"
+              },
+              {
+                "type": "text",
+                "text": "Sound settings",
+                "open": "x-apple.systempreferences:com.apple.Sound-Settings.extension",
+                "role": "button"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "system": {
+      "style": {
+        "width": 320
+      },
+      "layout": {
+        "type": "column",
+        "children": [
+          {
+            "type": "text",
+            "text": "System",
+            "role": "heading"
+          },
+          {
+            "type": "row",
+            "children": [
+              {
+                "type": "text",
+                "text": "Resource",
+                "role": "key"
+              },
+              {
+                "type": "text",
+                "text": "Usage",
+                "alignment": "trailing",
+                "role": "key"
+              }
+            ]
+          },
+          {
+            "type": "row",
+            "children": [
+              {
+                "type": "text",
+                "text": "CPU",
+                "role": "key"
+              },
+              {
+                "type": "field",
+                "field": "cpu",
+                "alignment": "trailing",
+                "role": "value"
+              }
+            ]
+          },
+          {
+            "type": "progress",
+            "role": "meter",
+            "source": "cpu",
+            "height": 3
+          },
+          {
+            "type": "row",
+            "children": [
+              {
+                "type": "text",
+                "text": "Memory",
+                "role": "key"
+              },
+              {
+                "type": "field",
+                "field": "memory",
+                "alignment": "trailing",
+                "role": "value"
+              }
+            ]
+          },
+          {
+            "type": "progress",
+            "role": "meter",
+            "source": "memory",
+            "height": 3
+          },
+          {
+            "type": "divider",
+            "role": "separator"
+          },
+          {
+            "type": "text",
+            "text": "Activity Monitor",
+            "open": "com.apple.ActivityMonitor",
+            "role": "button"
+          }
+        ]
+      }
+    },
+    "agenda": {
+      "style": {
+        "width": 350
+      },
+      "layout": {
+        "type": "column",
+        "children": [
+          {
+            "type": "text",
+            "text": "Today",
+            "role": "heading"
+          },
+          {
+            "type": "text",
+            "text": "Sample calendar",
+            "role": "secondary"
+          },
+          {
+            "type": "list",
+            "source": "agenda",
+            "row": {
+              "type": "row",
+              "children": [
+                {
+                  "type": "field",
+                  "field": "time",
+                  "style": {
+                    "width": 54
+                  },
+                  "role": "key"
+                },
+                {
+                  "type": "column",
+                  "children": [
+                    {
+                      "type": "field",
+                      "field": "title",
+                      "role": "primary"
+                    },
+                    {
+                      "type": "field",
+                      "field": "detail",
+                      "role": "secondary"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "type": "divider",
+            "role": "separator"
+          },
+          {
+            "type": "text",
+            "text": "Open Calendar",
+            "open": "com.apple.iCal",
+            "role": "button"
+          }
+        ]
+      }
+    },
+    "clock": {
+      "style": {
+        "width": 280
+      },
+      "layout": {
+        "type": "column",
+        "children": [
+          {
+            "type": "text",
+            "text": "Time and date",
+            "role": "heading"
+          },
+          {
+            "type": "text",
+            "text": "Popup text keeps its own typography.",
+            "role": "secondary"
+          },
+          {
+            "type": "row",
+            "children": [
+              {
+                "type": "text",
+                "text": "Time zone",
+                "role": "key"
+              },
+              {
+                "type": "text",
+                "text": "Local",
+                "alignment": "trailing",
+                "role": "value"
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "text": "Open Calendar",
+            "open": "com.apple.iCal",
+            "role": "button"
+          }
+        ]
+      }
+    }
+  },
+  "widgets": [
+    {
+      "id": "system",
+      "type": "text",
+      "position": "left",
+      "icon": "apple.logo",
+      "text": "",
+      "open": "com.apple.systempreferences"
+    },
+    {
+      "id": "spaces",
+      "type": "workspaces",
+      "position": "left",
+      "priority": 100,
+      "overflow": "never",
+      "workspace": {
+        "showEmpty": true,
+        "appGlyphs": {
+          "com.apple.finder": "F",
+          "com.apple.Terminal": "T"
+        },
+        "appStyle": {
+          "fontName": "Menlo"
+        }
+      }
+    },
+    {
+      "id": "active-app",
+      "type": "activeApp",
+      "position": "left",
+      "role": "primary",
+      "style": {
+        "maxWidth": 180
+      }
+    },
+    {
+      "id": "music",
+      "type": "provider",
+      "provider": "sample",
+      "position": "notchLeft",
+      "role": "primary",
+      "popupName": "music",
+      "priority": 20,
+      "style": {
+        "maxWidth": 240
+      },
+      "layout": {
+        "type": "row",
+        "children": [
+          {
+            "type": "symbol",
+            "name": "music.note"
+          },
+          {
+            "type": "field",
+            "field": "track"
+          }
+        ]
+      }
+    },
+    {
+      "id": "meeting",
+      "type": "provider",
+      "provider": "sample",
+      "position": "notchRight",
+      "role": "secondary",
+      "popupName": "agenda",
+      "layout": {
+        "type": "row",
+        "children": [
+          {
+            "type": "symbol",
+            "name": "calendar"
+          },
+          {
+            "type": "field",
+            "field": "nextMeeting"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mode",
+      "type": "script",
+      "command": "/bin/sh \"$CONFIG_DIR/mode.sh\"",
+      "interval": null,
+      "events": [
+        "aerospaceMode"
+      ],
+      "position": "left",
+      "role": "secondary",
+      "icon": "command",
+      "transition": "fade"
+    },
+    {
+      "id": "cpu",
+      "type": "provider",
+      "provider": "sample",
+      "position": "right",
+      "role": "value",
+      "group": "system-stats",
+      "popupName": "system",
+      "layout": {
+        "type": "field",
+        "field": "cpu"
+      }
+    },
+    {
+      "id": "memory",
+      "type": "provider",
+      "provider": "sample",
+      "position": "right",
+      "role": "value",
+      "group": "system-stats",
+      "popupName": "system",
+      "layout": {
+        "type": "field",
+        "field": "memory"
+      }
+    },
+    {
+      "id": "network",
+      "type": "provider",
+      "provider": "sample",
+      "position": "right",
+      "role": "secondary",
+      "group": "system-stats",
+      "popupName": "system",
+      "layout": {
+        "type": "field",
+        "field": "network"
+      }
+    },
+    {
+      "id": "status",
+      "type": "provider",
+      "provider": "sample",
+      "position": "right",
+      "role": "secondary",
+      "layout": {
+        "type": "row",
+        "children": [
+          {
+            "type": "symbol",
+            "name": "checkmark.circle"
+          },
+          {
+            "type": "field",
+            "field": "status"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mail",
+      "type": "provider",
+      "provider": "sample",
+      "position": "right",
+      "role": "secondary",
+      "layout": {
+        "type": "row",
+        "children": [
+          {
+            "type": "symbol",
+            "name": "envelope"
+          },
+          {
+            "type": "field",
+            "field": "mail"
+          }
+        ]
+      }
+    },
+    {
+      "id": "focus",
+      "type": "provider",
+      "provider": "sample",
+      "position": "right",
+      "role": "secondary",
+      "layout": {
+        "type": "row",
+        "children": [
+          {
+            "type": "symbol",
+            "name": "moon"
+          },
+          {
+            "type": "field",
+            "field": "focus"
+          }
+        ]
+      }
+    },
+    {
+      "id": "weather",
+      "type": "provider",
+      "provider": "sample",
+      "position": "right",
+      "role": "primary",
+      "layout": {
+        "type": "row",
+        "children": [
+          {
+            "type": "symbol",
+            "name": "cloud.sun"
+          },
+          {
+            "type": "field",
+            "field": "weather"
+          }
+        ]
+      }
+    },
+    {
+      "id": "volume",
+      "type": "provider",
+      "provider": "sample",
+      "position": "right",
+      "role": "primary",
+      "layout": {
+        "type": "row",
+        "children": [
+          {
+            "type": "symbol",
+            "name": "speaker.wave.2"
+          },
+          {
+            "type": "field",
+            "field": "volume"
+          }
+        ]
+      }
+    },
+    {
+      "id": "battery",
+      "type": "provider",
+      "provider": "sample",
+      "position": "right",
+      "role": "primary",
+      "layout": {
+        "type": "row",
+        "children": [
+          {
+            "type": "symbol",
+            "name": "battery.100percent"
+          },
+          {
+            "type": "field",
+            "field": "battery"
+          }
+        ]
+      }
+    },
+    {
+      "id": "date",
+      "type": "clock",
+      "position": "right",
+      "format": "EEE d MMM",
+      "role": "secondary",
+      "popupName": "agenda",
+      "priority": 40
+    },
+    {
+      "id": "time",
+      "type": "clock",
+      "position": "right",
+      "format": "HH:mm",
+      "role": "time",
+      "popupName": "clock",
+      "priority": 100,
+      "overflow": "never"
+    },
+    {
+      "id": "hidden-example",
+      "type": "text",
+      "position": "left",
+      "text": "Hidden",
+      "enabled": false
+    }
+  ]
+}

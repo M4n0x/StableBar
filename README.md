@@ -62,7 +62,7 @@ macOS provides no public API for a custom bar to reserve screen space. Without a
 
 Native fullscreen windows, minimized windows and dialogs are left alone. Some apps do not expose movable or resizable windows, or enforce a minimum size that cannot fit; StableBar cannot keep those clear. Disabling the option stops adjustments and leaves windows where they are. Revoking Accessibility access pauses adjustments; granting it resumes them. A locally rebuilt, ad-hoc signed app may need to be authorized again.
 
-Leave this option off when another window manager controls your gaps. With AeroSpace, set `gaps.outer.top` in `~/.aerospace.toml` to the bar's height (40 by default), plus any `bar.offset` beyond the menu bar; AeroSpace accepts per-monitor values. yabai users can set `external_bar`.
+Leave this option off when another window manager controls your gaps. With AeroSpace, set `gaps.outer.top` in `~/.aerospace.toml` to the bar's panel height (40 by default), plus any `bar.offset` beyond the menu bar; AeroSpace accepts per-monitor values. yabai users can set `external_bar` with the same clearance. A below-bar underline adds its maximum configured gap plus thickness beyond the existing bottom margin. For example, a 38 pt bar with no margin, a 2 pt underline and a 3 pt gap needs 43 pt. With display scale `s`, round upward to whole screen points: `max(ceil(height × s), ceil(height × s − margin + maximum gap × s) + ceil(maximum thickness × s))`. StableBar reserves this maximum across states, so focus or mode changes never move windows or resize panels.
 
 ## Layout and style
 
@@ -161,13 +161,69 @@ Any style can have `states`: styles that apply over it while a state is active. 
 }
 ```
 
-`hover` is active while the pointer is over a bar widget, a workspace cell or a layout block, on that display only. The `open` state is active on a bar widget, its layout and its overlay while its popup shows, on the instance that opened it: not on its copies on other displays, and not when the popup opened from the More widgets menu. A block's own background, border, padding, size, offset and opacity change for `open` only through that block's own `states`. Workspace cells also have a workspace state; see [Workspace appearance](#workspace-appearance). Script and provider widgets can have a data state; see [Data states](#data-states). States apply in a fixed order, later ones winning: the data state, the workspace state, `hover`, then `open`, so an `open` style stays visible while the pointer rests on its widget. A state's style can have its own `states`, which refine later states while both are active: `states.focused.states.hover` styles the focused workspace under the pointer. `bar.style` and group styles have no states.
+`hover` is active while the pointer is over a bar widget, a workspace cell or a layout block, on that display only. The `open` state is active on a bar widget, its layout and its overlay while its popup shows, on the instance that opened it: not on its copies on other displays, and not when the popup opened from the More widgets menu. A block's own background, border, padding, size, offset and opacity change for `open` only through that block's own `states`. Workspace cells also have a workspace state; see [Workspace appearance](#workspace-appearance). Script and provider widgets can have a data state; see [Data states](#data-states). States apply in a fixed order, later ones winning: the data state, the workspace state, `mode`, `mode.<alias>`, `hover`, then `open`, so an `open` style stays visible while the pointer rests on its widget. A state's style can have its own `states`, which refine later states while both are active: `states.focused.states.hover` styles the focused workspace under the pointer. `bar.style` consumes mode states; group states remain inactive.
 
 `hoverBackground` and `hoverForeground` are shorthand for `states.hover.background` and `states.hover.foreground`. In each style, such as `defaults` or a widget's `style`, the two are compared after includes, packages, themes, templates, widget overrides and profiles merge, so a `states.hover.background` from any layer wins over `hoverBackground` from any layer, and likewise for the foreground; to override a lower layer's hover state, set `states.hover.background`. Customize's **Hover background** rows handle this for you: they set `hoverBackground` and set `states.hover.background` to `null` beside it, so the color you pick wins over a lower layer's hover state but not over an active profile's `hoverBackground`. A hover without a background keeps the background. In a widget's `layout` and `overlay` and in popups, `hover` changes a block's text color and its own background, border, padding, size, offset and opacity. A widget without `layout` draws its default layout with all of its `hover` and `open` styles.
 
 A widget's states merge with those in `defaults`, and every style's states merge through includes, templates, profiles and widget overrides one state and property at a time: a widget's `states.hover.foreground` keeps the theme's `states.hover.background`. Set a state to `null` in a later layer to remove it at the same place: in `defaults` through includes, profiles and packages, and in a widget's `style` through its templates, widget overrides and package widgets. A hover set with `hoverBackground` or `hoverForeground` comes back from the shorthand, so set those to `null` too. Nothing set on a widget (its `style`, a template, a widget override or script output) can remove a state set in `defaults`. A state wins over the base style, so a theme's states also show on widgets that set their own colors.
 
 The bar measures widths without `hover` and `open`, so use them for colors, borders, opacity and offsets rather than sizes.
+
+With `workspaceSource: "aerospace"`, `mode` is active while connected in any binding mode other than `main`. Map your local mode names to semantic aliases in your configuration; themes own the matching appearance:
+
+```json
+{
+  "modeAliases": { "tailing": "command" },
+  "bar": { "style": { "states": {
+    "mode.command": { "borderEdges": "all", "borderColor": "@token.warning" }
+  } } }
+}
+```
+
+An unmapped non-main mode activates only `mode`. Aliases start with a letter and contain letters, digits, `_` or `-`; a null mapping clears an inherited mapping. Themes and widget packages cannot define `modeAliases`. The initial mode is read on connect and reconnect, even without a workspace widget; disconnect, stop or switching to yabai clears it. Mode changes update presentation and send `aerospaceMode` to subscribers without reloading configuration or closing popups. Theme/configuration changes still close popups; reopening uses the new theme. A mode state beats a script's plain `barStyle`, and leaving the mode restores the remaining layers, border edges included.
+
+**Migration:** `mode` and every `mode.*` name are reserved. Rename custom output/rule data states that used these names. Previously ignored `bar.style.states.mode` and `mode.<alias>` rules now apply. Script colors still use literal colors; put token-based mode colors in configuration or a theme. Use `--batch '[{"action":"modeAliases","properties":{"tailing":"command"}}]'` to edit mappings through the shared CLI editor. `--query` and Diagnostics include the connected mode, active mode states and configuration origins.
+
+
+### Presentation roles and workspace defaults
+
+`role` is an explicit annotation on a widget or any layout/popup block. The allowed names are `time`, `primary`, `secondary`, `key`, `value`, `heading`, `button`, `meter` and `separator`; unknown names are errors. Nothing selects widgets by type or ID. In particular, two `clock` widgets can use `time` and `secondary` independently. Omitting a role keeps the existing style; Built-in supplies an empty fallback for each role.
+
+```json
+{
+  "roles": { "time": { "fontName": "Helvetica Neue", "fontSize": 16, "fontWeight": "light" } },
+  "workspaceDefaults": {
+    "indicator": "underline",
+    "indicatorStyle": { "placement": "belowBar", "height": 2 },
+    "style": { "fontSize": 13 },
+    "appStyle": { "fontSize": 14 }
+  },
+  "widgets": [
+    { "id": "time", "type": "clock", "format": "HH:mm", "position": "right", "role": "time" },
+    { "id": "date", "type": "clock", "format": "EEE d MMM", "position": "right", "role": "secondary" }
+  ]
+}
+```
+
+A selected theme can style any subset of roles. Configuration files, includes and profiles can override those styles. Widget packages (including command-capable packages) may annotate widgets and blocks, but cannot define global `roles`, `workspaceDefaults` or `modeAliases`. Role styles accept only style properties: they cannot change actions, providers, visibility, display filters or the row/column structure of a layout.
+
+Layers apply from lowest to highest:
+
+| Element | Base layers |
+| --- | --- |
+| Bar widget | `defaults` → `roles[role]` → widget `style` → output `widgetStyles` in configuration order → own output `style`/`color` |
+| Layout/popup block | inherited text style → `roles[role]` → block `style` → named output style selected by `styleSource`/`styleField` |
+| Popup panel | `defaults` → `popupDefaults` → widget's explicit `style` → popup `style`; the bar widget's role is excluded |
+| Workspace | `workspaceDefaults` → widget `workspace` |
+| Bar strip | `bar.style` → script `barStyle` in configuration order |
+
+Active states apply after the base layers in the order documented above. An explicit widget font beats its role's base font; an active state still beats base values. Role box properties (background, border, padding, dimensions and offsets) apply only to that block. Only the role’s typography, foreground, accent and spacing pass to its children, including their nested states; other inheritance is unchanged. Popups keep ignoring widget data states; they can use mode states in their own base layers and annotated blocks. Put bar-only mode styling in a role or `bar.style` rather than `defaults`.
+
+`workspaceDefaults` permits only `indicator`, `indicatorStyle`, cell `style` and `appStyle`. Widget-level values merge over them, including legacy `focusedStyle`/`visibleStyle`/`focusedAppStyle` aliases; explicit `states` in the same widget still beat its shorthand. Local app-glyph mappings and workspace visibility choices remain widget-owned. Existing include/template/profile/package merge rules apply. Null clears a property within a composed map; a missing/cleared role style falls back to the inherited style. Widget styles retain their existing inheritance semantics.
+
+**Migration:** opt in by adding roles to the time clock, a separate date clock, and popup blocks you want themed. Remove explicit fonts/colors when you want the role to control them. An explicit widget font still reaches its popup; a `time` role font does not. Keep music-popup rows/columns in the widget definition so every theme can style that same structure. Existing `widgetStyles` overrides, including a legacy self-targeted override, remain supported below the widget's own output style.
+
+Customize's **Widgets** section has a role picker and workspace indicator controls. **Appearance** edits role styles, workspace defaults, border edges and your mode mappings; theme cards show the time role and outside underline. **Profiles** can override these maps through its JSON editor. The shared CLI uses `roles`, `workspaceDefaults` and `modeAliases` batch actions; `set` assigns a widget's role or layout/block roles. **Diagnostics**/`--query` report the role, resolved style, ordered layers and source/token origins.
 
 ### Data states
 
@@ -180,7 +236,7 @@ A data state says what a widget's data means, such as a battery running low, so 
 | `active` | On or in progress, such as charging or recording |
 | `muted` | Off or quiet, such as muted audio |
 
-Other names work too. `hover`, `open`, `focused`, `visible` and `empty` are StableBar's own, so output `state` with one of those names, or an empty one, is ignored. Define each state once in `defaults.states`:
+Other names work too. `hover`, `open`, `focused`, `visible`, `empty`, `mode` and every `mode.*` name are StableBar's own, so output `state` with one of those names, or an empty one, is ignored. Define each state once in `defaults.states`:
 
 ```json
 "defaults": {
@@ -349,7 +405,7 @@ Choose one in setup or in **Customize → Appearance**, whose cards show each th
 
 Without `theme`, StableBar uses Built-in. Built-in also loads under every other theme, so a theme only needs what it changes: one that defines only tokens restyles widgets through Built-in's `defaults`, and anything it leaves out keeps Built-in's value.
 
-A theme is a package whose `package.json` sets `"kind": "theme"`. Its configuration can contain only `tokens`, `defaults`, `popupDefaults`, `bar`, `groups` and `profiles`, plus includes inside the package. Widgets, templates, widget overrides, popups, providers, environment variables and any other key are rejected when the theme is reviewed, installed or loaded, so a theme runs no commands and needs no command review. The themes that ship with StableBar are in [Resources/themes](Resources/themes); [Slate](Resources/themes/slate/config.json) defines every token below. Give each color a light and a dark value, such as `{ "light": "#1f2329", "dark": "#e6e9ef" }`, instead of a dark profile.
+A theme is a package whose `package.json` sets `"kind": "theme"`. Its configuration can contain only `tokens`, `defaults`, `popupDefaults`, `roles`, `workspaceDefaults`, `bar`, `groups` and `profiles`, plus includes inside the package. Widgets, templates, widget overrides, popups, providers, environment variables and any other key are rejected when the theme is reviewed, installed or loaded, so a theme runs no commands and needs no command review. The themes that ship with StableBar are in [Resources/themes](Resources/themes); [Slate](Resources/themes/slate/config.json) defines every token below. Give each color a light and a dark value, such as `{ "light": "#1f2329", "dark": "#e6e9ef" }`, instead of a dark profile.
 
 A theme can change the whole look, not only its colors. [Menu Bar](Resources/themes/menu-bar/config.json) draws the strip with `bar.style` and removes the widget tiles by setting `background`, `borderColor` and `shadowColor` to `null` in `defaults`. Popups would lose their background with them, so it gives popups their own in `popupDefaults`. [Island](Resources/themes/island/config.json) adds `bar.margin` and a corner radius so the strip floats.
 
@@ -360,6 +416,17 @@ Install your own theme like any other package, then select it with its version:
 ```
 
 Only one theme is active: `theme` must name a theme, and `packages` cannot list one. An installed theme accepts the same `enabled` and `settings` as a package selection, and you can also enable it in **Customize → Packages**. Widget packages load first, then Built-in, then the selected theme, then includes and the main file. A theme's tokens, `defaults` and `bar` settings override a widget package's, and yours override the theme's. A `profiles` array in a later layer replaces the theme's profiles, like any array. **Built-in** in setup and Customize removes `theme`.
+
+[Tonhalle Line](examples/packages/tonhalle-line) is an installable theme with a 38 pt Helvetica strip in forest ink and warm paper, a matching light palette, and brass warning colors. Version **1.1.0** adds a Light 16 pt `time` role, popup heading/key/value/button/meter roles, a 2 pt workspace underline below the strip, and a four-edge brass outline for `mode.command`. Other labels remain 13 pt regular; a `secondary` date stays smaller. Install its folder through **Customize → Packages**, then select it in Appearance:
+
+```json
+{ "theme": { "id": "tonhalle-line", "version": "1.1.0" } }
+```
+
+Version 1.1.0 requires a StableBar build with shared presentation support; earlier builds reject its new properties. Installed versions are immutable: if you installed the earlier 1.0.0 theme, install 1.1.0 alongside it, then select 1.1.0. Keep the theme selected through `theme`; do not include or copy its styles into your configuration. That lets switching themes replace its appearance. User overrides still win.
+
+The [presentation example](examples/presentation/config.json) separates the time and date clocks, annotates popup elements, and owns a horizontal music-popup layout. It has 18 widgets, a shared sample provider, a group, constrained labels, a disabled widget and an event-driven mode label. Copy its `config.json`, `sample.json` and `mode.sh` together into a scratch directory and install the theme for that configuration. Its sample data is local; its buttons open the named macOS applications/settings. Change `modeAliases` to match your local AeroSpace names. The example maps `tailing` to `command`; the theme contains no local mode names and runs no commands. Use Dark Appearance for the original ink palette. A theme switch closes an open popup; reopen it to see the new role styling and unchanged layout.
+
 
 Popups inherit `popupDefaults` and then `defaults`, and the workspace highlight uses `defaults.accent`. Every theme defines these tokens, so widgets, widget packages, popups, layouts and workspace styles can use them, for example `"foreground": "@token.textMuted"`:
 
@@ -385,7 +452,7 @@ Each widget accepts `display`: `"all"` (default), `"active"`, `"main"`, `"builtI
 
 Set `bar.displayScale` to `{ "builtIn": 0.85, "external": 1 }` to shrink the laptop bar while keeping external displays at their original size. Each factor scales the bar height, widgets, text and spacing; omitted display types use `1`. Factors must be positive, and other keys are rejected. The bar offset, margin and popup sizes stay in screen points. This setting also works inside automatic profiles.
 
-`bar.style` accepts `background`, `cornerRadius`, `borderColor` and `borderWidth`. The border is drawn along the bottom edge. `bar.margin` (0 by default) insets the bar's background and widgets from every edge of the bar, so a rounded `bar.style` floats below the top of the screen and in from its sides. The bar keeps its height, so the visible strip is `height` minus twice the margin. Scripts can return `barStyle` to change those properties; later widgets override earlier widgets when they set the same property.
+`bar.style` accepts `background`, `cornerRadius`, `borderColor`, `borderWidth` and `borderEdges`. The border defaults to `"bottom"`; `"all"` draws all four edges just inside the visible strip, following its corners. The outline does not change panel size, window clearance or clicks. A notch or the system menu bar can obscure part of the top edge. `bar.margin` (0 by default) insets the bar's background and widgets from every edge of the bar, so a rounded `bar.style` floats below the top of the screen and in from its sides. The bar keeps its height, so the visible strip is `height` minus twice the margin. Scripts can return `barStyle` to change those properties; later widgets override earlier widgets when they set the same property.
 
 ### Composing widgets
 
@@ -439,13 +506,15 @@ Widgets and text, field and symbol blocks accept `transition`, so changed text a
 A `workspaces` widget (also accepted as `aerospace`) accepts `workspace` with:
 
 - `indicator`: `background` (default), `underline` or `none`.
-- `indicatorStyle`: underline `height`, `width`, `background`, `cornerRadius`, `offsetX`, `offsetY`. Its `states.focused` and `states.visible` style the underline under the focused workspace and under a workspace shown on a display without focus.
+- `indicatorStyle`: underline `height`, `width`, `background`, `cornerRadius`, `offsetX`, `offsetY` and `placement`. `"cell"` (default) preserves the cell-relative underline; `"belowBar"` puts its top at the visible bar background's bottom plus `offsetY`, independently of the cell height. Its `states.focused` and `states.visible` style the underline under the focused workspace and under a workspace shown on a display without focus; mode states apply after those.
 - `style`: cell typography, foreground, width, height, horizontal/side padding and spacing. Its `states` style each cell by workspace state: `focused` (the focused workspace), else `visible` (shown on a display without focus), else `empty` (no windows), so a cell has at most one. `focusedStyle`, `visibleStyle` and `emptyStyle` are shorthand for those states. The background indicator uses the state's background or border color. `hover` changes the label and app glyphs; the indicators follow the workspace state. `defaults.states` don't apply to cells.
 - `showEmpty` and `showApps`: control empty workspaces and app icons.
 - `appStyle`: font and foreground for app glyphs, width and height in screen points for native app icons (14 × 14 by default). `focusedAppStyle` and `visibleAppStyle` are shorthand for its `states.focused` and `states.visible`.
 - `appGlyphs`: app bundle ID or app name to text glyph. Set `appStyle.fontName` to an installed icon font to use its ligatures. A key ending in `*` matches app names that start with the rest of the key, such as `Adobe Photoshop*` for `Adobe Photoshop 2026`. Exact bundle IDs and names win over these keys, and among them the longest key wins. Use `"*"` alone for the fallback glyph; otherwise unmapped apps retain native icons.
 
 For a sliding underline, set `workspace.indicator` to `underline`, `workspace.style.height` to the bar's height, and `workspace.indicatorStyle` to `{ "height": 2, "background": "#f1efe8", "states": { "visible": { "background": "#f1efe866" } } }`, which dims the underline on displays without focus. The widget's `animation` controls its motion.
+
+To place it just below the bar instead, use `"indicatorStyle": { "placement": "belowBar", "height": 2, "offsetY": 0 }`; set `offsetY` to a positive gap when wanted. Its span follows the visible cell and is clipped to the workspace widget's scrolling region. Overflowed widgets and hidden measuring copies emit no underline. This decoration does not stretch the colored background or move labels. A native decoration window reserves space for every configured state and always ignores mouse events. The bar itself keeps its original hit bounds and background menu; clicks in the extra strip pass to the window beneath; popups open below the bar/decorations on the display of the instance that opened them. Reduce Motion disables underline motion, and edges align to display pixels.
 
 For glyphs from [sketchybar-app-font](https://github.com/kvndrsslr/sketchybar-app-font), install the font from its releases or with `brew install --cask font-sketchybar-app-font`, then save the [sketchybar-app-font module](examples/modules/sketchybar-app-font.json) next to your configuration:
 
@@ -481,7 +550,7 @@ Add `events` to a script widget to refresh it on named events, alongside its int
 | --- | --- | --- |
 | `frontApp` | The frontmost app changes | The app's name, or `Desktop` |
 | `workspace` | The focused workspace changes | The workspace's name; `SID` is its display number |
-| `aerospaceMode` | AeroSpace switches binding mode | The mode's name |
+| `aerospaceMode` | Initial connection, binding-mode change or disconnect | The mode's name; empty on disconnect, stop or a source switch |
 | `wake` | The Mac wakes from sleep | Not set |
 | `yabai` | `StableBar --trigger yabai` runs, usually from a yabai signal; StableBar also refreshes its workspaces | The trigger's `INFO`, if any |
 | `powerSourceChange` | The Mac switches between its power adapter and battery | `ac` or `battery` |
@@ -568,7 +637,7 @@ StableBar --batch '[
 ]' --persist
 ```
 
-A batch validates the whole resulting configuration before replacing the running bar or writing the file. A failed batch leaves both intact. Supported edit actions are `set` (`id`, `properties`), `add` (`properties`, including `id`), `remove` (`id`), `reorder` (`ids`), `bar`/`defaults`/`popupDefaults`/`tokens` (`properties`, merged into those keys), `unset` (`properties` naming the keys to remove from the main file, with `id` for a widget, for example `{"action":"unset","id":"clock","properties":{"style":{"foreground":null}}}`), `profile` (`name`, omitted for automatic), `package` (`properties`: `id`, `version`, optional `enabled` and `settings`), and `theme` (the same `properties`, with only `id` for a theme that ships with StableBar, omitted for Built-in).
+A batch validates the whole resulting configuration before replacing the running bar or writing the file. A failed batch leaves both intact. Supported edit actions are `set` (`id`, `properties`), `add` (`properties`, including `id`), `remove` (`id`), `reorder` (`ids`), `bar`/`defaults`/`popupDefaults`/`roles`/`workspaceDefaults`/`modeAliases`/`tokens` (`properties`, merged into those keys), `unset` (`properties` naming the keys to remove from the main file, with `id` for a widget, for example `{"action":"unset","id":"clock","properties":{"style":{"foreground":null}}}`), `profile` (`name`, omitted for automatic), `package` (`properties`: `id`, `version`, optional `enabled` and `settings`), and `theme` (the same `properties`, with only `id` for a theme that ships with StableBar, omitted for Built-in).
 
 - `--validate [PATH]`: compose and validate files without starting scripts.
 - `--refresh ID`: refresh a running widget. Hidden, suspended providers must first be made visible or opened in **Customize → Diagnostics**.
@@ -582,7 +651,7 @@ Open **Customize StableBar…** from the menu-bar icon or by right-clicking the 
 
 **General** opens the configuration file in your editor, shows it in Finder or reloads it, runs setup again, and reconnects the workspace source.
 
-**Appearance** chooses the [theme](#themes), keeps the bar light or dark or lets it follow the system, and edits the theme's colors. Each theme color has a light and a dark value; changing one saves it in your configuration's `tokens`, so every widget, popup and package that uses the color follows. **All widgets** sets the default colors, shadow, font, weight, size, padding and corners. **Popups** sets their background, border, shadow and weight, which apply over All widgets. **Bar** sets the bar's background, bottom border, corners, size and position. Together they reach every property the themes that ship with StableBar set, so you can build any of their looks here.
+**Appearance** chooses the [theme](#themes), keeps the bar light or dark or lets it follow the system, and edits the theme's colors. Each theme color has a light and a dark value; changing one saves it in your configuration's `tokens`, so every widget, popup and package that uses the color follows. **All widgets** sets the default colors, shadow, font, weight, size, padding and corners. **Popups** sets their background, border, shadow and weight, which apply over All widgets. **Bar** sets the bar's background, border color, width and edges, corners, size and position. Together they reach every property the themes that ship with StableBar set, so you can build any of their looks here.
 
 **Widgets** lists your widgets by position; drag to reorder them. Change a widget's position, icon, text, clock format or transition, its colors, font and shape, or edit its properties as JSON. A color either follows one of the theme's colors, such as Text or Accent, or is a custom light and dark pair.
 
@@ -590,11 +659,11 @@ Each style control says where its value comes from: a theme, a package, an inclu
 
 Changes in these sections apply to the bar immediately, like command-line edits without `--persist`. Undo and redo step through them, **Save** writes them to your configuration and **Discard** returns to the saved file. A change that would make the configuration invalid is rejected and its error is shown.
 
-**Profiles** edits [profiles](#theme-tokens-and-automatic-profiles) and chooses automatic matching or a pinned profile.
+**Profiles** edits [profiles](#theme-tokens-and-automatic-profiles), including role styles, workspace defaults and mode aliases in its configuration JSON, and chooses automatic matching or a pinned profile.
 
 **Packages** reviews local folders and [store](#store) packages and their declared commands, edits typed settings, installs versions and enables a chosen version. Enabling a theme makes it the active theme; themes have no commands to review. Select an older installed version to roll back, or **Uninstall…** to remove one.
 
-**Diagnostics** shows the composed widget configuration, defaults, source paths, what the widget shows (its `text`, `icon`, `fields` and `temporaryFields`), provider output and data state, the provider's data source and the events it sends, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while Diagnostics is visible. Closing the window restores its visibility policy.
+**Diagnostics** shows the composed widget configuration, role and resolved style, ordered presentation layers and their source paths (including role/workspace defaults and tokens), AeroSpace mode/alias states and connection errors, what the widget shows (its `text`, `icon`, `fields` and `temporaryFields`), provider output and data state, the provider's data source and the events it sends, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while Diagnostics is visible. Closing the window restores its visibility policy.
 
 ## Built-in widgets
 
@@ -915,7 +984,7 @@ Every block accepts `style` and `alignment` (`leading`, `center`, `trailing`). F
 
 Text and field blocks can set `scrollSpeed` in points per second with a fixed `style.width`. Overflow scrolls back and forth with a pause at each end; fitting text and Reduce Motion do not scroll. `hideWhenEmpty` names a field: the block occupies no space when that field is absent or empty, which is useful for optional list-row headings and pipeline details.
 
-Display blocks can also have `onClick`, or `onClickField` to read a command from the current fields/list row. This allows a symbol button or a clickable agenda row. To open a URL or an app without a shell, use `open`, with the values a widget accepts, or `openField` to read one from the current fields/list row; a field value that `open` would reject does nothing when clicked. A block cannot combine `onClick` or `onClickField` with `open` or `openField`. A popup accepts `alignment` (`leading`, `center`, `trailing`) and `offset` for placement relative to its widget. A popup's optional `animation` controls its opening/closing fold and fade, revealing the content at its final size so the fold does not introduce scrollbars. Reduce Motion keeps only the fade. Native panel animation maps `smooth` and `spring` to ease-in-out; other curves retain their names. `dismissOnAction` defaults to `true`; set it to `false` for player controls that should keep the popup open. Images load asynchronously and update when their source path changes. Use a different local filename for each cover, or supply its URL.
+Display blocks can also have `onClick`, or `onClickField` to read a command from the current fields/list row. This allows a symbol button or a clickable agenda row. To open a URL or an app without a shell, use `open`, with the values a widget accepts, or `openField` to read one from the current fields/list row; a field value that `open` would reject does nothing when clicked. A block cannot combine `onClick` or `onClickField` with `open` or `openField`. A popup accepts `alignment` (`leading`, `center`, `trailing`) and `offset` for placement relative to its widget's drawn instance, including widget style offsets. With a below-bar indicator, the vertical gap starts below the visible bar and its reserved decoration strip, so a popup cannot cover the underline. A popup's optional `animation` controls its opening/closing fold and fade, revealing the content at its final size so the fold does not introduce scrollbars. Reduce Motion keeps only the fade. Native panel animation maps `smooth` and `spring` to ease-in-out; other curves retain their names. `dismissOnAction` defaults to `true`; set it to `false` for player controls that should keep the popup open. Images load asynchronously and update when their source path changes. Use a different local filename for each cover, or supply its URL.
 
 Controls pass their new value in the `VALUE` environment variable with `SENDER=control.changed`. Sliders send a number when editing ends, toggles send `true` or `false`, and segmented controls send the selected option's value. Read it as `"$VALUE"` in a shell command; StableBar never inserts the value into command text. Completed actions refresh the widget's data. Controls stay open by default; set `popup.dismissOnControl` to `true` to close after a change. `dismissOnAction` still controls buttons and list rows independently.
 

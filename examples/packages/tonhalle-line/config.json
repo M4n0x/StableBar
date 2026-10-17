@@ -1,0 +1,223 @@
+{
+  "tokens": {
+    "surface": {
+      "light": "#f1efe8",
+      "dark": "#0f1913"
+    },
+    "surfaceRaised": {
+      "light": "#e5e6df",
+      "dark": "#17231c"
+    },
+    "text": {
+      "light": "#0f1913",
+      "dark": "#f1efe8"
+    },
+    "textMuted": {
+      "light": "#626e64",
+      "dark": "#8e978f"
+    },
+    "accent": {
+      "light": "#0f1913",
+      "dark": "#f1efe8"
+    },
+    "track": {
+      "light": "#0f191329",
+      "dark": "#f1efe829"
+    },
+    "hairline": {
+      "light": "#0f191324",
+      "dark": "#f1efe824"
+    },
+    "warning": {
+      "light": "#806323",
+      "dark": "#c8a866"
+    },
+    "critical": {
+      "light": "#bc321c",
+      "dark": "#ef4b30"
+    }
+  },
+  "bar": {
+    "height": 38,
+    "margin": 0,
+    "inset": 12,
+    "spacing": 20,
+    "animationDuration": 0.25,
+    "style": {
+      "background": "@token.surface",
+      "borderColor": {
+        "light": "#0f19131a",
+        "dark": "#f1efe81a"
+      },
+      "borderWidth": 1,
+      "cornerRadius": 0,
+      "borderEdges": "bottom",
+      "states": {
+        "mode.command": {
+          "borderEdges": "all",
+          "borderColor": "@token.warning"
+        }
+      }
+    }
+  },
+  "defaults": {
+    "foreground": "@token.text",
+    "background": null,
+    "hoverBackground": null,
+    "borderColor": null,
+    "borderWidth": 0,
+    "shadowColor": null,
+    "shadowRadius": 0,
+    "accent": "@token.accent",
+    "accentText": "@token.surface",
+    "cornerRadius": 0,
+    "fontName": "Helvetica Neue",
+    "fontSize": 13,
+    "fontWeight": "regular",
+    "iconSize": 13,
+    "paddingHorizontal": 0,
+    "paddingVertical": 6,
+    "spacing": 6,
+    "states": {
+      "hover": {
+        "background": "@token.surfaceRaised"
+      },
+      "open": {
+        "background": "@token.surfaceRaised"
+      },
+      "warning": {
+        "foreground": "@token.warning",
+        "accent": "@token.warning"
+      },
+      "critical": {
+        "foreground": "@token.critical",
+        "accent": "@token.critical"
+      },
+      "active": {
+        "foreground": "@token.text",
+        "accent": "@token.accent"
+      },
+      "muted": {
+        "foreground": "@token.textMuted",
+        "accent": "@token.textMuted"
+      }
+    }
+  },
+  "popupDefaults": {
+    "foreground": "@token.text",
+    "background": "@token.surface",
+    "borderColor": "@token.hairline",
+    "borderWidth": 1,
+    "cornerRadius": 3,
+    "shadowColor": null,
+    "shadowRadius": 0,
+    "accent": "@token.accent",
+    "accentText": "@token.surface",
+    "fontName": "Helvetica Neue",
+    "fontSize": 13,
+    "fontWeight": "regular",
+    "iconSize": 13,
+    "paddingHorizontal": 16,
+    "paddingVertical": 6,
+    "spacing": 12,
+    "states": {
+      "hover": {
+        "background": "@token.surfaceRaised"
+      }
+    }
+  },
+  "roles": {
+    "time": {
+      "fontName": "Helvetica Neue",
+      "fontSize": 16,
+      "fontWeight": "light"
+    },
+    "primary": {
+      "foreground": "@token.text",
+      "fontSize": 13,
+      "fontWeight": "regular"
+    },
+    "secondary": {
+      "foreground": "@token.textMuted",
+      "fontSize": 12,
+      "fontWeight": "regular"
+    },
+    "key": {
+      "foreground": "@token.textMuted",
+      "fontSize": 12
+    },
+    "value": {
+      "foreground": "@token.text",
+      "fontSize": 13,
+      "fontWeight": "regular"
+    },
+    "heading": {
+      "foreground": "@token.text",
+      "fontSize": 15,
+      "fontWeight": "medium",
+      "paddingBottom": 6
+    },
+    "button": {
+      "foreground": "@token.text",
+      "background": null,
+      "borderColor": "@token.hairline",
+      "borderWidth": 1,
+      "cornerRadius": 3,
+      "paddingHorizontal": 10,
+      "paddingVertical": 7,
+      "states": {
+        "hover": {
+          "background": "@token.surfaceRaised"
+        }
+      }
+    },
+    "meter": {
+      "accent": "@token.accent",
+      "background": "@token.track",
+      "cornerRadius": 0
+    },
+    "separator": {
+      "foreground": "#00000000",
+      "background": "@token.hairline",
+      "height": 1
+    }
+  },
+  "workspaceDefaults": {
+    "indicator": "underline",
+    "indicatorStyle": {
+      "placement": "belowBar",
+      "height": 2,
+      "offsetY": 0,
+      "background": "@token.accent",
+      "states": {
+        "visible": {
+          "background": "@token.textMuted"
+        }
+      }
+    },
+    "style": {
+      "height": 22,
+      "paddingHorizontal": 7,
+      "foreground": "@token.textMuted",
+      "fontSize": 13,
+      "fontWeight": "regular",
+      "states": {
+        "focused": {
+          "foreground": "@token.text"
+        },
+        "visible": {
+          "foreground": "@token.text"
+        }
+      }
+    },
+    "appStyle": {
+      "fontSize": 14,
+      "foreground": "@token.textMuted",
+      "states": {
+        "focused": {
+          "foreground": "@token.text"
+        }
+      }
+    }
+  }
+}
