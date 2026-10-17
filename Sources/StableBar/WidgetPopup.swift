@@ -8,6 +8,20 @@ final class PopupPanel: NSPanel {
 }
 
 @MainActor
+final class PopupRevealView: NSView {
+    init(content: NSView, size: NSSize) {
+        super.init(frame: NSRect(origin: .zero, size: size))
+        clipsToBounds = true
+        content.frame = bounds
+        // Keep the scroll viewport full-sized and pinned to the top while the panel folds.
+        content.autoresizingMask = [.minYMargin]
+        addSubview(content)
+    }
+
+    required init?(coder: NSCoder) { fatalError("PopupRevealView is created programmatically.") }
+}
+
+@MainActor
 final class WidgetPopup {
     private var panel: PopupPanel?
     private var widgetID: String?
@@ -56,7 +70,7 @@ final class WidgetPopup {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
         panel.appearance = store.configuration?.bar.appearance.flatMap { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) }
-        panel.contentView = host
+        panel.contentView = PopupRevealView(content: host, size: panel.frame.size)
         self.panel = panel
         widgetID = widget.id
         self.store = store
