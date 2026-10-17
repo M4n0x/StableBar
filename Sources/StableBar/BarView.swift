@@ -4,6 +4,8 @@ struct BarView: View {
     let store: BarStore
     let display: BarDisplay
     @State private var measuredWidths: [String: CGFloat] = [:]
+    /// The units the last measurement had: only an active app that stayed in the bar animates a resize.
+    @State private var measuredUnits: Set<String> = []
     @State private var overflowAnchor = NSView()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -53,6 +55,7 @@ struct BarView: View {
                                     .geometryGroup()
                                     .frame(width: placement.width, height: geometry.size.height / scale, alignment: alignment)
                                     .offset(x: placement.x)
+                                    .transition(visibilityTransition(unit.transition, still: reduceMotion))
                             }
                         }
                         if let x = plan.overflowX {
@@ -78,14 +81,15 @@ struct BarView: View {
                         .hidden()
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
+                        .modifier(MeasuringCopy())
                     }
+                    // Keeps the last width of units that leave, so a returning widget is planned at its size.
                     .onPreferenceChange(BarWidthPreference.self) { widths in
-                        let appResized = units.contains { unit in
-                            unit.widgets.contains { $0.content == .activeApp }
-                                && measuredWidths[unit.id] != nil && measuredWidths[unit.id] != widths[unit.id]
-                        }
-                        withAnimation(appResized && !reduceMotion ? .easeOut(duration: config.bar.animationDuration) : nil) {
-                            measuredWidths = widths
+                        let animates = BarUnit.animatesResize(units, measured: measuredUnits, from: measuredWidths, to: widths,
+                                                              reduceMotion: reduceMotion)
+                        measuredUnits = Set(widths.keys)
+                        withAnimation(animates ? .easeOut(duration: config.bar.animationDuration) : nil) {
+                            measuredWidths.merge(widths) { $1 }
                         }
                     }
                     .onChange(of: visible, initial: true) { _, ids in store.setVisibleWidgets(ids: ids, displayID: display.id) }
@@ -172,18 +176,8 @@ struct BarView: View {
     }
 
     private func overflowTitle(_ widget: WidgetConfiguration) -> String {
-        switch widget.content {
-        case let .text(text): return text
-        case let .clock(format):
-            let formatter = DateFormatter()
-            formatter.dateFormat = format
-            return formatter.string(from: Date())
-        case .activeApp: return store.activeApp?.localizedName ?? "Desktop"
-        case .script, .provider:
-            let text = store.scripts[widget.id]?.output.text ?? ""
-            return text.isEmpty ? widget.id : text
-        case .workspaces, .spacer: return widget.id
-        }
+        let text = store.label(for: widget).text
+        return text.isEmpty ? widget.id : text
     }
 }
 
@@ -194,11 +188,38 @@ private struct BarWidthPreference: PreferenceKey {
     }
 }
 
+private struct MeasuringBarWidthsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// True in the bar's hidden copy that measures widget widths. Nothing moves there: it measures
+    /// final widths only.
+    var measuringBarWidths: Bool {
+        get { self[MeasuringBarWidthsKey.self] }
+        set { self[MeasuringBarWidthsKey.self] = newValue }
+    }
+}
+
+/// Marks the bar's hidden copy that measures widget widths and keeps it still: nothing animates there.
+struct MeasuringCopy: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .environment(\.measuringBarWidths, true)
+            .transaction { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
+    }
+}
+
 private struct BarUnitView: View {
     let unit: BarUnit
     let config: Configuration
     let store: BarStore
     let display: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.measuringBarWidths) private var measuring
 
     var body: some View {
         if unit.isSpacer {
@@ -210,6 +231,7 @@ private struct BarUnitView: View {
                 ForEach(unit.widgets) { widget in
                     WidgetView(widget: widget, defaults: config.defaults, popupDefaults: config.popupDefaults, store: store,
                                monitor: display, animationDuration: config.bar.animationDuration)
+                        .transition(visibilityTransition(widget.transition, still: reduceMotion || measuring))
                 }
             }
             .padding(.leading, style.paddingLeading ?? style.paddingHorizontal ?? 0)
@@ -238,6 +260,11 @@ private func widgetPopup(_ widget: WidgetConfiguration, store: BarStore) -> Popu
     return nil
 }
 
+/// A clock's refresh schedule: each second when its format shows seconds, otherwise each minute.
+private func clockSchedule(_ format: String) -> PeriodicTimelineSchedule {
+    .periodic(from: Calendar.current.startOfDay(for: .now), by: format.contains("s") ? 1 : 60)
+}
+
 struct WidgetView: View {
     let widget: WidgetConfiguration
     let defaults: WidgetStyle
@@ -253,6 +280,12 @@ struct WidgetView: View {
         store.presentations[widget.id]?.style ?? ResolvedWidgetStyle(base: resolveStyle([defaults, widget.style]))
     }
 
+    /// How the widget's text, field and symbol blocks show changes.
+    private var motion: BlockMotion {
+        BlockMotion(transition: widget.transition ?? WidgetTransition.none,
+                    animation: store.scripts[widget.id]?.output.animation ?? widget.animation ?? WidgetAnimation(duration: animationDuration))
+    }
+
     var body: some View {
         let output = store.scripts[widget.id]?.output
         let resolution = self.resolution
@@ -260,7 +293,7 @@ struct WidgetView: View {
         let style = resolution.style(hovered: hovered, open: isOpen)
         let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let animation = output?.animation ?? widget.animation ?? WidgetAnimation(duration: animationDuration)
-        let tile = content(appearance, resolution: resolution, open: isOpen)
+        let tile = content(resolution, open: isOpen)
             .padding(.leading, style.paddingLeading ?? appearance.paddingHorizontal)
             .padding(.trailing, style.paddingTrailing ?? appearance.paddingHorizontal)
             .padding(.top, style.paddingTop ?? appearance.paddingVertical)
@@ -299,7 +332,11 @@ struct WidgetView: View {
         .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
         .overlay(alignment: .bottom) {
             if let overlay = widget.overlay {
-                block(overlay, style: resolution.base, states: resolution.blockStates(open: isOpen), fillsWidth: true).allowsHitTesting(false)
+                timed { date in
+                    WidgetBlocks(widget: widget, store: store, style: resolution.layoutStyle(configured: true, hovered: hovered, open: isOpen),
+                                 block: overlay, date: date, fillsWidth: true, motion: motion, runAction: blockAction)
+                }
+                .allowsHitTesting(false)
             }
         }
         .overlay {
@@ -331,85 +368,71 @@ struct WidgetView: View {
     }
 
     @ViewBuilder
-    private func content(_ appearance: WidgetAppearance, resolution: ResolvedWidgetStyle, open: Bool) -> some View {
-        if let layout = widget.layout {
-            block(layout, style: resolution.base, states: resolution.blockStates(open: open), fillsWidth: false)
-                .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
-        } else {
-            switch widget.content {
-            case .workspaces:
-                WorkspaceView(workspaceStore: store.workspaceStore, monitor: monitor,
-                              appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
-                              animationDuration: animationDuration,
-                              configuration: widget.workspace, animation: widget.animation, defaults: widget.style.inheriting(defaults))
-            case .activeApp:
-                HStack(spacing: appearance.spacing) {
-                    if let icon = store.activeApp?.icon {
-                        Image(nsImage: icon).resizable().frame(width: appearance.iconSize, height: appearance.iconSize)
-                    }
-                    Text(store.activeApp?.localizedName ?? "Desktop").lineLimit(1)
-                }
-            case let .clock(format):
-                TimelineView(.periodic(from: Calendar.current.startOfDay(for: .now), by: format.contains("s") ? 1 : 60)) { context in
-                    let formatter = DateFormatter()
-                    let _ = formatter.dateFormat = format
-                    label(formatter.string(from: context.date), icon: widget.icon, appearance: appearance)
-                        .monospacedDigit()
-                }
-            case let .text(text):
-                label(text, icon: widget.icon, appearance: appearance)
-            case .spacer:
-                Spacer(minLength: resolution.base.minWidth ?? 0)
-            case .script, .provider:
-                if let script = store.scripts[widget.id] {
-                    HStack(spacing: appearance.spacing) {
-                        if script.output.value != nil {
-                            Sparkline(samples: script.samples)
-                                .stroke(appearance.accent, lineWidth: 1.2)
-                                .frame(width: 40, height: 16)
-                        }
-                        label(script.output.text, icon: script.output.icon ?? widget.icon, appearance: appearance)
-                    }
-                        .foregroundStyle(appearance.foreground)
-                        .help(script.error ?? script.output.tooltip ?? "")
-                }
-            }
-        }
-    }
-
-    private func block(_ block: PopupBlock, style: WidgetStyle, states: StyleStates, fillsWidth: Bool) -> some View {
-        let script = store.scripts[widget.id]
-        var fields = script?.output.fields ?? [:]
+    private func content(_ resolution: ResolvedWidgetStyle, open: Bool) -> some View {
         switch widget.content {
-        case let .text(text): fields["text"] = text
-        case .activeApp: fields["text"] = store.activeApp?.localizedName ?? "Desktop"
-        case .script, .provider:
-            fields["text"] = script?.output.text ?? "…"
-            fields["icon"] = script?.output.icon ?? widget.icon ?? ""
-        default: break
-        }
-        return PopupBlockView(block: block, inheritedStyle: style, fields: fields,
-                              lists: script?.output.lists ?? [:], samples: script?.samples ?? [],
-                              menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
-                              targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
-                              series: script?.output.series ?? [:],
-                              fillsWidth: fillsWidth, open: { $0.open() }, states: states) { command, environment in
-            if environment.isEmpty {
-                runAction(command, sender: "mouse.clicked", button: "left")
-            } else {
-                store.runAction(command, widget: widget,
-                                event: ScriptEvent(sender: "control.changed", environment: environment.merging(["SID": String(monitor)]) { first, _ in first }))
-            }
+        case .workspaces where widget.layout == nil:
+            WorkspaceView(workspaceStore: store.workspaceStore, monitor: monitor,
+                          appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
+                          animationDuration: animationDuration,
+                          configuration: widget.workspace, animation: widget.animation, defaults: widget.style.inheriting(defaults))
+        case .spacer where widget.layout == nil:
+            Spacer(minLength: resolution.base.minWidth ?? 0)
+        default:
+            timed { date in blocks(resolution, open: open, date: date) }
         }
     }
 
-    private func label(_ text: String, icon: String?, appearance: WidgetAppearance) -> some View {
-        ZStack {
-            Text(" ").hidden()
-            HStack(spacing: appearance.spacing) {
-                if let icon { Image(systemName: icon).font(.system(size: appearance.iconSize)) }
-                if !text.isEmpty { Text(text).lineLimit(1) }
-            }
+    /// `content` drawn for the time the widget shows: a clock's, redrawn on its schedule, otherwise now.
+    @ViewBuilder
+    private func timed<Content: View>(@ViewBuilder _ content: @escaping (Date) -> Content) -> some View {
+        if case let .clock(format) = widget.content {
+            TimelineView(clockSchedule(format)) { context in content(context.date) }
+        } else {
+            content(.now)
+        }
+    }
+
+    private func blocks(_ resolution: ResolvedWidgetStyle, open: Bool, date: Date) -> some View {
+        WidgetBlocks(widget: widget, store: store,
+                     style: resolution.layoutStyle(configured: widget.layout != nil, hovered: hovered, open: open),
+                     date: date, motion: motion, runAction: blockAction)
+            .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
+    }
+
+    private func blockAction(_ command: String, _ environment: [String: String]) {
+        if environment.isEmpty {
+            runAction(command, sender: "mouse.clicked", button: "left")
+        } else {
+            store.runAction(command, widget: widget,
+                            event: ScriptEvent(sender: "control.changed", environment: environment.merging(["SID": String(monitor)]) { first, _ in first }))
+        }
+    }
+}
+
+/// One of a widget's block trees drawn with its data: `block` when given, such as its overlay,
+/// otherwise its `layout`, otherwise the default layout of its type.
+struct WidgetBlocks: View {
+    let widget: WidgetConfiguration
+    let store: BarStore
+    let style: LayoutStyle
+    var block: PopupBlock?
+    var date = Date.now
+    var fillsWidth = false
+    var motion = BlockMotion()
+    let runAction: (String, [String: String]) -> Void
+
+    var body: some View {
+        let script = store.scripts[widget.id]
+        let label = store.label(for: widget, date: date).overlaid(by: store.presentations[widget.id]?.temporaryFields)
+        let appIcon = widget.content == .activeApp ? store.activeApp?.icon : nil
+        if let layout = block ?? widget.layout ?? widget.defaultLayout(label, output: script?.output, appIcon: appIcon != nil) {
+            PopupBlockView(block: layout, inheritedStyle: style.inherited, fields: label.fields,
+                           context: BlockContext(lists: script?.output.lists ?? [:], samples: script?.samples ?? [],
+                                                 menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
+                                                 targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
+                                                 series: script?.output.series ?? [:], fillsWidth: fillsWidth, open: { $0.open() },
+                                                 states: style.states, tracksHover: style.tracksHover, appIcon: appIcon, motion: motion,
+                                                 runAction: runAction))
         }
     }
 }

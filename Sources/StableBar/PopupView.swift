@@ -16,17 +16,17 @@ struct PopupView: View {
         let error = script?.error ?? store.actionErrors[widget.id]
         ScrollView {
             VStack(alignment: .leading, spacing: appearance.spacing) {
-                PopupBlockView(block: popup.layout, inheritedStyle: style,
-                               fields: fields, lists: lists, samples: samples, menu: menu,
-                               values: script?.output.values ?? [:], targets: script?.output.targets ?? [:],
-                               styles: script?.output.styles ?? [:], series: script?.output.series ?? [:], open: { target in
+                PopupBlockView(block: popup.layout, inheritedStyle: style, fields: fields,
+                               context: BlockContext(lists: lists, samples: samples, menu: menu,
+                                                     values: script?.output.values ?? [:], targets: script?.output.targets ?? [:],
+                                                     styles: script?.output.styles ?? [:], series: script?.output.series ?? [:], open: { target in
                     if popup.dismissOnAction { store.popup.close() }
                     target.open()
                 }) { command, environment in
                     if environment.isEmpty ? popup.dismissOnAction : popup.dismissOnControl { store.popup.close() }
                     store.runAction(command, widget: widget,
                                     event: ScriptEvent(sender: environment.isEmpty ? "mouse.clicked" : "control.changed", environment: environment))
-                }
+                })
                 if let error {
                     Text(error).foregroundStyle(.red).textSelection(.enabled)
                 }
@@ -44,25 +44,106 @@ struct PopupView: View {
     }
 }
 
-struct PopupBlockView: View {
-    let block: PopupBlock
-    let inheritedStyle: WidgetStyle
-    let fields: [String: String]
-    let lists: [String: [[String: String]]]
-    let samples: [Double]
-    let menu: [WidgetMenuItem]
+/// What every block of one layout shares: the widget's data, the states it applies and the action
+/// its controls run.
+struct BlockContext {
+    var lists: [String: [[String: String]]] = [:]
+    var samples: [Double] = []
+    var menu: [WidgetMenuItem] = []
     var values: [String: Double] = [:]
     var targets: [String: Double] = [:]
     var styles: [String: WidgetStyle] = [:]
     var series: [String: [Double]] = [:]
+    /// Popup layouts fill their width; bar layouts take their content's width.
     var fillsWidth = true
+    /// Opens an `open` or `openField` block's target; a popup's also closes the popup when its actions dismiss it.
     let open: (OpenTarget) -> Void
-    /// The widget's states, such as `open`; the block adds its own hover.
+    /// The widget's states, such as `open`; each block adds its own hover.
     var states = StyleStates()
+    /// False when the inherited style already has the widget's hover and open states, as in default
+    /// layouts, so blocks don't add their own hover.
+    var tracksHover = true
+    /// The frontmost app's icon, for an active-app widget's default layout.
+    var appIcon: NSImage?
+    /// How text, field and symbol blocks without a transition of their own show changes.
+    var motion = BlockMotion()
     let runAction: (String, [String: String]) -> Void
-    @State private var hovered = false
+}
+
+/// The transition and animation a widget gives its text, field and symbol blocks.
+struct BlockMotion: Equatable, Sendable {
+    var transition = WidgetTransition.none
+    var animation = WidgetAnimation()
+
+    /// The block's own transition, else this one; none while `still`, as with Reduce Motion or in
+    /// the bar's measuring copy.
+    func transition(for block: PopupBlock, still: Bool) -> WidgetTransition {
+        still ? WidgetTransition.none : block.transition ?? transition
+    }
+
+    func animation(for block: PopupBlock) -> WidgetAnimation { block.animation ?? animation }
+}
+
+/// Shows a change of `value` in a text or symbol: `fade` cross-fades, `roll` pushes the new value
+/// up from below, and `numeric` rolls the changed digits (symbols fade instead).
+struct TransitioningContent<Value: Hashable>: ViewModifier {
+    let value: Value
+    let transition: WidgetTransition
+    let animation: WidgetAnimation
+    var numeric = true
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        switch transition {
+        case .none:
+            content
+        case .fade:
+            content.contentTransition(.opacity).animation(animation.value, value: value)
+        case .numeric:
+            content.contentTransition(numeric ? .numericText() : .opacity).animation(animation.value, value: value)
+        case .roll:
+            ZStack { content.id(value).transition(.push(from: .bottom)) }
+                .clipped()
+                .animation(animation.value, value: value)
+        }
+    }
+}
+
+/// Hands the content of a text, field or symbol block the transition and animation it shows: the
+/// block's own, else the widget's, and no transition under Reduce Motion or in the bar's measuring
+/// copy, which never moves.
+struct ResolvedBlockMotion<Content: View>: View {
+    let motion: BlockMotion
+    let block: PopupBlock
+    @ViewBuilder let content: (WidgetTransition, WidgetAnimation) -> Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.measuringBarWidths) private var measuring
+
+    var body: some View {
+        content(motion.transition(for: block, still: reduceMotion || measuring), motion.animation(for: block))
+    }
+}
+
+struct PopupBlockView: View {
+    let block: PopupBlock
+    let inheritedStyle: WidgetStyle
+    let fields: [String: String]
+    let context: BlockContext
+    @State private var pointerInside: Bool
     @State private var query = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// `pointerInside` starts the block with the pointer over it; tests use it, as drawing has no pointer.
+    init(block: PopupBlock, inheritedStyle: WidgetStyle, fields: [String: String], context: BlockContext, pointerInside: Bool = false) {
+        self.block = block
+        self.inheritedStyle = inheritedStyle
+        self.fields = fields
+        self.context = context
+        _pointerInside = State(initialValue: pointerInside)
+    }
+
+    /// Whether the block shows its hover: only where it tracks hover, not in a default layout.
+    private var hovered: Bool { pointerInside && context.tracksHover }
 
     @ViewBuilder
     var body: some View {
@@ -81,10 +162,10 @@ struct PopupBlockView: View {
     }
 
     private var styledContent: some View {
-        let resting = block.resolvedStyle(inherited: inheritedStyle, styles: styles, fields: fields, states: states)
-        var hovering = states
+        let resting = block.resolvedStyle(inherited: inheritedStyle, styles: context.styles, fields: fields, states: context.states)
+        var hovering = context.states
         hovering.hover = true
-        let current = hovered ? block.resolvedStyle(inherited: inheritedStyle, styles: styles, fields: fields, states: hovering) : resting
+        let current = hovered ? block.resolvedStyle(inherited: inheritedStyle, styles: context.styles, fields: fields, states: hovering) : resting
         let appearance = WidgetAppearance(resting.text, defaults: WidgetStyle())
         let box = current.box
         let alignment: Alignment = switch block.alignment {
@@ -96,11 +177,16 @@ struct PopupBlockView: View {
             if handlesInteraction {
                 content(resting, appearance: appearance)
             } else if let command = block.onClickField.flatMap({ fields[$0] }) ?? block.onClick {
-                Button { runAction(command, [:]) } label: { content(resting, appearance: appearance) }
+                Button { context.runAction(command, [:]) } label: { content(resting, appearance: appearance) }
                     .buttonStyle(.plain)
             } else if let value = block.openField.flatMap({ fields[$0] }) ?? block.open {
-                Button { if let target = OpenTarget(value) { open(target) } } label: { content(resting, appearance: appearance) }
+                Button { if let target = OpenTarget(value) { context.open(target) } } label: { content(resting, appearance: appearance) }
                     .buttonStyle(.plain)
+            } else if block.keepsLineHeight {
+                ZStack {
+                    Text(" ").hidden()
+                    content(resting, appearance: appearance)
+                }
             } else {
                 content(resting, appearance: appearance)
             }
@@ -113,7 +199,7 @@ struct PopupBlockView: View {
             .padding(.top, box.paddingTop ?? box.paddingVertical ?? 0)
             .padding(.bottom, box.paddingBottom ?? box.paddingVertical ?? 0)
             .frame(width: box.width.map { CGFloat($0) }, height: box.height.map { CGFloat($0) }, alignment: alignment)
-            .frame(maxWidth: fillsWidth && box.width == nil ? .infinity : nil, alignment: alignment)
+            .frame(maxWidth: context.fillsWidth && box.width == nil ? .infinity : nil, alignment: alignment)
             .background(box.background?.color ?? .clear, in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
             .overlay {
                 RoundedRectangle(cornerRadius: appearance.cornerRadius)
@@ -121,9 +207,14 @@ struct PopupBlockView: View {
             }
             .offset(x: box.offsetX ?? 0, y: box.offsetY ?? 0)
             .opacity(box.opacity ?? 1)
-            .onHover { hovered = $0 }
+            .onHover { pointerInside = $0 }
             .animation(reduceMotion ? nil : block.animation?.value, value: box)
             .animation(reduceMotion ? nil : block.animation?.value, value: hovered)
+    }
+
+    /// A child block, built as a concrete view so SwiftUI diffs it without type erasure.
+    private func child(_ block: PopupBlock, of style: BlockStyle, fields: [String: String]) -> PopupBlockView {
+        PopupBlockView(block: block, inheritedStyle: style.inherited, fields: fields, context: context)
     }
 
     @ViewBuilder
@@ -131,91 +222,99 @@ struct PopupBlockView: View {
         switch block.content {
         case let .row(children):
             HStack(spacing: appearance.spacing) {
-                ForEach(Array(children.enumerated()), id: \.offset) { _, child in
-                    AnyView(PopupBlockView(block: child, inheritedStyle: style.inherited, fields: fields,
-                                          lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
-                }
+                ForEach(Array(children.enumerated()), id: \.offset) { _, item in child(item, of: style, fields: fields) }
             }
         case let .column(children):
             VStack(alignment: .leading, spacing: appearance.spacing) {
-                ForEach(Array(children.enumerated()), id: \.offset) { _, child in
-                    AnyView(PopupBlockView(block: child, inheritedStyle: style.inherited, fields: fields,
-                                          lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
-                }
+                ForEach(Array(children.enumerated()), id: \.offset) { _, item in child(item, of: style, fields: fields) }
             }
         case let .text(text):
-            if let speed = block.scrollSpeed {
-                ScrollingText(text: text, font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
-            } else {
-                Text(text)
+            ResolvedBlockMotion(motion: context.motion, block: block) { transition, animation in
+                Group {
+                    if let speed = block.scrollSpeed {
+                        ScrollingText(text: text, font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
+                    } else {
+                        Text(text)
+                    }
+                }
+                .modifier(TransitioningContent(value: text, transition: transition, animation: animation))
             }
         case let .field(name):
-            if let speed = block.scrollSpeed {
-                ScrollingText(text: fields[name] ?? "", font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
-            } else {
-                Text(fields[name] ?? "—").lineLimit(1).monospacedDigit()
+            ResolvedBlockMotion(motion: context.motion, block: block) { transition, animation in
+                Group {
+                    if let speed = block.scrollSpeed {
+                        ScrollingText(text: fields[name] ?? "", font: appearance.font, fontSize: style.text.fontSize ?? 12, speed: speed)
+                    } else if block.monospacedDigits {
+                        Text(fields[name] ?? "—").lineLimit(1).monospacedDigit()
+                    } else {
+                        Text(fields[name] ?? "—").lineLimit(1)
+                    }
+                }
+                .modifier(TransitioningContent(value: fields[name] ?? "", transition: transition, animation: animation))
             }
         case let .graph(height, source, lineWidth):
-            Sparkline(samples: source.flatMap { series[$0] } ?? samples)
+            Sparkline(samples: source.flatMap { context.series[$0] } ?? context.samples)
                 .stroke(appearance.accent, lineWidth: lineWidth)
                 .frame(height: height)
                 .accessibilityLabel("History graph")
         case let .list(source, row):
             VStack(spacing: appearance.spacing) {
-                ForEach(Array((lists[source] ?? []).enumerated()), id: \.offset) { _, fields in
-                    AnyView(PopupBlockView(block: row, inheritedStyle: style.inherited, fields: fields,
-                                          lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
+                ForEach(Array((context.lists[source] ?? []).enumerated()), id: \.offset) { _, fields in
+                    child(row, of: style, fields: fields)
                 }
             }
         case let .button(title, command):
-            Button { runAction(command, [:]) } label: {
+            Button { context.runAction(command, [:]) } label: {
                 Text(title).frame(maxWidth: .infinity).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         case let .slider(title, source, minimum, maximum, step, command):
-            PopupSlider(title: title, value: values[source] ?? Double(fields[source] ?? "") ?? minimum,
-                        minimum: minimum, maximum: maximum, step: step) { runAction(command, ["VALUE": String($0)]) }
+            PopupSlider(title: title, value: context.values[source] ?? Double(fields[source] ?? "") ?? minimum,
+                        minimum: minimum, maximum: maximum, step: step) { context.runAction(command, ["VALUE": String($0)]) }
         case let .toggle(title, source, command):
-            PopupToggle(title: title, value: fields[source] == "true" || fields[source] == "1" || values[source] == 1) {
-                runAction(command, ["VALUE": $0 ? "true" : "false"])
+            PopupToggle(title: title, value: fields[source] == "true" || fields[source] == "1" || context.values[source] == 1) {
+                context.runAction(command, ["VALUE": $0 ? "true" : "false"])
             }
         case let .segmented(title, source, options, command):
             PopupSegmented(title: title, value: fields[source] ?? options[0].value, options: options) {
-                runAction(command, ["VALUE": $0])
+                context.runAction(command, ["VALUE": $0])
             }
         case let .search(title, source, searchFields, row):
             VStack(alignment: .leading, spacing: appearance.spacing) {
                 TextField(title, text: $query).textFieldStyle(.roundedBorder).accessibilityLabel(title)
-                ForEach(Array(searchPopupRows(lists[source] ?? [], query: query, fields: searchFields).enumerated()), id: \.offset) { _, fields in
-                    AnyView(PopupBlockView(block: row, inheritedStyle: style.inherited, fields: fields,
-                                          lists: lists, samples: samples, menu: menu, values: values,
-                                          targets: targets, styles: styles, series: series, fillsWidth: fillsWidth, open: open, states: states, runAction: runAction))
+                ForEach(Array(searchPopupRows(context.lists[source] ?? [], query: query, fields: searchFields).enumerated()), id: \.offset) { _, fields in
+                    child(row, of: style, fields: fields)
                 }
             }
         case .menu:
             VStack(spacing: appearance.spacing) {
-                ForEach(Array(menu.enumerated()), id: \.offset) { _, item in
-                    PopupMenuRow(item: item, appearance: appearance) { runAction($0, [:]) }
+                ForEach(Array(context.menu.enumerated()), id: \.offset) { _, item in
+                    PopupMenuRow(item: item, appearance: appearance) { context.runAction($0, [:]) }
                 }
             }
         case .divider:
             Rectangle().fill(appearance.foreground.opacity(0.12)).frame(height: 1)
         case let .symbol(name, source):
-            Image(systemName: source.flatMap { fields[$0] } ?? name)
-                .font(.system(size: appearance.iconSize))
+            let symbol = source.flatMap { fields[$0] } ?? name
+            ResolvedBlockMotion(motion: context.motion, block: block) { transition, animation in
+                Image(systemName: symbol)
+                    .font(.system(size: appearance.iconSize))
+                    .modifier(TransitioningContent(value: symbol, transition: transition, animation: animation, numeric: false))
+            }
         case let .image(path, source, fit):
             WidgetImage(path: source.flatMap { fields[$0] } ?? path, fit: fit)
                 .frame(width: style.box.width ?? 52, height: style.box.height ?? 52)
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: appearance.cornerRadius))
         case let .progress(source, height):
-            ProgressRule(value: values[source] ?? Double(fields[source] ?? "") ?? 0, target: targets[source],
+            ProgressRule(value: context.values[source] ?? Double(fields[source] ?? "") ?? 0, target: context.targets[source],
                          animation: block.animation ?? WidgetAnimation(), color: appearance.accent,
                          track: style.text.background?.color ?? .clear, cornerRadius: appearance.cornerRadius)
                 .frame(height: height)
+        case .appIcon:
+            if let icon = context.appIcon {
+                Image(nsImage: icon).resizable().frame(width: appearance.iconSize, height: appearance.iconSize)
+            }
         }
     }
 }
@@ -287,8 +386,10 @@ struct ProgressRule: View {
     let cornerRadius: Double
     @State private var fraction = 0.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.measuringBarWidths) private var measuring
 
     var body: some View {
+        let still = reduceMotion || measuring
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: cornerRadius).fill(track)
@@ -296,13 +397,13 @@ struct ProgressRule: View {
                     .frame(width: geometry.size.width * min(max(fraction, 0), 1))
             }
         }
-        .task(id: ProgressUpdate(value: value, target: target, animation: animation, reduceMotion: reduceMotion)) {
-            if let target, !reduceMotion {
+        .task(id: ProgressUpdate(value: value, target: target, animation: animation, reduceMotion: still)) {
+            if let target, !still {
                 withAnimation(nil) { fraction = progressFraction(value) }
                 await Task.yield()
                 if !Task.isCancelled { withAnimation(animation.value) { fraction = progressFraction(target) } }
             } else {
-                withAnimation(reduceMotion ? nil : animation.value) { fraction = progressFraction(value) }
+                withAnimation(still ? nil : animation.value) { fraction = progressFraction(value) }
             }
         }
         .accessibilityLabel("Progress")

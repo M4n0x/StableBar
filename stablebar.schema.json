@@ -449,6 +449,25 @@
         }
       }
     },
+    "transition": {
+      "anyOf": [
+        {
+          "enum": [
+            "none",
+            "fade",
+            "roll",
+            "numeric"
+          ]
+        },
+        {
+          "$ref": "#/definitions/reference"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "How changed text and symbols appear: none, fade, roll or numeric."
+    },
     "actions": {
       "type": "object",
       "additionalProperties": false,
@@ -626,6 +645,10 @@
         },
         "scrollSpeed": {
           "$ref": "#/definitions/number"
+        },
+        "transition": {
+          "$ref": "#/definitions/transition",
+          "description": "For text, field and symbol blocks; defaults to the widget's."
         },
         "min": {
           "$ref": "#/definitions/number"
@@ -964,6 +987,10 @@
         },
         "animation": {
           "$ref": "#/definitions/animation"
+        },
+        "transition": {
+          "$ref": "#/definitions/transition",
+          "description": "How the text and symbols of the widget's blocks change, and how the widget appears and disappears when its output hides it."
         },
         "workspace": {
           "$ref": "#/definitions/workspace"

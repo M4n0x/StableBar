@@ -7,6 +7,7 @@
       "interval": null,
       "events": ["demo"],
       "icon": "bolt.circle",
+      "transition": "fade",
       "command": "printf '%s' \"${INFO:-$STATUS_TEXT}\"",
       "onClick": "open \"$CONFIG_DIR/config.json\""
     },
@@ -14,7 +15,7 @@
       "id": "volume",
       "template": "metric",
       "icon": "speaker.wave.2",
-      "command": "osascript -e 'output volume of (get volume settings)'",
+      "command": "/bin/sh \"$CONFIG_DIR/volume.sh\"",
       "onClick": "osascript -e 'set volume output muted not (output muted of (get volume settings))'",
       "actions": {
         "scrollUp": "osascript -e 'set volume output volume ((output volume of (get volume settings)) + 2)'",
@@ -35,6 +36,7 @@
       "type": "clock",
       "position": "right",
       "format": "EEE HH:mm",
+      "transition": "numeric",
       "onClick": "open -a Calendar"
     }
   ]

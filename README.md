@@ -125,7 +125,7 @@ Widget properties override their template recursively. `widgetOverrides` applies
 
 Included files are watched even outside the main directory. A missing module or directory is watched for repair; the last working bar remains visible meanwhile.
 
-[examples/modular](examples/modular/config.json) is a complete, dependency-free starter with a theme that styles the shared data states, a template, an event-only status, a CPU widget whose rules set those states, and an optional volume widget. Try it without replacing your personal configuration:
+[examples/modular](examples/modular/config.json) is a complete, dependency-free starter with a theme that styles the shared data states, a template, an event-only status that fades in new text, a CPU widget whose rules set those states, a clock whose digits roll, and an optional volume widget that shows the volume for a moment after a scroll changes it. Try it without replacing your personal configuration:
 
 ```sh
 ./dist/StableBar.app/Contents/MacOS/StableBar --validate examples/modular/config.json
@@ -163,7 +163,7 @@ Any style can have `states`: styles that apply over it while a state is active. 
 
 `hover` is active while the pointer is over a bar widget, a workspace cell or a layout block, on that display only. The `open` state is active on a bar widget, its layout and its overlay while its popup shows, on the instance that opened it: not on its copies on other displays, and not when the popup opened from the More widgets menu. A block's own background, border, padding, size, offset and opacity change for `open` only through that block's own `states`. Workspace cells also have a workspace state; see [Workspace appearance](#workspace-appearance). Script and provider widgets can have a data state; see [Data states](#data-states). States apply in a fixed order, later ones winning: the data state, the workspace state, `hover`, then `open`, so an `open` style stays visible while the pointer rests on its widget. A state's style can have its own `states`, which refine later states while both are active: `states.focused.states.hover` styles the focused workspace under the pointer. `bar.style` and group styles have no states.
 
-`hoverBackground` and `hoverForeground` are shorthand for `states.hover.background` and `states.hover.foreground`. In each style, such as `defaults` or a widget's `style`, the two are compared after includes, packages, themes, templates, widget overrides and profiles merge, so a `states.hover.background` from any layer wins over `hoverBackground` from any layer, and likewise for the foreground; to override a lower layer's hover state, set `states.hover.background`. Customize's **Hover background** rows handle this for you: they set `hoverBackground` and set `states.hover.background` to `null` beside it, so the color you pick wins over a lower layer's hover state but not over an active profile's `hoverBackground`. A hover without a background keeps the background. In layout and popup blocks, `hover` changes the text color and the block's own background, border, padding, size, offset and opacity.
+`hoverBackground` and `hoverForeground` are shorthand for `states.hover.background` and `states.hover.foreground`. In each style, such as `defaults` or a widget's `style`, the two are compared after includes, packages, themes, templates, widget overrides and profiles merge, so a `states.hover.background` from any layer wins over `hoverBackground` from any layer, and likewise for the foreground; to override a lower layer's hover state, set `states.hover.background`. Customize's **Hover background** rows handle this for you: they set `hoverBackground` and set `states.hover.background` to `null` beside it, so the color you pick wins over a lower layer's hover state but not over an active profile's `hoverBackground`. A hover without a background keeps the background. In a widget's `layout` and `overlay` and in popups, `hover` changes a block's text color and its own background, border, padding, size, offset and opacity. A widget without `layout` draws its default layout with all of its `hover` and `open` styles.
 
 A widget's states merge with those in `defaults`, and every style's states merge through includes, templates, profiles and widget overrides one state and property at a time: a widget's `states.hover.foreground` keeps the theme's `states.hover.background`. Set a state to `null` in a later layer to remove it at the same place: in `defaults` through includes, profiles and packages, and in a widget's `style` through its templates, widget overrides and package widgets. A hover set with `hoverBackground` or `hoverForeground` comes back from the shorthand, so set those to `null` too. Nothing set on a widget (its `style`, a template, a widget override or script output) can remove a state set in `defaults`. A state wins over the base style, so a theme's states also show on widgets that set their own colors.
 
@@ -391,6 +391,8 @@ Set `bar.displayScale` to `{ "builtIn": 0.85, "external": 1 }` to shrink the lap
 
 A widget's `layout` uses the same blocks as a popup. Use rows and columns to style the label, icon and other elements independently. Bar layouts take their content's width; popup layouts fill their available width. Give graphs, progress blocks and images explicit sizes when they should have a fixed footprint.
 
+A widget without `layout` draws a default layout made of the same blocks: a `row` of its icon (`symbol`) and text (`field`), at least a line of text tall even when it shows only the icon. Script and provider widgets whose output has a `value` show a 40 × 16 `graph` before them, and active-app widgets show the app's icon instead of a `symbol`. Workspaces and spacers keep their own views. A `layout` replaces the default layout, so block options work on built-in widgets too, for example an app name that scrolls when it doesn't fit: `"layout": { "type": "field", "field": "text", "scrollSpeed": 30, "style": { "width": 120 } }`.
+
 `overlay` uses the same blocks, aligned to the widget's bottom edge. It occupies no space and does not intercept clicks. This supports an underline, playback progress or a graph underneath the label.
 
 For example, a music script can return:
@@ -424,11 +426,13 @@ The widget can use:
 }
 ```
 
-`text` and `icon` are supplied to bar layouts from the widget's normal content. Other fields come from the script. Active-app layouts receive `text` as the app name. Use the normal clock rendering for native clock widgets.
+Bar layouts receive the widget's `text` and `icon` as fields, beside the script's own fields: a text widget's `text`, a clock's time in its `format`, the frontmost app's name, or a script's or provider's `text` and `icon`.
 
 Script output ignores unknown top-level fields, but styles, animations and menu items in it use the configuration's property names and reject unknown ones. Script output may include `style` to override the widget style, `display` to change its display filter, and `styles` to supply named element styles. A block with `"styleSource": "countdown"` reads `styles.countdown`, overlaid on its configured style. A list row can use `styleField` to read the style name from a field in that row. Scripts can return `widgetStyles`, keyed by widget ID, to style another widget (for example, change a workspace underline when the window-manager mode changes). Later scripts take precedence; a widget's own `style` output takes precedence over those overrides. Omitted overrides return to the configured style on the next update.
 
 Widgets and blocks accept `animation` with `duration` in seconds and `curve`: `linear`, `easeIn`, `easeOut`, `easeInOut`, `smooth` or `spring`. Widget animation defaults to `bar.animationDuration`. Block style animations are opt-in. Progress values use a 0–1 scale, clipped to that range when drawn. A progress block can also read a numeric string from its current list row when there is no matching entry in `values`. With a matching entry in `targets`, a progress rule starts at `values[source]` and animates toward `targets[source]`; without a target it animates between readings. Reduce Motion disables these animations.
+
+Widgets and text, field and symbol blocks accept `transition`, so changed text and symbols animate instead of snapping: `fade` cross-fades, `roll` slides the new content up from below, `numeric` rolls the digits that changed (symbols fade), and `none`, the default, swaps them at once. A widget's `transition` applies to its default layout and to the text, field and symbol blocks of its `layout` and `overlay` that set none of their own. A transition uses the block's `animation`, else the widget's; in popups, the block's or 0.22 seconds. Blocks that appear or disappear, such as with `hideWhenEmpty`, don't transition, but a widget with a `transition` fades or rolls in and out when its output's `hidden` changes, and the widgets beside it slide into place. Reduce Motion turns transitions off.
 
 ### Workspace appearance
 
@@ -567,7 +571,7 @@ Open **Customize StableBar…** from the menu-bar icon or by right-clicking the 
 
 **Appearance** chooses the [theme](#themes), keeps the bar light or dark or lets it follow the system, and edits the theme's colors. Each theme color has a light and a dark value; changing one saves it in your configuration's `tokens`, so every widget, popup and package that uses the color follows. **All widgets** sets the default colors, shadow, font, weight, size, padding and corners. **Popups** sets their background, border, shadow and weight, which apply over All widgets. **Bar** sets the bar's background, bottom border, corners, size and position. Together they reach every property the themes that ship with StableBar set, so you can build any of their looks here.
 
-**Widgets** lists your widgets by position; drag to reorder them. Change a widget's position, icon, text or clock format, its colors, font and shape, or edit its properties as JSON. A color either follows one of the theme's colors, such as Text or Accent, or is a custom light and dark pair.
+**Widgets** lists your widgets by position; drag to reorder them. Change a widget's position, icon, text, clock format or transition, its colors, font and shape, or edit its properties as JSON. A color either follows one of the theme's colors, such as Text or Accent, or is a custom light and dark pair.
 
 Each style control says where its value comes from: a theme, a package, an included file, a template, a profile or your configuration. A value set in your configuration shows **Reset to default**, which removes it so the theme's or the inherited value applies again.
 
@@ -577,7 +581,7 @@ Changes in these sections apply to the bar immediately, like command-line edits 
 
 **Packages** reviews local folders and [store](#store) packages and their declared commands, edits typed settings, installs versions and enables a chosen version. Enabling a theme makes it the active theme; themes have no commands to review. Select an older installed version to roll back, or **Uninstall…** to remove one.
 
-**Diagnostics** shows the composed widget configuration, defaults, source paths, provider output and data state, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while Diagnostics is visible. Closing the window restores its visibility policy.
+**Diagnostics** shows the composed widget configuration, defaults, source paths, what the widget shows (its `text`, `icon`, `fields` and `temporaryFields`), provider output and data state, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while Diagnostics is visible. Closing the window restores its visibility policy.
 
 ## Built-in widgets
 
@@ -651,13 +655,14 @@ Return plain text, or one JSON object:
 
 `text` is required; the other output fields are optional:
 
-- `hidden`: removes the widget when true (unless it has an error).
+- `hidden`: removes the widget when true (unless it has an error). Give the widget a `transition` to fade or roll it in and out.
 - `interval`: overrides the next polling delay in seconds; must be greater than zero. Omit it to use the configured interval.
 - `menu`: an array of `{ "title": "Issue", "detail": "In progress", "onClick": "open …" }`, displayed in a themed popup. Rows without `onClick` show information. A menu takes precedence over the widget's click command. Static widgets can also define `menu` in their configuration.
 - `value`: a graph sample, displayed on a 0–1 scale with the last 60 samples.
 - `fields`: named display strings for popup field blocks.
 - `lists`: named arrays of objects containing display strings for popup list blocks.
 - `state`: the widget's data state, such as `warning`; see [Data states](#data-states).
+- `temporary`: fields shown over the output's own for `duration` seconds, before the widget returns to its output (at most one day). A volume script can return `{"text":"","icon":"speaker.wave.2","temporary":{"fields":{"text":"62%"},"duration":1.5}}` after a change. A `text` or `icon` field replaces the widget's text or icon, and an empty `icon` hides it. A different `temporary` starts over, as does the same one after it ran out; the same one again while it shows, or an output without one, lets it run out.
 
 A nonzero exit, timeout, excessive output or invalid JSON preserves the previous output and adds a warning with the error in its tooltip. Repeated polling failures increase the retry delay exponentially up to five minutes, without shortening a configured interval longer than that. A successful update resets the delay; event-only scripts retry on their next event or action. A completed click action requests an immediate refresh. `onClick` runs only when clicked.
 
@@ -836,7 +841,7 @@ A named group has one shared background, padding, border and spacing. Members mu
 
 A `spacer` uses the remaining width. Place it between widgets to separate them without choosing a fixed gap. Widget styles accept `minWidth` and `maxWidth` in addition to a fixed `width`.
 
-The [interactive example](examples/interactive/config.json) combines groups, an expanding spacer, constrained text, and all popup controls. Copy both files from `examples/interactive` into your configuration directory. Its controls update demo state in `.control-state` next to the configuration; they do not alter macOS settings. The app list opens the selected application.
+The [interactive example](examples/interactive/config.json) combines groups, an expanding spacer, constrained text that rolls to the new app's name, and all popup controls. Copy both files from `examples/interactive` into your configuration directory. Its controls update demo state in `.control-state` next to the configuration; they do not alter macOS settings. The app list opens the selected application.
 
 ## Custom popups
 
@@ -922,13 +927,14 @@ Field and list values are display strings; scripts supply units and formatting. 
 
 Add the popup to the script widget that returns those fields.
 
-For new native widget types, add a case to `WidgetContent`, decode its settings in `WidgetConfiguration`, and render it in `WidgetView.content`. New popup components belong in `PopupContent` and `PopupBlockView`. Runtime SwiftUI plugins and arbitrary chart types are not implemented.
+For new native widget types, add a case to `WidgetContent`, decode its settings in `WidgetConfiguration`, return what it shows from `WidgetConfiguration.label` and give it a default layout in `WidgetConfiguration.defaultLayout`. New popup components belong in `PopupContent` and `PopupBlockView`. Runtime SwiftUI plugins and arbitrary chart types are not implemented.
 
 
 ## Architecture
 
 - [Configuration.swift](Sources/StableBar/Configuration.swift): config, widget definitions and style inheritance.
 - [StyleResolution.swift](Sources/StableBar/StyleResolution.swift): style layers and states resolved in one place for bar widgets, workspace cells, layout blocks and the bar, and the rules that set data states.
+- [WidgetLabel.swift](Sources/StableBar/WidgetLabel.swift): what each widget type shows and the default layout it draws.
 - [BarStore.swift](Sources/StableBar/BarStore.swift): live reload, shared provider lifetimes, visibility, sleep and each widget's resolved style.
 - [ConfigurationLoader.swift](Sources/StableBar/ConfigurationLoader.swift): includes, profiles, tokens and provenance.
 - [ConfigurationEdits.swift](Sources/StableBar/ConfigurationEdits.swift): file-preserving edits shared by CLI and editor.

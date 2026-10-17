@@ -178,6 +178,28 @@ extension WidgetPosition {
     }
 }
 
+private extension WidgetTransition {
+    var title: String {
+        switch self {
+        case .none: "None"
+        case .fade: "Fade"
+        case .roll: "Roll"
+        case .numeric: "Numeric"
+        }
+    }
+}
+
+extension WidgetConfiguration {
+    /// Whether `transition` changes anything: workspaces and spacers draw their own views, which
+    /// have no text or symbols to transition, unless they have a `layout` or `overlay`.
+    var drawsTransitions: Bool {
+        switch content {
+        case .workspaces, .spacer: layout != nil || overlay != nil
+        default: true
+        }
+    }
+}
+
 private extension WidgetContent {
     var title: String {
         switch self {
@@ -358,6 +380,12 @@ private struct WidgetsView: View {
                 if editor.selected["type"] == .string("text") { TextField("Text", text: string("text")) }
                 if editor.selected["type"] == .string("clock") {
                     TextField("Date format", text: string("format", fallback: "EEE d MMM HH:mm"))
+                }
+                if widget.drawsTransitions {
+                    Picker("Transition", selection: string("transition", fallback: WidgetTransition.none.rawValue)) {
+                        ForEach(WidgetTransition.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
+                    }
+                    .help("How the widget's text and symbols change")
                 }
             }
             Section("Colors") {

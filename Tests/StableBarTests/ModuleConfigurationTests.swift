@@ -366,6 +366,10 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     #expect(modular.defaults.states?["warning"]?.foreground == HexColor(0xf5c26bff))
     let cpu = try #require(modular.widgets.first { $0.id == "cpu" })
     #expect(cpu.rules.map(\.state) == ["critical", "warning"])
+    #expect(modular.widgets.first { $0.id == "status" }?.transition == .fade)
+    #expect(modular.widgets.first { $0.id == "clock" }?.transition == .numeric)
+    #expect(modular.widgets.first { $0.id == "volume" }?.content == .script(command: #"/bin/sh "$CONFIG_DIR/volume.sh""#, interval: 30))
+    #expect(FileManager.default.fileExists(atPath: repository.appending(path: "examples/modular/volume.sh").path))
     let critical = ResolvedWidgetStyle(base: resolveStyle([modular.defaults, cpu.style]), state: "critical")
     #expect(critical.style(hovered: false).background == HexColor(0xf28b82ff))
     #expect(critical.style(hovered: true).background == HexColor(0xf5a59eff))
@@ -375,6 +379,7 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     }
     let interactive = try loader.load(repository.appending(path: "examples/interactive/config.json"))
     #expect(interactive.defaults.states?["open"]?.borderWidth == 1)
+    #expect(interactive.widgets.first { $0.id == "application" }?.transition == .roll)
     _ = try loader.load(repository.appending(path: "Resources/config.json"))
     _ = try WidgetPackageStore(directory: repository.appending(path: "examples/packages"))
         .inspect(repository.appending(path: "examples/packages/local-clock"))

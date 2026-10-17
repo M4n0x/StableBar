@@ -329,3 +329,129 @@ private func output(_ json: String) throws -> ScriptOutput {
     #expect(compact.style.state == "warning")
     #expect(detail.style.state == "muted")
 }
+
+@Test @MainActor func hidingAWidgetWithATransitionChangesOnlyItsPresence() async throws {
+    let store = try makeStore(##"""
+    {"widgets":[{"id":"a","type":"script","command":"true","position":"left","transition":"fade"},
+                {"id":"b","type":"script","command":"true","position":"left"}]}
+    """##)
+    let a = try #require(store.scripts["a"])
+    let first = try #require(store.presentations["a"])
+    let second = try #require(store.presentations["b"])
+    try await confirmation("a hides", expectedCount: 1) { hidden in
+        try await confirmation("b stays valid", expectedCount: 0) { invalidated in
+            withObservationTracking { _ = first.hidden } onChange: { hidden() }
+            withObservationTracking { _ = second.hidden; _ = second.style; _ = second.display } onChange: { invalidated() }
+            try a.accept(output(#"{"text":"","hidden":true}"#))
+        }
+    }
+    #expect(first.hidden)
+    try a.accept(output(#"{"text":"Back"}"#))
+    #expect(!first.hidden)
+}
+
+@Test @MainActor func temporaryOutputShowsItsFieldsForItsDurationThenExpires() async throws {
+    let store = try makeStore(threeWidgets)
+    let a = try #require(store.scripts["a"])
+    let first = try #require(store.presentations["a"])
+    let second = try #require(store.presentations["b"])
+    try await confirmation("a shows its temporary fields", expectedCount: 1) { shown in
+        try await confirmation("b stays valid", expectedCount: 0) { invalidated in
+            withObservationTracking { _ = first.temporaryFields } onChange: { shown() }
+            withObservationTracking { _ = second.temporaryFields; _ = second.style } onChange: { invalidated() }
+            try a.accept(output(#"{"text":"","icon":"speaker.wave.2","temporary":{"fields":{"text":"62"},"duration":1}}"#))
+        }
+    }
+    #expect(first.temporaryFields == ["text": "62"])
+    try a.accept(output(#"{"text":"","icon":"speaker.wave.2"}"#))
+    #expect(first.temporaryFields == ["text": "62"])
+    let deadline = ContinuousClock.now + .seconds(10)
+    while first.temporaryFields != nil, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(first.temporaryFields == nil)
+    try await confirmation("Nothing runs after it expires", expectedCount: 0) { changed in
+        withObservationTracking { _ = first.temporaryFields; _ = first.style; _ = first.hidden } onChange: { changed() }
+        try await Task.sleep(for: .milliseconds(300))
+    }
+}
+
+@Test @MainActor func aDifferentTemporaryOutputStartsOverWhileTheSameOneDoesNot() async throws {
+    let store = try makeStore(threeWidgets)
+    let a = try #require(store.scripts["a"])
+    let first = try #require(store.presentations["a"])
+    try a.accept(output(#"{"text":"","temporary":{"fields":{"text":"61"},"duration":0.2}}"#))
+    try a.accept(output(#"{"text":"","temporary":{"fields":{"text":"62"},"duration":30}}"#))
+    #expect(first.temporaryFields == ["text": "62"])
+    try await Task.sleep(for: .milliseconds(600))
+    #expect(first.temporaryFields == ["text": "62"], "The first temporary output's expiry was cancelled")
+    try await confirmation("The same temporary output leaves it alone", expectedCount: 0) { changed in
+        withObservationTracking { _ = first.temporaryFields } onChange: { changed() }
+        try a.accept(output(#"{"text":"","temporary":{"fields":{"text":"62"},"duration":30}}"#))
+    }
+}
+
+/// Waits until `presentation` shows no temporary fields, and returns when it saw them go.
+@MainActor private func expiry(of presentation: WidgetPresentation) async throws -> ContinuousClock.Instant {
+    let deadline = ContinuousClock.now + .seconds(20)
+    while presentation.temporaryFields != nil, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    try #require(presentation.temporaryFields == nil)
+    return .now
+}
+
+@Test @MainActor func theSameTemporaryOutputShowsAgainAfterItExpires() async throws {
+    let store = try makeStore(threeWidgets)
+    let a = try #require(store.scripts["a"])
+    let b = try #require(store.scripts["b"])
+    let first = try #require(store.presentations["a"])
+    let copied = #"{"text":"","icon":"doc.on.doc","temporary":{"fields":{"text":"Copied"},"duration":0.2}}"#
+    try a.accept(output(copied))
+    #expect(first.temporaryFields == ["text": "Copied"])
+    _ = try await expiry(of: first)
+    try b.accept(output(#"{"text":"B"}"#))
+    #expect(first.temporaryFields == nil, "Applying a's output again doesn't show it again")
+    try a.accept(output(copied))
+    #expect(first.temporaryFields == ["text": "Copied"])
+    _ = try await expiry(of: first)
+}
+
+/// Whether `a`'s temporary output keeps running out on the same schedule after `update` while it shows.
+@MainActor private func keepsItsExpiry(after update: (BarStore) throws -> Void) throws -> Bool {
+    let store = try makeStore(threeWidgets)
+    let a = try #require(store.scripts["a"])
+    let first = try #require(store.presentations["a"])
+    try a.accept(output(#"{"text":"","temporary":{"fields":{"text":"62"},"duration":30}}"#))
+    let expiry = try #require(first.expiry)
+    try update(store)
+    #expect(first.temporaryFields == ["text": "62"])
+    return first.expiry == expiry
+}
+
+@Test @MainActor func theSameTemporaryOutputWhileItShowsDoesNotStartOver() throws {
+    #expect(try keepsItsExpiry { store in
+        try store.scripts["a"]?.accept(output(#"{"text":"","temporary":{"fields":{"text":"62"},"duration":30}}"#))
+    })
+    #expect(try !keepsItsExpiry { store in
+        try store.scripts["a"]?.accept(output(#"{"text":"","temporary":{"fields":{"text":"62"},"duration":31}}"#))
+    }, "A different one starts over")
+}
+
+@Test @MainActor func anotherWidgetsUpdateDoesNotStartATemporaryOutputOver() throws {
+    #expect(try keepsItsExpiry { store in try store.scripts["b"]?.accept(output(#"{"text":"B"}"#)) })
+}
+
+@Test func malformedTemporaryOutputIsAnError() throws {
+    for json in [#"{"text":"","temporary":{"fields":{"text":"62"},"duration":0}}"#,
+                 #"{"text":"","temporary":{"fields":{"text":"62"}}}"#,
+                 #"{"text":"","temporary":{"fields":{"text":62},"duration":1}}"#,
+                 #"{"text":"","temporary":{"fields":{"text":"62"},"duration":1,"seconds":2}}"#,
+                 #"{"text":"","temporary":{"fields":{"text":"62"},"duration":1e30}}"#,
+                 #"{"text":"","temporary":{"fields":{"text":"62"},"duration":86400.5}}"#] {
+        #expect(throws: DecodingError.self) { try output(json) }
+    }
+    #expect(try output(#"{"text":"62"}"#).temporary == nil)
+    #expect(try output(#"{"text":"","temporary":{"fields":{"text":"62"},"duration":1.5}}"#).temporary?.duration == 1.5)
+    #expect(try output(#"{"text":"","temporary":{"fields":{"text":"62"},"duration":86400}}"#).temporary?.duration == 86400)
+}

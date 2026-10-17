@@ -49,6 +49,8 @@ indirect enum PopupContent: Sendable {
     case image(path: String, source: String?, fit: ImageFit)
     case symbol(name: String, source: String?)
     case progress(source: String, height: Double)
+    /// The frontmost app's icon, drawn by an active-app widget's default layout. Configurations can't use it.
+    case appIcon
 }
 
 struct PopupBlock: Decodable, Sendable {
@@ -64,16 +66,25 @@ struct PopupBlock: Decodable, Sendable {
     let openField: String?
     let hideWhenEmpty: String?
     let scrollSpeed: Double?
+    /// Whether a field block draws tabular digits. Configured field blocks do; the default layouts of
+    /// widgets whose built-in look used proportional digits don't.
+    let monospacedDigits: Bool
+    /// Whether the block is at least a line of its text tall, as built-in widgets that show only an
+    /// icon are. Default layouts set it; configured blocks can't.
+    let keepsLineHeight: Bool
+    /// How a text, field or symbol block shows changed content; nil uses its widget's.
+    let transition: WidgetTransition?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case type, style, alignment, children, text, field, height, source, row, title, onClick
         case path, fit, name, animation, styleSource, styleField, onClickField, lineWidth
-        case hideWhenEmpty, scrollSpeed, min, max, step, onChange, options, searchFields, open, openField
+        case hideWhenEmpty, scrollSpeed, min, max, step, onChange, options, searchFields, open, openField, transition
     }
 
-    init(content: PopupContent) {
+    init(content: PopupContent, style: WidgetStyle = WidgetStyle(), hideWhenEmpty: String? = nil, monospacedDigits: Bool = true,
+         keepsLineHeight: Bool = false) {
         self.content = content
-        style = WidgetStyle()
+        self.style = style
         alignment = .leading
         animation = nil
         styleSource = nil
@@ -82,8 +93,11 @@ struct PopupBlock: Decodable, Sendable {
         onClickField = nil
         open = nil
         openField = nil
-        hideWhenEmpty = nil
+        self.hideWhenEmpty = hideWhenEmpty
         scrollSpeed = nil
+        self.monospacedDigits = monospacedDigits
+        self.keepsLineHeight = keepsLineHeight
+        transition = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -109,6 +123,9 @@ struct PopupBlock: Decodable, Sendable {
         if let scrollSpeed, scrollSpeed <= 0 {
             throw DecodingError.dataCorruptedError(forKey: .scrollSpeed, in: values, debugDescription: "Scroll speed must be greater than zero.")
         }
+        monospacedDigits = true
+        keepsLineHeight = false
+        transition = try values.decodeIfPresent(WidgetTransition.self, forKey: .transition)
         switch try values.decode(String.self, forKey: .type) {
         case "row": content = .row(try values.decode([PopupBlock].self, forKey: .children))
         case "column": content = .column(try values.decode([PopupBlock].self, forKey: .children))
@@ -165,6 +182,14 @@ struct PopupBlock: Decodable, Sendable {
                                 height: try values.decode(Double.self, forKey: .height))
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: values, debugDescription: "Unknown popup block type.")
+        }
+        if transition != nil {
+            switch content {
+            case .text, .field, .symbol: break
+            default:
+                throw DecodingError.dataCorruptedError(forKey: .transition, in: values,
+                                                       debugDescription: "Transitions apply to text, field and symbol blocks.")
+            }
         }
     }
 }

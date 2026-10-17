@@ -8,10 +8,11 @@ struct ScrollingText: View {
     @State private var textWidth = 0.0
     @State private var start = Date()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.measuringBarWidths) private var measuring
 
     var body: some View {
         GeometryReader { geometry in
-            TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion || textWidth <= geometry.size.width)) { context in
+            TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion || measuring || textWidth <= geometry.size.width)) { context in
                 let distance = max(textWidth - geometry.size.width, 0)
                 let travel = distance / speed
                 let elapsed = context.date.timeIntervalSince(start).truncatingRemainder(dividingBy: travel * 2 + 2)

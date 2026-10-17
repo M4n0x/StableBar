@@ -197,3 +197,23 @@ struct RuleCondition: Decodable, Equatable, Sendable {
         return (below.map { number <= $0 } ?? true) && (above.map { number >= $0 } ?? true)
     }
 }
+
+/// The style a widget's blocks inherit, and the states they apply over it.
+struct LayoutStyle: Equatable, Sendable {
+    let inherited: WidgetStyle
+    let states: StyleStates
+    /// Whether each block adds its own hover.
+    let tracksHover: Bool
+}
+
+extension ResolvedWidgetStyle {
+    /// A configured `layout` or `overlay` inherits `base` and applies the widget's data and `open`
+    /// states, each block adding its own hover. A default layout inherits the style the widget draws
+    /// with, hover and open included, and adds nothing, so it looks exactly like the widget did
+    /// before it was drawn through blocks.
+    func layoutStyle(configured: Bool, hovered: Bool, open: Bool) -> LayoutStyle {
+        configured
+            ? LayoutStyle(inherited: base, states: blockStates(open: open), tracksHover: true)
+            : LayoutStyle(inherited: style(hovered: hovered, open: open), states: StyleStates(), tracksHover: false)
+    }
+}
