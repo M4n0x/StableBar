@@ -4,12 +4,189 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "roles": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "time": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/style"
+                },
+                {
+                  "$ref": "#/definitions/reference"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primary": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/style"
+                },
+                {
+                  "$ref": "#/definitions/reference"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "secondary": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/style"
+                },
+                {
+                  "$ref": "#/definitions/reference"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "key": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/style"
+                },
+                {
+                  "$ref": "#/definitions/reference"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/style"
+                },
+                {
+                  "$ref": "#/definitions/reference"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "heading": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/style"
+                },
+                {
+                  "$ref": "#/definitions/reference"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "button": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/style"
+                },
+                {
+                  "$ref": "#/definitions/reference"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "meter": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/style"
+                },
+                {
+                  "$ref": "#/definitions/reference"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "separator": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/style"
+                },
+                {
+                  "$ref": "#/definitions/reference"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "$ref": "#/definitions/reference"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "workspaceDefaults": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/workspaceDefaults"
+        },
+        {
+          "$ref": "#/definitions/reference"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "$schema": {
       "type": "string"
     },
     "workspaceSource": {
       "type": "string",
       "enum": ["aerospace", "yabai"]
+    },
+    "modeAliases": {
+      "anyOf": [
+        {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "\\S"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+              },
+              {
+                "$ref": "#/definitions/reference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "User mapping of AeroSpace mode names to semantic mode.<alias> states. Themes cannot set this mapping."
+        },
+        {
+          "$ref": "#/definitions/reference"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "includes": {
       "$ref": "#/definitions/strings",
@@ -115,6 +292,68 @@
     }
   },
   "definitions": {
+    "workspaceDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "indicator": {
+          "anyOf": [
+            {
+              "enum": [
+                "background",
+                "underline",
+                "none"
+              ]
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "indicatorStyle": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "appStyle": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/style"
+            },
+            {
+              "$ref": "#/definitions/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "reference": {
       "type": "string",
       "pattern": "^@(token|setting)\\."
@@ -305,6 +544,22 @@
         "hoverForeground": {
           "$ref": "#/definitions/color"
         },
+        "placement": {
+          "anyOf": [
+            { "enum": ["cell", "belowBar"] },
+            { "$ref": "#/definitions/reference" },
+            { "type": "null" }
+          ],
+          "description": "Workspace indicatorStyle only: cell preserves cell-relative drawing; belowBar starts at the visible bar bottom plus offsetY."
+        },
+        "borderEdges": {
+          "anyOf": [
+            { "enum": ["bottom", "all"] },
+            { "$ref": "#/definitions/reference" },
+            { "type": "null" }
+          ],
+          "description": "Only bar.style and script barStyle consume this property. Bottom preserves the default; all draws an inset outline."
+        },
         "borderWidth": {
           "$ref": "#/definitions/number"
         },
@@ -418,7 +673,7 @@
           "type": "null"
         }
       ],
-      "description": "Styles applied over this one while a state is active: hover, open, focused, visible, empty, or a data state such as warning."
+      "description": "Styles applied after base layers: data state, workspace state, mode, mode.<alias>, hover, then open. Groups do not consume states."
     },
     "animation": {
       "type": "object",
@@ -523,6 +778,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "role": {"anyOf": [{"enum": ["time", "primary", "secondary", "key", "value", "heading", "button", "meter", "separator"]}, {"$ref": "#/definitions/reference"}, {"type": "null"}]},
         "type": {
           "anyOf": [
             {
@@ -864,6 +1120,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "role": {"anyOf": [{"enum": ["time", "primary", "secondary", "key", "value", "heading", "button", "meter", "separator"]}, {"$ref": "#/definitions/reference"}, {"type": "null"}]},
         "id": {
           "$ref": "#/definitions/string",
           "description": "Stable, unique widget identifier."
@@ -1059,7 +1316,8 @@
         "state": {
           "type": "string",
           "minLength": 1,
-          "description": "Data state to set, such as warning, critical, active or muted."
+          "not": { "pattern": "^(hover|open|focused|visible|empty|mode)$|^mode\\." },
+          "description": "Data state to set, such as warning, critical, active or muted. Mode and interaction/workspace state names are reserved."
         }
       }
     },

@@ -1,17 +1,35 @@
 import Foundation
 
 /// The states active for one drawn element. Their styles apply over the base style in the order
-/// of `names`, later ones winning: the data state, the workspace state, `hover`, then `open`.
+/// of `names`, later ones winning: data, workspace, mode, mode alias, hover, then open.
 struct StyleStates: Equatable, Sendable {
     var data: String?
     var workspace: WorkspaceState?
+    var mode = ModePresentation()
     var hover = false
     var open = false
 
     /// The states StableBar sets itself, which output `state` and rules can't use.
-    static let reservedNames: Set<String> = ["hover", "open", "focused", "visible", "empty"]
+    static let reservedNames: Set<String> = ["hover", "open", "focused", "visible", "empty", "mode"]
 
-    var names: [String] { [data, workspace?.rawValue, hover ? "hover" : nil, open ? "open" : nil].compactMap { $0 } }
+    static func isReserved(_ name: String) -> Bool {
+        reservedNames.contains(name) || name == "mode" || name.hasPrefix("mode.")
+    }
+
+    var names: [String] {
+        [data, workspace?.rawValue, mode.active ? "mode" : nil, mode.alias.map { "mode.\($0)" },
+         hover ? "hover" : nil, open ? "open" : nil].compactMap { $0 }
+    }
+}
+
+struct ModePresentation: Equatable, Sendable {
+    var active = false
+    var alias: String?
+
+    init(mode: String? = nil, aliases: [String: String] = [:]) {
+        active = mode.map { !$0.isEmpty && $0 != "main" } ?? false
+        alias = active ? mode.flatMap { aliases[$0] } : nil
+    }
 }
 
 /// A workspace cell's state. A cell has at most one: focused, else visible, else empty.
@@ -27,6 +45,10 @@ enum WorkspaceState: String, CaseIterable, Sendable {
 }
 
 extension WidgetStyle {
+    var usesModeStates: Bool {
+        states?.contains { $0.key == "mode" || $0.key.hasPrefix("mode.") || $0.value.usesModeStates } == true
+    }
+
     /// This style with the style of each active state applied over it, in `states.names` order.
     /// A state's style merges with `inheriting`, so its own `states` refine the states after it, and
     /// a state that sets no background keeps the background.
@@ -50,16 +72,40 @@ func resolveStyle(_ layers: [WidgetStyle], states: StyleStates = StyleStates()) 
 /// `style` and `color`.
 func widgetStyleLayers(_ widget: WidgetConfiguration, defaults: WidgetStyle, widgets: [WidgetConfiguration],
                        output: (String) -> ScriptOutput?) -> [WidgetStyle] {
-    let own = output(widget.id)
-    var layers = [defaults, widget.style]
-    layers += widgets.compactMap { output($0.id)?.widgetStyles?[widget.id] }
-    layers += [own?.style ?? WidgetStyle(), WidgetStyle(foreground: own?.color)]
-    return layers
+    widgetStyleLayers(widget, defaults: defaults, overrides: OrderedStyleOverrides(widgets: widgets, output: output),
+                      own: output(widget.id))
+}
+
+/// Aggregate once per update, retaining configuration order and dropping targets absent from the
+/// current outputs. This is deliberately just an ordered fold, not a persistent selector cache.
+struct OrderedStyleOverrides {
+    var widgets: [String: WidgetStyle] = [:]
+    var bar = WidgetStyle()
+
+    init(widgets: [WidgetConfiguration], output: (String) -> ScriptOutput?) {
+        for widget in widgets {
+            guard let value = output(widget.id) else { continue }
+            for (id, style) in value.widgetStyles ?? [:] {
+                self.widgets[id] = style.inheriting(self.widgets[id] ?? WidgetStyle())
+            }
+            if let style = value.barStyle { bar = style.inheriting(bar) }
+        }
+    }
+}
+
+func widgetStyleLayers(_ widget: WidgetConfiguration, defaults: WidgetStyle, overrides: OrderedStyleOverrides,
+                       own: ScriptOutput?, role: WidgetStyle = WidgetStyle()) -> [WidgetStyle] {
+    [defaults, role, widget.style, overrides.widgets[widget.id] ?? WidgetStyle(), own?.style ?? WidgetStyle(),
+     WidgetStyle(foreground: own?.color)]
 }
 
 /// The bar's style layers: `bar.style`, then each widget's output `barStyle` in configuration order.
 func barStyleLayers(_ style: WidgetStyle, widgets: [WidgetConfiguration], output: (String) -> ScriptOutput?) -> [WidgetStyle] {
-    [style] + widgets.compactMap { output($0.id)?.barStyle }
+    barStyleLayers(style, overrides: OrderedStyleOverrides(widgets: widgets, output: output))
+}
+
+func barStyleLayers(_ style: WidgetStyle, overrides: OrderedStyleOverrides) -> [WidgetStyle] {
+    [style, overrides.bar]
 }
 
 /// A bar widget's style for each combination of its interaction states, resolved once so drawing
@@ -69,21 +115,23 @@ struct ResolvedWidgetStyle: Equatable, Sendable {
     let base: WidgetStyle
     /// The data state, from the widget's output or its rules.
     let state: String?
+    let mode: ModePresentation
     /// `base` resolved at rest, hovered, open, then open and hovered.
     private let variants: [WidgetStyle]
 
-    init(base: WidgetStyle, state: String? = nil) {
+    init(base: WidgetStyle, state: String? = nil, mode: ModePresentation = ModePresentation()) {
         self.base = base
         self.state = state
+        self.mode = mode
         variants = [(false, false), (true, false), (false, true), (true, true)].map {
-            base.resolved(for: StyleStates(data: state, hover: $0.0, open: $0.1))
+            base.resolved(for: StyleStates(data: state, mode: mode, hover: $0.0, open: $0.1))
         }
     }
 
     func style(hovered: Bool, open: Bool = false) -> WidgetStyle { variants[(hovered ? 1 : 0) + (open ? 2 : 0)] }
 
     /// The states the widget's layout and overlay blocks share; each block adds its own hover.
-    func blockStates(open: Bool) -> StyleStates { StyleStates(data: state, open: open) }
+    func blockStates(open: Bool) -> StyleStates { StyleStates(data: state, mode: mode, open: open) }
 }
 
 /// A workspace cell's styles in one workspace state, resolved when the configuration loads.
@@ -97,9 +145,9 @@ struct WorkspaceCellStyle: Equatable, Sendable {
     let hoveredApp: WidgetStyle
 
     init(state: WorkspaceState? = nil, cell: WidgetStyle = WidgetStyle(), underline: WidgetStyle = WidgetStyle(),
-         app: WidgetStyle = WidgetStyle()) {
-        let rest = StyleStates(workspace: state)
-        let hover = StyleStates(workspace: state, hover: true)
+         app: WidgetStyle = WidgetStyle(), mode: ModePresentation = ModePresentation()) {
+        let rest = StyleStates(workspace: state, mode: mode)
+        let hover = StyleStates(workspace: state, mode: mode, hover: true)
         resting = cell.resolved(for: rest)
         hovered = cell.resolved(for: hover)
         self.underline = underline.resolved(for: rest)
@@ -122,14 +170,44 @@ struct BlockStyle: Equatable, Sendable {
 }
 
 extension PopupBlock {
+    var usesModeStates: Bool { usesModeStates(roles: [:]) }
+
+    func usesModeStates(roles: [String: WidgetStyle]) -> Bool {
+        if style.usesModeStates || role.flatMap({ roles[$0.rawValue] })?.usesModeStates == true { return true }
+        switch content {
+        case let .row(children), let .column(children): return children.contains { $0.usesModeStates(roles: roles) }
+        case let .list(_, row), let .search(_, _, _, row): return row.usesModeStates(roles: roles)
+        default: return false
+        }
+    }
+
     /// Resolves this block's styles: its `style`, under the named output style that `styleField`
     /// (read from `fields`) or `styleSource` selects, over `inherited`.
     func resolvedStyle(inherited: WidgetStyle, styles: [String: WidgetStyle], fields: [String: String],
-                       states: StyleStates) -> BlockStyle {
+                       states: StyleStates, roles: [String: WidgetStyle] = [:]) -> BlockStyle {
         let name = styleField.flatMap { fields[$0] } ?? styleSource
-        let own = resolveStyle([style, name.flatMap { styles[$0] } ?? WidgetStyle()])
+        let role = role.flatMap { roles[$0.rawValue] } ?? WidgetStyle()
+        let output = name.flatMap { styles[$0] } ?? WidgetStyle()
+        let own = resolveStyle([role, style, output])
         let merged = resolveStyle([inherited, own])
-        return BlockStyle(inherited: merged, text: merged.resolved(for: states), box: own.resolved(for: states))
+        // Preserve the legacy cascade for unannotated blocks. Only the new role's box
+        // properties are excluded from child inheritance; explicit styles retain their behavior.
+        let children = resolveStyle([inherited, role.inheritedByBlocks, style, output])
+        return BlockStyle(inherited: children, text: merged.resolved(for: states), box: own.resolved(for: states))
+    }
+}
+
+extension Configuration {
+    var needsModeConnection: Bool {
+        subscribedEvents.contains(BuiltInEvent.aerospaceMode.rawValue) || bar.style.usesModeStates
+            || defaults.usesModeStates || popupDefaults.usesModeStates
+            || popups.values.contains { $0.style.usesModeStates || $0.layout.usesModeStates(roles: roles) }
+            || widgets.contains { widget in
+                widget.enabled && (widget.style.usesModeStates || roleStyle(widget.role).usesModeStates
+                    || widget.layout?.usesModeStates(roles: roles) == true
+                    || widget.overlay?.usesModeStates(roles: roles) == true || widget.workspace?.usesModeStates == true
+                    || widget.popup.map { $0.style.usesModeStates || $0.layout.usesModeStates(roles: roles) } == true)
+            }
     }
 }
 
@@ -137,7 +215,7 @@ extension PopupBlock {
 /// name, otherwise the state of the first rule that matches the output.
 func dataState(_ output: ScriptOutput?, rules: [StyleRule] = []) -> String? {
     guard let output else { return nil }
-    if case let .string(name)? = output.state, !name.isEmpty, !StyleStates.reservedNames.contains(name) { return name }
+    if case let .string(name)? = output.state, !name.isEmpty, !StyleStates.isReserved(name) { return name }
     return rules.first { $0.when.matches(output) }?.state
 }
 
@@ -157,7 +235,7 @@ struct StyleRule: Decodable, Equatable, Sendable {
             throw DecodingError.dataCorruptedError(forKey: .state, in: values,
                                                    debugDescription: "A rule's state must not be empty. Use a data state such as warning.")
         }
-        guard !StyleStates.reservedNames.contains(state) else {
+        guard !StyleStates.isReserved(state) else {
             throw DecodingError.dataCorruptedError(forKey: .state, in: values,
                                                    debugDescription: "\(state) is set by StableBar. Use a data state such as warning.")
         }

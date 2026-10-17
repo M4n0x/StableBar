@@ -1,7 +1,7 @@
 import Foundation
 
 struct ConfigurationEdit: Codable, Sendable {
-    enum Action: String, Codable { case set, add, remove, reorder, bar, defaults, popupDefaults, tokens, unset, profile, profiles, package, theme }
+    enum Action: String, Codable { case set, add, remove, reorder, bar, defaults, popupDefaults, roles, workspaceDefaults, tokens, modeAliases, unset, profile, profiles, package, theme }
     let action: Action
     var id: String?
     var properties: [String: ConfigurationValue]?
@@ -63,7 +63,7 @@ struct ConfigurationEdit: Codable, Sendable {
                 root["widgetOrder"] = .array(ids!.map(ConfigurationValue.string))
             }
             widgetIDs = order
-        case .bar, .defaults, .popupDefaults, .tokens:
+        case .bar, .defaults, .popupDefaults, .roles, .workspaceDefaults, .tokens, .modeAliases:
             let key = action.rawValue
             root[key] = .object(try requiredProperties()).overriding(root[key] ?? .object([:]))
         case .unset:
@@ -160,7 +160,12 @@ enum HoverBackgroundRow {
     static func drawn(in document: [String: ConfigurationValue], widget id: String? = nil) -> (path: String, value: ConfigurationValue)? {
         var levels = [("defaults", document["defaults"])]
         if let id, case let .array(widgets)? = document["widgets"] {
-            for case let .object(widget) in widgets where widget["id"] == .string(id) { levels.insert(("widgets.\(id).style", widget["style"]), at: 0) }
+            for case let .object(widget) in widgets where widget["id"] == .string(id) {
+                if case let .string(role)? = widget["role"], case let .object(roles)? = document["roles"] {
+                    levels.insert(("roles.\(role)", roles[role]), at: 0)
+                }
+                levels.insert(("widgets.\(id).style", widget["style"]), at: 0)
+            }
         }
         for case let (path, .object(style)?) in levels {
             if case let .object(states)? = style["states"], case let .object(hover)? = states["hover"],

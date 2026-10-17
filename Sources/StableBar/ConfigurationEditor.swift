@@ -21,15 +21,16 @@ final class ConfigurationEditor {
     }
 
     var selectedStyle: [String: ConfigurationValue] {
-        let defaults = store.effectiveDocument["defaults"] ?? .object([:])
-        let style = (selected["style"] ?? .object([:])).overriding(defaults)
-        if case let .object(properties) = style { return properties }
+        guard let configuration = store.configuration,
+              let widget = configuration.widgets.first(where: { $0.id == selectedID }) else { return [:] }
+        let style = resolveStyle([configuration.defaults, configuration.roleStyle(widget.role), widget.style])
+        if case let .object(properties) = style.configurationValue { return properties }
         return [:]
     }
 
     func change(_ edit: ConfigurationEdit) {
         let previous = store.sessionEdits
-        let merging = [.set, .bar, .defaults, .popupDefaults, .tokens].contains(edit.action) && previous.last.map {
+        let merging = [.set, .bar, .defaults, .popupDefaults, .roles, .workspaceDefaults, .tokens, .modeAliases].contains(edit.action) && previous.last.map {
             $0.action == edit.action && $0.id == edit.id && propertyPaths($0.properties!) == propertyPaths(edit.properties!)
         } == true
         do {

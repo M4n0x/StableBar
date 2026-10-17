@@ -155,7 +155,7 @@ private struct GeneralView: View {
             }
             Section("Workspaces") {
                 LabeledContent(store.workspaceStore.source.title) {
-                    Button("Reconnect", action: store.workspaceStore.start)
+                    Button("Reconnect", action: store.workspaceStore.reconnect)
                 }
                 if let error = store.workspaceStore.error {
                     Text(error).foregroundStyle(.red).textSelection(.enabled)
@@ -361,6 +361,19 @@ private struct WidgetsView: View {
                 }
             }
             Section("Content") {
+                let origin = store.origins["widgets.\(widget.id).role"]
+                OverrideRow(title: "Presentation role", source: origin.map { "From \(store.sourceText($0))" },
+                            reset: origin.map(store.setsInMainFile) == true ? {
+                    editor.change(ConfigurationEdit(action: .unset, id: widget.id, properties: ["role": .null]))
+                } : nil) {
+                    Picker("Presentation role", selection: Binding(get: { widget.role?.rawValue ?? "" }, set: {
+                        editor.set(["role": $0.isEmpty ? .null : .string($0)])
+                    })) {
+                        Text("None").tag("")
+                        ForEach(PresentationRole.allCases, id: \.rawValue) { Text($0.rawValue.capitalized).tag($0.rawValue) }
+                    }
+                    .labelsHidden()
+                }
                 Picker("Position", selection: string("position", fallback: "left")) {
                     ForEach(WidgetPosition.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
                 }
@@ -398,6 +411,14 @@ private struct WidgetsView: View {
                 style.number("Horizontal padding", "paddingHorizontal", default: 10)
                 style.number("Corner radius", "cornerRadius", default: 14)
                 style.number("Border width", "borderWidth", default: 1)
+            }
+            if widget.content == .workspaces {
+                Section("Workspace presentation") {
+                    WorkspacePresentationFields(store: store, path: "widgets.\(widget.id).workspace", defaultsPath: "workspaceDefaults",
+                        values: (try? store.configuration?.workspaceDefaults.mergedProperties(editor.selected["workspace"])) ?? [:],
+                        set: { editor.set(["workspace": .object($0)]) },
+                        unset: { editor.change(ConfigurationEdit(action: .unset, id: widget.id, properties: ["workspace": .object($0)])) })
+                }
             }
             Section {
                 DisclosureGroup("Advanced properties") {
@@ -494,6 +515,17 @@ struct StyleFields {
         }
     }
 
+    func choice(_ title: String, _ key: String, choices: [String], default fallback: String) -> some View {
+        row(title, key) { _ in
+            let value = if case let .string(value) = values[key] { value } else { fallback }
+            Picker(title, selection: Binding(get: { value }, set: { set([key: .string($0)]) })) {
+                ForEach(choices, id: \.self) { Text($0.capitalized).tag($0) }
+            }
+            .labelsHidden()
+            .fixedSize()
+        }
+    }
+
     func weight() -> some View {
         row("Weight", "fontWeight") { _ in
             let weight = if case let .string(weight) = values["fontWeight"] { weight } else { "medium" }
@@ -507,7 +539,9 @@ struct StyleFields {
 
     private func row<Control: View>(_ title: String, _ key: String, @ViewBuilder control: (ConfigurationOrigin?) -> Control) -> some View {
         let own = store.origins["\(path).\(key)"]
-        let inherited = defaultsPath.flatMap { store.origins["\($0).\(key)"] }
+        let role = widgetID.flatMap { id in store.configuration?.widgets.first { $0.id == id }?.role }
+        let inherited = role.flatMap { store.origins["roles.\($0.rawValue).\(key)"] }
+            ?? defaultsPath.flatMap { store.origins["\($0).\(key)"] }
         return OverrideRow(title: title,
                            source: own.map { "From \(store.sourceText($0))" } ?? inherited.map { "Default from \(store.sourceText($0))" },
                            reset: own.map(store.setsInMainFile) == true ? { unset([key: .null]) } : nil) {

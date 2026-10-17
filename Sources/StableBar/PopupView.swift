@@ -6,9 +6,19 @@ struct PopupView: View {
     let store: BarStore
     let widget: WidgetConfiguration
 
+    private var mode: ModePresentation {
+        let roles = store.configuration?.roles ?? [:]
+        guard style.usesModeStates || popup.layout.usesModeStates(roles: roles)
+            || store.scripts[widget.id]?.output.styles?.values.contains(where: \.usesModeStates) == true else { return ModePresentation() }
+        return store.modePresentation
+    }
+
+    var presentationStyle: WidgetStyle { style.resolved(for: StyleStates(mode: mode)) }
+
     var body: some View {
-        let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let script = store.scripts[widget.id]
+        let states = StyleStates(mode: mode)
+        let appearance = WidgetAppearance(presentationStyle, defaults: WidgetStyle())
         let fields = script?.output.fields ?? [:]
         let lists = script?.output.lists ?? [:]
         let samples = script?.samples ?? []
@@ -19,10 +29,11 @@ struct PopupView: View {
                 PopupBlockView(block: popup.layout, inheritedStyle: style, fields: fields,
                                context: BlockContext(lists: lists, samples: samples, menu: menu,
                                                      values: script?.output.values ?? [:], targets: script?.output.targets ?? [:],
-                                                     styles: script?.output.styles ?? [:], series: script?.output.series ?? [:], open: { target in
+                                                     styles: script?.output.styles ?? [:], series: script?.output.series ?? [:],
+                                                     roles: store.configuration?.roles ?? [:], open: { target in
                     if popup.dismissOnAction { store.popup.close() }
                     target.open()
-                }) { command, environment in
+                }, states: states) { command, environment in
                     if environment.isEmpty ? popup.dismissOnAction : popup.dismissOnControl { store.popup.close() }
                     store.runAction(command, widget: widget,
                                     event: ScriptEvent(sender: environment.isEmpty ? "mouse.clicked" : "control.changed", environment: environment))
@@ -54,6 +65,7 @@ struct BlockContext {
     var targets: [String: Double] = [:]
     var styles: [String: WidgetStyle] = [:]
     var series: [String: [Double]] = [:]
+    var roles: [String: WidgetStyle] = [:]
     /// Popup layouts fill their width; bar layouts take their content's width.
     var fillsWidth = true
     /// Opens an `open` or `openField` block's target; a popup's also closes the popup when its actions dismiss it.
@@ -162,10 +174,10 @@ struct PopupBlockView: View {
     }
 
     private var styledContent: some View {
-        let resting = block.resolvedStyle(inherited: inheritedStyle, styles: context.styles, fields: fields, states: context.states)
+        let resting = block.resolvedStyle(inherited: inheritedStyle, styles: context.styles, fields: fields, states: context.states, roles: context.roles)
         var hovering = context.states
         hovering.hover = true
-        let current = hovered ? block.resolvedStyle(inherited: inheritedStyle, styles: context.styles, fields: fields, states: hovering) : resting
+        let current = hovered ? block.resolvedStyle(inherited: inheritedStyle, styles: context.styles, fields: fields, states: hovering, roles: context.roles) : resting
         let appearance = WidgetAppearance(resting.text, defaults: WidgetStyle())
         let box = current.box
         let alignment: Alignment = switch block.alignment {

@@ -9,7 +9,7 @@ enum BuiltInEvent: String, CaseIterable, Sendable {
         switch self {
         case .frontApp: "The frontmost app changes"
         case .workspace: "The focused workspace changes"
-        case .aerospaceMode: "AeroSpace switches binding mode"
+        case .aerospaceMode: "Initial connection, binding-mode change or disconnect"
         case .wake: "The Mac wakes from sleep"
         case .yabai: "`StableBar --trigger yabai` runs, usually from a yabai signal; StableBar also refreshes its workspaces"
         case .powerSourceChange: "The Mac switches between its power adapter and battery"
@@ -23,7 +23,7 @@ enum BuiltInEvent: String, CaseIterable, Sendable {
         switch self {
         case .frontApp: "The app's name, or `Desktop`"
         case .workspace: "The workspace's name; `SID` is its display number"
-        case .aerospaceMode: "The mode's name"
+        case .aerospaceMode: "The mode's name; empty on disconnect, stop or a source switch"
         case .wake: "Not set"
         case .yabai: "The trigger's `INFO`, if any"
         case .powerSourceChange: "`ac` or `battery`"

@@ -98,6 +98,9 @@ struct WorkspaceConfiguration: Decodable, Sendable {
     var appGlyphs: [String: String]?
     var showEmpty: Bool?
     var showApps: Bool?
+    var style = WidgetStyle()
+    var appStyle = WidgetStyle()
+    var indicatorStyle = WidgetStyle()
     private var cells: [WorkspaceState?: WorkspaceCellStyle] = [:]
 
     enum CodingKeys: String, CodingKey, CaseIterable {
@@ -122,11 +125,21 @@ struct WorkspaceConfiguration: Decodable, Sendable {
         let app = (try values.decodeIfPresent(WidgetStyle.self, forKey: .appStyle) ?? WidgetStyle())
             .addingStates(["focused": focusedApp, "visible": visibleApp].compactMapValues { $0 })
         let underline = try values.decodeIfPresent(WidgetStyle.self, forKey: .indicatorStyle) ?? WidgetStyle()
+        style = cell
+        appStyle = app
+        indicatorStyle = underline
         let states: [WorkspaceState?] = [nil, .focused, .visible, .empty]
         for state in states {
             cells[state] = WorkspaceCellStyle(state: state, cell: cell, underline: underline, app: app)
         }
     }
 
-    func cellStyle(_ state: WorkspaceState?) -> WorkspaceCellStyle { cells[state] ?? WorkspaceCellStyle() }
+    var usesModeStates: Bool { style.usesModeStates || appStyle.usesModeStates || indicatorStyle.usesModeStates }
+
+    func cellStyle(_ state: WorkspaceState?, mode: ModePresentation = ModePresentation()) -> WorkspaceCellStyle {
+        if mode.active && usesModeStates {
+            return WorkspaceCellStyle(state: state, cell: style, underline: indicatorStyle, app: appStyle, mode: mode)
+        }
+        return cells[state] ?? WorkspaceCellStyle()
+    }
 }

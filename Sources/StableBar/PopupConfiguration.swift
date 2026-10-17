@@ -18,6 +18,12 @@ struct PopupConfiguration: Decodable, Sendable {
         self.layout = layout
     }
 
+    /// `defaults` already includes popupDefaults. A widget's explicit style reaches its popup;
+    /// its bar role deliberately does not.
+    func baseStyle(widget: WidgetConfiguration, defaults: WidgetStyle) -> WidgetStyle {
+        resolveStyle([defaults, widget.style, style])
+    }
+
     init(from decoder: Decoder) throws {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -55,6 +61,7 @@ indirect enum PopupContent: Sendable {
 
 struct PopupBlock: Decodable, Sendable {
     let content: PopupContent
+    let role: PresentationRole?
     let style: WidgetStyle
     let alignment: PopupAlignment
     let animation: WidgetAnimation?
@@ -76,14 +83,15 @@ struct PopupBlock: Decodable, Sendable {
     let transition: WidgetTransition?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case type, style, alignment, children, text, field, height, source, row, title, onClick
+        case type, role, style, alignment, children, text, field, height, source, row, title, onClick
         case path, fit, name, animation, styleSource, styleField, onClickField, lineWidth
         case hideWhenEmpty, scrollSpeed, min, max, step, onChange, options, searchFields, open, openField, transition
     }
 
-    init(content: PopupContent, style: WidgetStyle = WidgetStyle(), hideWhenEmpty: String? = nil, monospacedDigits: Bool = true,
+    init(content: PopupContent, role: PresentationRole? = nil, style: WidgetStyle = WidgetStyle(), hideWhenEmpty: String? = nil, monospacedDigits: Bool = true,
          keepsLineHeight: Bool = false) {
         self.content = content
+        self.role = role
         self.style = style
         alignment = .leading
         animation = nil
@@ -103,6 +111,7 @@ struct PopupBlock: Decodable, Sendable {
     init(from decoder: Decoder) throws {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        role = try values.decodeIfPresent(PresentationRole.self, forKey: .role)
         style = try values.decodeIfPresent(WidgetStyle.self, forKey: .style) ?? WidgetStyle()
         alignment = try values.decodeIfPresent(PopupAlignment.self, forKey: .alignment) ?? .leading
         animation = try values.decodeIfPresent(WidgetAnimation.self, forKey: .animation)

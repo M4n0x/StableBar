@@ -143,6 +143,7 @@ enum WidgetPackageError: LocalizedError {
     case themeInPackages(String)
     case themeProperty(String)
     case widgetsProperty(String)
+    case widgetPresentationProperty(String)
     case widgetsCommand(String)
     case missingVersion(String)
     case unknownTheme(String)
@@ -165,8 +166,9 @@ enum WidgetPackageError: LocalizedError {
         case .manifestMismatch: "The package manifest does not match its pinned id and version."
         case let .notATheme(id): "Package \(id) is not a theme. Enable it in packages instead."
         case let .themeInPackages(id): "Package \(id) is a theme. Select it with the theme key instead of packages."
-        case let .themeProperty(key): "A theme can contain only tokens, defaults, popupDefaults, bar, groups and profiles, not \(key)."
+        case let .themeProperty(key): "A theme can contain only tokens, defaults, popupDefaults, roles, workspaceDefaults, bar, groups and profiles, not \(key)."
         case let .widgetsProperty(key): "A widgets package can contain only tokens, defaults, bar, groups, profiles, widgets, templates, popups and providers, not \(key)."
+        case let .widgetPresentationProperty(key): "Widget packages cannot define global \(key). Set it in your configuration instead."
         case let .widgetsCommand(key): "A widgets package cannot contain \(key)."
         case let .missingVersion(id): "Package \(id) needs a version."
         case let .unknownTheme(id): "No theme named \(id) ships with StableBar. Add a version to select an installed theme package."
@@ -397,7 +399,7 @@ func preparePackageDocument(_ document: [String: ConfigurationValue], directory:
 }
 
 func validateThemeDocument(_ document: [String: ConfigurationValue]) throws {
-    for key in document.keys.sorted() where !["tokens", "defaults", "popupDefaults", "bar", "groups", "profiles"].contains(key) {
+    for key in document.keys.sorted() where !["tokens", "defaults", "popupDefaults", "roles", "workspaceDefaults", "bar", "groups", "profiles"].contains(key) {
         guard key == "widgets", document[key] == .array([]) else { throw WidgetPackageError.themeProperty(key) }
     }
     for profile in try document["profiles"]?.decoded([ConfigurationProfile].self) ?? [] {
@@ -413,6 +415,17 @@ func validateWidgetsDocument(_ document: [String: ConfigurationValue]) throws {
         try validateWidgetsDocument(profile.configuration)
     }
     try rejectCommandKeys(.object(document))
+}
+
+/// Command-capable legacy packages keep their existing powers, but the new shared presentation
+/// maps are owned by users/themes, never by a widget package (including its profiles).
+func validateCommandPackagePresentation(_ document: [String: ConfigurationValue]) throws {
+    for key in ["roles", "workspaceDefaults", "modeAliases"] where document[key] != nil {
+        throw WidgetPackageError.widgetPresentationProperty(key)
+    }
+    for profile in try document["profiles"]?.decoded([ConfigurationProfile].self) ?? [] {
+        try validateCommandPackagePresentation(profile.configuration)
+    }
 }
 
 private func rejectCommandKeys(_ value: ConfigurationValue) throws {

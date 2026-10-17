@@ -77,12 +77,72 @@ struct StableBarApp {
 
 @MainActor
 final class BarPanel: NSPanel {
+    var barGeometry: BarGeometry?
+    private(set) var decorationPanel: PassiveBarPanel?
+
+    var drawingFrame: CGRect {
+        guard barGeometry?.outsideExtent ?? 0 > 0 else { return frame }
+        let height = barGeometry?.panelHeight ?? frame.height
+        return CGRect(x: frame.minX, y: frame.maxY - height, width: frame.width, height: height)
+    }
+
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         frameRect
     }
+
+    /// Decorations live in a separate native window that always ignores mouse events. The
+    /// original bar panel keeps its strip-sized hit bounds and its existing background menu.
+    func setDecorations(_ content: AnyView?) {
+        guard let content else {
+            if let decorationPanel { removeChildWindow(decorationPanel); decorationPanel.close() }
+            decorationPanel = nil
+            return
+        }
+        let panel: PassiveBarPanel
+        if let existing = decorationPanel {
+            panel = existing
+            (panel.contentView as? NSHostingView<AnyView>)?.rootView = content
+        } else {
+            panel = PassiveBarPanel(contentRect: drawingFrame, styleMask: [.borderless, .nonactivatingPanel],
+                                    backing: .buffered, defer: false)
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = false
+            panel.hidesOnDeactivate = false
+            panel.isReleasedWhenClosed = false
+            panel.animationBehavior = .none
+            panel.ignoresMouseEvents = true
+            panel.setAccessibilityElement(false)
+            panel.level = level
+            panel.collectionBehavior = collectionBehavior
+            let host = NSHostingView(rootView: content)
+            host.sizingOptions = []
+            host.setAccessibilityElement(false)
+            panel.contentView = host
+            decorationPanel = panel
+        }
+        if panel.frame != drawingFrame { panel.setFrame(drawingFrame, display: false) }
+        if isVisible && panel.parent !== self { addChildWindow(panel, ordered: .above) }
+    }
+
+    override func orderFrontRegardless() {
+        super.orderFrontRegardless()
+        if let decorationPanel, decorationPanel.parent !== self { addChildWindow(decorationPanel, ordered: .above) }
+    }
+
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        super.setFrame(frameRect, display: flag)
+        if let decorationPanel, decorationPanel.frame != drawingFrame { decorationPanel.setFrame(drawingFrame, display: flag) }
+    }
+
+    override func close() {
+        setDecorations(nil)
+        super.close()
+    }
+
 }
 
 @MainActor
@@ -137,9 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.retainDisplays(Set(NSScreen.screens.map { BarDisplay(screen: $0).id }))
         store.refreshContext()
         updatePanels()
-        if store.configuration?.widgets.contains(where: { $0.enabled && ($0.content == .workspaces || $0.display == .active) }) == true {
-            store.workspaceStore.start()
-        }
+        store.workspaceStore.refreshForDisplayChange()
     }
 
     @objc private func sleeping() {
@@ -179,18 +237,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 panel.animationBehavior = .none
                 panel.level = .floating
                 panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
-                panel.contentView = NSHostingView(rootView: BarView(store: store, display: BarDisplay(screen: screen)))
+                panel.contentView = NSHostingView(rootView: BarView(store: store, display: BarDisplay(screen: screen), nativeDecorations: true))
                 panels[id] = panel
             }
             let host = panel.contentView as! NSHostingView<BarView>
-            host.rootView = BarView(store: store, display: BarDisplay(screen: screen))
+            host.sizingOptions = []
+            host.rootView = BarView(store: store, display: BarDisplay(screen: screen), nativeDecorations: true)
             let top = screen.frame.maxY
-            let height = config.bar.height * config.bar.scale(for: BarDisplay(screen: screen))
+            let geometry = config.barGeometry(for: BarDisplay(screen: screen))
+            panel.barGeometry = geometry
+            let height = geometry.inputHeight
             panel.setFrame(NSRect(x: screen.frame.minX, y: top - config.bar.offset - height,
                                   width: screen.frame.width, height: height), display: true)
             panel.orderFrontRegardless()
             clearanceDisplays.append(WindowClearanceDisplay(frame: screen.frame, visibleFrame: screen.visibleFrame,
-                                                            barFrame: panel.frame, desktopTop: screens[0].frame.maxY))
+                                                            barFrame: panel.drawingFrame, desktopTop: screens[0].frame.maxY))
         }
         store.windowClearance.update(enabled: config.bar.keepWindowsClear, displays: clearanceDisplays)
     }
