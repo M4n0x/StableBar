@@ -377,10 +377,70 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     for (name, state) in modular.defaults.states ?? [:] where state.background != nil && !StyleStates.reservedNames.contains(name) {
         #expect(state.states?["hover"]?.background != nil, "\(name) needs its own hover background")
     }
+    #expect(modular.widgets.first { $0.id == "volume" }?.events == ["volumeChange"])
+    #expect(modular.activeProviders == ["system"])
     let interactive = try loader.load(repository.appending(path: "examples/interactive/config.json"))
     #expect(interactive.defaults.states?["open"]?.borderWidth == 1)
     #expect(interactive.widgets.first { $0.id == "application" }?.transition == .roll)
     _ = try loader.load(repository.appending(path: "Resources/config.json"))
     _ = try WidgetPackageStore(directory: repository.appending(path: "examples/packages"))
         .inspect(repository.appending(path: "examples/packages/local-clock"))
+}
+
+@Test func schemaListsTheRegisteredSourceTypes() throws {
+    let url = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appending(path: "stablebar.schema.json")
+    let schema = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: url))
+    func typeNames(_ definition: String) -> Set<String> {
+        guard case let .object(definitions)? = schema["definitions"], case let .object(object)? = definitions[definition],
+              case let .object(properties)? = object["properties"], case let .object(type)? = properties["type"],
+              case let .array(choices)? = type["anyOf"], case let .object(names)? = choices.first,
+              case let .array(values)? = names["enum"] else { return [] }
+        return Set(values.compactMap { if case let .string(name) = $0 { name } else { nil } })
+    }
+    let registry = DataSourceRegistry.builtIn
+    #expect(typeNames("provider") == Set(registry.types.map(\.name)))
+    #expect(typeNames("widget") == Set(["aerospace", "workspaces", "activeApp", "clock", "text", "script", "provider", "spacer"]
+        + registry.types.filter(\.isNative).map(\.name)))
+    // Each optional setting has a value of its type, which sets it, and one of another type, which the decoder rejects.
+    let samples: [ProviderConfiguration.CodingKeys: (valid: String, invalid: String)] = [
+        .calendars: (#"["Work"]"#, #""Work""#), .lookahead: ("12", #""12""#), .soon: ("10", #""10""#), .now: ("2", #""2""#)
+    ]
+    #expect(Set(registry.types.flatMap(\.optionalSettings)) == Set(samples.keys))
+    for type in registry.types {
+        let decoded = try? JSONDecoder().decode(ProviderConfiguration.self, from: Data(#"{"type":"\#(type.name)"}"#.utf8))
+        #expect((decoded != nil) == type.settings.isEmpty, "\(type.name)")
+        if let decoded { #expect(decoded == ProviderConfiguration(type: type.name), "\(type.name)") }
+        for setting in type.optionalSettings {
+            let values = try #require(samples[setting])
+            func provider(_ value: String) throws -> ProviderConfiguration {
+                try JSONDecoder().decode(ProviderConfiguration.self,
+                                         from: Data(#"{"type":"\#(type.name)","\#(setting.stringValue)":\#(value)}"#.utf8))
+            }
+            #expect(try provider(values.valid) != ProviderConfiguration(type: type.name), "\(type.name).\(setting.stringValue)")
+            #expect(throws: (any Error).self, "\(type.name).\(setting.stringValue)") { try provider(values.invalid) }
+        }
+    }
+    // As before the registry, other types accept these settings too; only the type that lists them reads them.
+    #expect(try JSONDecoder().decode(ProviderConfiguration.self, from: Data(#"{"type":"system","calendars":["Work"],"soon":10}"#.utf8))
+        .type == "system")
+}
+
+@Test func unknownSourceTypesNameTheirPath() throws {
+    let url = FileManager.default.temporaryDirectory.appending(path: "sources.json")
+    var loader = ConfigurationLoader()
+    for (json, message) in [
+        (#"{"providers":{"machine":{"type":"sytem"}},"widgets":[]}"#, "providers.machine.type: Unknown provider type."),
+        (#"{"providers":{"feed":{"type":"stream"}},"widgets":[]}"#, "providers.feed: Missing property command."),
+        (#"{"widgets":[{"id":"disk","type":"disk","position":"right"}]}"#, "widgets.disk: type: Unknown widget type."),
+        (#"{"widgets":[{"id":"disk","type":"provider","provider":"disk","position":"right"}]}"#, "Unknown provider: disk."),
+        (#"{"widgets":[],"profiles":[{"name":"work","configuration":{"providers":{"machine":{"type":"command"}}}}]}"#,
+         "providers.machine: Missing property command.")
+    ] {
+        let error = #expect(throws: (any Error).self) { try loader.load(url, data: Data(json.utf8)) }
+        #expect(error.map(errorMessage) == message)
+    }
+    let configuration = try loader.load(url, data: Data(#"{"providers":{"machine":{"type":"system","interval":2}},"widgets":[]}"#.utf8))
+    #expect(configuration.providers["machine"]?.type == "system")
+    #expect(configuration.providers["machine"]?.command == nil)
 }

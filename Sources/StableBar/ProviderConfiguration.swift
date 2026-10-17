@@ -1,13 +1,8 @@
 import Foundation
 
-enum ProviderType: String, Decodable, Sendable {
-    case command, stream, battery, network, system, audio, calendar
-
-    var isNative: Bool { self != .command && self != .stream }
-}
-
 struct ProviderConfiguration: Decodable, Equatable, Sendable {
-    let type: ProviderType
+    /// A type name in `DataSourceRegistry.builtIn`.
+    let type: String
     let command: String?
     let interval: Double
     let timeout: Double
@@ -23,7 +18,7 @@ struct ProviderConfiguration: Decodable, Equatable, Sendable {
         case type, command, interval, timeout, environment, whenVisible, events, calendars, lookahead, soon, now
     }
 
-    init(type: ProviderType) {
+    init(type: String) {
         self.type = type
         command = nil
         interval = 5
@@ -40,11 +35,11 @@ struct ProviderConfiguration: Decodable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        type = try values.decode(ProviderType.self, forKey: .type)
-        switch type {
-        case .command, .stream: command = try values.decode(String.self, forKey: .command)
-        default: command = nil
+        type = try values.decode(String.self, forKey: .type)
+        guard let source = DataSourceRegistry.builtIn[type] else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: values, debugDescription: "Unknown provider type.")
         }
+        command = source.settings.contains(.command) ? try values.decode(String.self, forKey: .command) : nil
         interval = try values.decodeIfPresent(Double.self, forKey: .interval) ?? 5
         timeout = try values.decodeIfPresent(Double.self, forKey: .timeout) ?? 10
         environment = try values.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]

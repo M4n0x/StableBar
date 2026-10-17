@@ -190,6 +190,7 @@ struct SetupView: View {
                 Label("Built-in widgets are ready", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green).font(.headline)
                 Divider()
+                SourcePermissionList(permissions: store.registry.permissions(for: store.configuration))
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: "app.connected.to.app.below.fill").font(.title2).frame(width: 28)
                     VStack(alignment: .leading, spacing: 5) {
@@ -198,7 +199,7 @@ struct SetupView: View {
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    Button("Review…") { openPrivacy("Privacy_Automation") }
+                    Button("Review…") { openPrivacyPane("Privacy_Automation") }
                 }
                 Divider()
                 HStack(alignment: .top, spacing: 14) {
@@ -209,7 +210,7 @@ struct SetupView: View {
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    Button("Review…") { openPrivacy("Privacy_Accessibility") }
+                    Button("Review…") { openPrivacyPane("Privacy_Accessibility") }
                 }
             }
             .padding(20)
@@ -294,10 +295,6 @@ struct SetupView: View {
         loginStatus = SMAppService.mainApp.status
     }
 
-    private func openPrivacy(_ pane: String) {
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")!)
-    }
-
     private func finish() {
         do {
             let original = try Data(contentsOf: store.configurationURL)
@@ -311,4 +308,29 @@ struct SetupView: View {
             self.error = errorMessage(error)
         }
     }
+}
+
+/// The access that the data sources of enabled widgets need, each with a link to System Settings.
+struct SourcePermissionList: View {
+    let permissions: [SourcePermission]
+
+    var body: some View {
+        ForEach(permissions, id: \.self) { permission in
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: permission.symbol).font(.title2).frame(width: 28)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(permission.title).font(.headline)
+                    Text(permission.detail).font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Button("Review…") { openPrivacyPane(permission.privacyPane) }
+            }
+            Divider()
+        }
+    }
+}
+
+@MainActor
+private func openPrivacyPane(_ pane: String) {
+    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")!)
 }

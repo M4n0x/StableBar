@@ -1,5 +1,4 @@
 import AppKit
-import EventKit
 import Observation
 
 @MainActor @Observable
@@ -14,6 +13,7 @@ final class BarStore: NSObject {
     let windowClearance = WindowClearance()
     let popup = WidgetPopup()
     let configurationURL: URL
+    let registry: DataSourceRegistry
     var onConfigurationChange: (() -> Void)?
     var onCustomize: (() -> Void)?
     var effectiveDocument: [String: ConfigurationValue] = [:]
@@ -25,7 +25,7 @@ final class BarStore: NSObject {
     var context = ConfigurationContext()
     private(set) var presentations: [String: WidgetPresentation] = [:]
     private(set) var barStyle = WidgetStyle()
-    private var providers: [String: ScriptWidget] = [:]
+    private(set) var providers: [String: ScriptWidget] = [:]
     private var visibleWidgets: [Int: Set<String>] = [:]
     private var sleeping = false
     private var popupWidgetID: String?
@@ -36,12 +36,12 @@ final class BarStore: NSObject {
     private var reloadTask: Task<Void, Never>?
     private var eventObservers: [NSObjectProtocol] = []
     private var reloadObserver: NSObjectProtocol?
-    private var calendarObserver: NSObjectProtocol?
     private var actions: [UUID: Task<Void, Never>] = [:]
     private var actionTails: [String: (id: UUID, task: Task<Void, Never>)] = [:]
 
-    init(configurationURL: URL = LaunchCommand.configurationURL) {
+    init(configurationURL: URL = LaunchCommand.configurationURL, registry: DataSourceRegistry = .builtIn) {
         self.configurationURL = configurationURL
+        self.registry = registry
         super.init()
         configurationWatcher.onChange = { [weak self] in self?.scheduleReload() }
     }
@@ -52,17 +52,14 @@ final class BarStore: NSObject {
             forName: LaunchCommand.reloadNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.reloadConfiguration() }
             }
-        calendarObserver = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshCalendars() }
-        }
         workspaceStore.onWorkspaceChange = { [weak self] in
             guard let self else { return }
             popup.close()
             let focused = workspaceStore.workspaces.first(where: \.isFocused)
-            refreshScripts(for: "workspace", environment: ["INFO": focused?.name ?? "", "SID": String(focused?.monitor ?? activeDisplayID)])
+            send(.workspace, ["INFO": focused?.name ?? "", "SID": String(focused?.monitor ?? activeDisplayID)])
         }
         workspaceStore.onModeChange = { [weak self] mode in
-            self?.refreshScripts(for: "aerospaceMode", environment: ["INFO": mode])
+            self?.send(.aerospaceMode, ["INFO": mode])
         }
         do {
             let directory = configurationURL.deletingLastPathComponent()
@@ -92,7 +89,7 @@ final class BarStore: NSObject {
         if let screen = NSScreen.main { activeDisplayID = BarDisplay(screen: screen).id }
         popup.close()
         refreshContext()
-        refreshScripts(for: "frontApp", environment: ["INFO": activeApp?.localizedName ?? "Desktop"])
+        send(.frontApp, ["INFO": activeApp?.localizedName ?? "Desktop"])
     }
 
     func refreshContext() {
@@ -209,10 +206,7 @@ final class BarStore: NSObject {
                 scripts.removeValue(forKey: id)
             }
         }
-        let usedProviders = Set(next.widgets.filter(\.enabled).compactMap { widget -> String? in
-            if case let .provider(name) = widget.content { return name }
-            return nil
-        })
+        let usedProviders = next.activeProviders
         for (name, script) in providers {
             if !usedProviders.contains(name) || configuration?.providers[name] != next.providers[name]
                 || configuration?.environment != next.environment {
@@ -222,10 +216,18 @@ final class BarStore: NSObject {
         }
         for name in usedProviders where providers[name] == nil {
             let script = ScriptWidget()
+            let provider = next.providers[name]!
             var environment = next.environment
             environment["NAME"] = name
             environment["CONFIG_DIR"] = configurationURL.deletingLastPathComponent().path
-            script.start(provider: next.providers[name]!, environment: environment)
+            if let events = registry[provider.type]?.events, !events.isEmpty {
+                script.onOutputChange = { [weak self, weak script] previous, output in
+                    for event in events {
+                        if let variables = event.variables(from: previous, to: output) { self?.send(event, variables, from: script) }
+                    }
+                }
+            }
+            script.start(provider: provider, registry: registry, environment: environment)
             providers[name] = script
         }
         for widget in next.widgets where widget.enabled {
@@ -255,7 +257,7 @@ final class BarStore: NSObject {
         let center = DistributedNotificationCenter.default()
         for observer in eventObservers { center.removeObserver(observer) }
         let events = Set(next.widgets.filter(\.enabled).flatMap(\.events) + usedProviders.flatMap { next.providers[$0]!.events }
-                         + (needsWorkspaces && next.workspaceSource == .yabai ? ["yabai"] : []))
+                         + (needsWorkspaces && next.workspaceSource == .yabai ? [BuiltInEvent.yabai.rawValue] : []))
         eventObservers = events.map { event in
             center.addObserver(forName: Notification.Name(event), object: nil, queue: .main) { [weak self] notification in
                 var environment = withoutShellVariables(notification.userInfo as? [String: String] ?? [:])
@@ -341,7 +343,10 @@ final class BarStore: NSObject {
         if let popupWidgetID { visible.insert(popupWidgetID) }
         if inspectorOpen, let inspectedWidgetID { visible.insert(inspectedWidgetID) }
         for (name, provider) in providers {
-            let hidden = configuration?.providers[name]?.whenVisible == true
+            let definition = configuration?.providers[name]
+            let sendsSubscribedEvents = registry[definition?.type ?? ""]?.events
+                .contains { configuration?.subscribedEvents.contains($0.rawValue) == true } == true
+            let hidden = definition?.whenVisible == true && !sendsSubscribedEvents
                 && !(configuration?.widgets.contains { $0.content == .provider(name) && visible.contains($0.id) } ?? false)
             if sleeping || hidden { provider.suspend() } else { provider.resume() }
         }
@@ -404,6 +409,11 @@ final class BarStore: NSObject {
                 result["state"] = presentations[id]?.style.state.map(ConfigurationValue.string) ?? .null
                 result["temporaryFields"] = presentations[id]?.temporaryFields
                     .map { ConfigurationValue.object($0.mapValues(ConfigurationValue.string)) } ?? .null
+                if let name = configuration?.widgets.first(where: { $0.id == id })?.providerName,
+                   let provider = configuration?.providers[name], let type = registry[provider.type] {
+                    result["source"] = .object(["provider": .string(name), "type": .string(type.name), "push": .bool(type.continuous),
+                                                "events": .array(type.events.map { .string($0.rawValue) })])
+                }
             }
             return .object(result)
         }
@@ -420,9 +430,17 @@ final class BarStore: NSObject {
         return environment
     }
 
-    func refreshScripts(for event: String, environment: [String: String] = [:]) {
-        if event == "yabai" { workspaceStore.trigger() }
+    /// Sends one of StableBar's own events to the widgets and providers that subscribe to it.
+    /// `sender`, the provider whose change sent the event, isn't refreshed: it has the change already,
+    /// and a refresh would restart it.
+    func send(_ event: BuiltInEvent, _ variables: [String: String] = [:], from sender: ScriptWidget? = nil) {
+        refreshScripts(for: event.rawValue, environment: variables, skipping: sender)
+    }
+
+    func refreshScripts(for event: String, environment: [String: String] = [:], skipping sender: ScriptWidget? = nil) {
+        if event == BuiltInEvent.yabai.rawValue { workspaceStore.trigger() }
         var refreshed = Set<ObjectIdentifier>()
+        if let sender { refreshed.insert(ObjectIdentifier(sender)) }
         for widget in configuration?.widgets ?? [] {
             let providerEvents: [String]
             if case let .provider(name) = widget.content { providerEvents = configuration!.providers[name]!.events }
@@ -431,12 +449,6 @@ final class BarStore: NSObject {
                refreshed.insert(ObjectIdentifier(script)).inserted {
                 script.refresh(ScriptEvent(sender: event, environment: environment))
             }
-        }
-    }
-
-    private func refreshCalendars() {
-        for (name, provider) in providers where configuration!.providers[name]!.type == .calendar {
-            provider.refresh(ScriptEvent(sender: "calendar"))
         }
     }
 
@@ -482,6 +494,7 @@ final class BarStore: NSObject {
         configurationWatcher.stop()
         workspaceStore.stop()
         for script in scripts.values { script.stop() }
+        for provider in providers.values { provider.stop() }
         providers.removeAll()
         scripts.removeAll()
         for action in actions.values { action.cancel() }
@@ -490,8 +503,6 @@ final class BarStore: NSObject {
         for observer in eventObservers { DistributedNotificationCenter.default().removeObserver(observer) }
         if let reloadObserver { DistributedNotificationCenter.default().removeObserver(reloadObserver) }
         reloadObserver = nil
-        if let calendarObserver { NotificationCenter.default.removeObserver(calendarObserver) }
-        calendarObserver = nil
         eventObservers.removeAll()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }

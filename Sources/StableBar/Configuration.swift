@@ -325,7 +325,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
             }
             content = .script(command: try values.decode(String.self, forKey: .command), interval: interval)
         case let type:
-            guard ProviderType(rawValue: type)?.isNative == true else {
+            guard DataSourceRegistry.builtIn[type]?.isNative == true else {
                 throw DecodingError.dataCorruptedError(forKey: .type, in: values, debugDescription: "Unknown widget type.")
             }
             content = .provider(type)
@@ -337,6 +337,14 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
                 throw DecodingError.dataCorruptedError(forKey: .rules, in: values, debugDescription: "Rules need a script or provider widget.")
             }
         }
+    }
+}
+
+extension WidgetConfiguration {
+    /// The provider this widget shows: the one it names, or the native type it is.
+    var providerName: String? {
+        if case let .provider(name) = content { return name }
+        return nil
     }
 }
 
@@ -404,6 +412,11 @@ struct Configuration: Decodable, Sendable {
 
     let providers: [String: ProviderConfiguration]
     let groups: [String: WidgetGroupConfiguration]
+    /// Events that enabled widgets, and the providers they show, subscribe to.
+    let subscribedEvents: Set<String>
+    /// The providers to run: those enabled widgets show and, for each subscribed event a data
+    /// source sends, a provider of that source, unless a provider of another type has its name.
+    let activeProviders: Set<String>
 
     enum CodingKeys: String, CodingKey, CaseIterable { case workspaceSource, bar, defaults, popupDefaults, widgets, popups, templates, widgetOverrides, environment, providers, groups }
 
@@ -436,11 +449,23 @@ struct Configuration: Decodable, Sendable {
         var providers = try values.decodeIfPresent([String: ProviderConfiguration].self, forKey: .providers) ?? [:]
         for widget in widgets {
             if case let .provider(name) = widget.content, providers[name] == nil {
-                guard let type = ProviderType(rawValue: name), type.isNative else { throw CommandFailure(message: "Unknown provider: \(name).") }
-                providers[name] = ProviderConfiguration(type: type)
+                guard DataSourceRegistry.builtIn[name]?.isNative == true else { throw CommandFailure(message: "Unknown provider: \(name).") }
+                providers[name] = ProviderConfiguration(type: name)
             }
         }
+        let shown = Set(widgets.filter(\.enabled).compactMap(\.providerName))
+        let subscribed = Set(widgets.filter(\.enabled).flatMap(\.events) + shown.flatMap { providers[$0]?.events ?? [] })
+        var active = shown
+        for type in DataSourceRegistry.builtIn.types {
+            guard type.events.contains(where: { subscribed.contains($0.rawValue) }),
+                  !shown.contains(where: { providers[$0]?.type == type.name }),
+                  (providers[type.name]?.type ?? type.name) == type.name else { continue }
+            providers[type.name] = providers[type.name] ?? ProviderConfiguration(type: type.name)
+            active.insert(type.name)
+        }
         self.providers = providers
+        subscribedEvents = subscribed
+        activeProviders = active
         groups = try values.decodeIfPresent([String: WidgetGroupConfiguration].self, forKey: .groups) ?? [:]
         var groupPositions: [String: WidgetPosition] = [:]
         var ids = Set<String>()

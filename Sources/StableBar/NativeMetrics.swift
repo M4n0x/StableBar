@@ -1,8 +1,6 @@
-import CoreAudio
 import Darwin
 import EventKit
 import Foundation
-import IOKit.ps
 
 struct NetworkCounters: Sendable {
     let received: UInt64
@@ -64,6 +62,9 @@ func meetingLink(_ texts: [String]) -> String? {
         .map { String($0.output) }
 }
 
+/// CPU, memory, network and calendar readings. CPU usage and network rates are deltas since the previous
+/// reading, and calendar readings share the instance's event store, so each source keeps its own instance.
+@MainActor
 final class NativeMetrics {
     private var cpu: CPUTicks?
     private var network: [String: NetworkCounters] = [:]
@@ -74,41 +75,7 @@ final class NativeMetrics {
         return store
     }()
 
-    func sample(_ provider: ProviderConfiguration) throws -> ScriptOutput {
-        switch provider.type {
-        case .battery: return try battery()
-        case .network: return try networkRates()
-        case .system: return try system()
-        case .audio: return try audio()
-        case .calendar: return calendar(provider)
-        case .command, .stream: preconditionFailure("Command providers do not use native metrics.")
-        }
-    }
-
-    private func battery() throws -> ScriptOutput {
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else {
-            throw CommandFailure(message: "Could not read power sources.")
-        }
-        for source in sources {
-            guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
-                  description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
-                  let current = description[kIOPSCurrentCapacityKey] as? Double,
-                  let maximum = description[kIOPSMaxCapacityKey] as? Double, maximum > 0 else { continue }
-            let percent = current / maximum
-            let charging = description[kIOPSIsChargingKey] as? Bool == true
-            let onAC = description[kIOPSPowerSourceStateKey] as? String == kIOPSACPowerValue
-            let minutes = description[charging ? kIOPSTimeToFullChargeKey : kIOPSTimeToEmptyKey] as? Int
-            let state = charging ? "charging" : (onAC ? "charged" : "battery")
-            var fields = ["state": state, "present": "true", "percent": String(Int(percent * 100))]
-            if let minutes, minutes >= 0 { fields["timeRemaining"] = String(minutes) }
-            return ScriptOutput(text: "\(Int(percent * 100))%", icon: charging ? "battery.100percent.bolt" : "battery.100percent",
-                                value: percent, fields: fields, values: ["percent": percent])
-        }
-        return ScriptOutput(text: "AC", icon: "powerplug", fields: ["state": "ac", "present": "false"])
-    }
-
-    private func calendar(_ provider: ProviderConfiguration) -> ScriptOutput {
+    func calendar(_ provider: ProviderConfiguration) -> ScriptOutput {
         let store = eventStore
         let access = EKEventStore.authorizationStatus(for: .event)
         guard access == .fullAccess else {
@@ -145,7 +112,7 @@ final class NativeMetrics {
         return fields
     }
 
-    private func system() throws -> ScriptOutput {
+    func system() throws -> ScriptOutput {
         let host = mach_host_self()
         defer { mach_port_deallocate(mach_task_self_, host) }
         var load = host_cpu_load_info()
@@ -176,7 +143,7 @@ final class NativeMetrics {
                             values: ["cpu": usage, "memory": used / total, "memoryUsed": used, "memoryTotal": total])
     }
 
-    private func networkRates() throws -> ScriptOutput {
+    func networkRates() throws -> ScriptOutput {
         var query: [Int32] = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0]
         var size = 0
         guard sysctl(&query, UInt32(query.count), nil, &size, nil, 0) == 0 else {
@@ -212,70 +179,5 @@ final class NativeMetrics {
         return ScriptOutput(text: "↓\(Int(download / 1024)) ↑\(Int(upload / 1024)) KiB/s", icon: "network",
                             fields: ["interface": current.keys.sorted().joined(separator: ", ")], lists: ["interfaces": interfaces],
                             values: ["download": download, "upload": upload])
-    }
-
-    private func audio() throws -> ScriptOutput {
-        var defaultAddress = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-                                                        mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        var device = AudioDeviceID(0)
-        var deviceSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-        let status = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultAddress, 0, nil, &deviceSize, &device)
-        guard status == noErr else { throw CommandFailure(message: "Could not read the audio output device (\(status)).") }
-        guard device != kAudioObjectUnknown else {
-            return ScriptOutput(text: "No output", icon: "speaker.slash", fields: ["volumeAvailable": "false"], lists: ["devices": []])
-        }
-        let name = try audioName(device)
-        var volumes: [Float32] = []
-        for channel: UInt32 in [0, 1, 2] {
-            var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar,
-                                                     mScope: kAudioDevicePropertyScopeOutput, mElement: channel)
-            if AudioObjectHasProperty(device, &address) {
-                var value: Float32 = 0
-                var size = UInt32(MemoryLayout<Float32>.size)
-                if AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == noErr {
-                    volumes.append(value)
-                    if channel == 0 { break }
-                }
-            }
-        }
-        let volume = volumes.isEmpty ? nil : Double(volumes.reduce(0, +) / Float32(volumes.count))
-        var muteAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute,
-                                                    mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
-        var muted: UInt32 = 0
-        var muteSize = UInt32(MemoryLayout<UInt32>.size)
-        let muteStatus = AudioObjectGetPropertyData(device, &muteAddress, 0, nil, &muteSize, &muted)
-        var fields = ["device": name, "deviceID": String(device), "volumeAvailable": String(volume != nil)]
-        if muteStatus == noErr { fields["muted"] = String(muted != 0) }
-        return ScriptOutput(text: volume.map { "\(Int(($0 * 100).rounded()))%" } ?? name, icon: muted != 0 ? "speaker.slash" : "speaker.wave.2",
-                            value: volume, fields: fields, lists: ["devices": try audioDevices()], values: volume.map { ["volume": $0] })
-    }
-
-    private func audioName(_ device: AudioDeviceID) throws -> String {
-        var address = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName,
-                                                mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        var name: Unmanaged<CFString>?
-        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-        let status = AudioObjectGetPropertyData(device, &address, 0, nil, &size, &name)
-        guard status == noErr, let name else { throw CommandFailure(message: "Could not read audio device name (\(status)).") }
-        return name.takeRetainedValue() as String
-    }
-
-    private func audioDevices() throws -> [[String: String]] {
-        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
-                                                mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        var size: UInt32 = 0
-        let status = AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size)
-        guard status == noErr else { throw CommandFailure(message: "Could not list audio devices (\(status)).") }
-        var devices = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
-        let readStatus = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &devices)
-        guard readStatus == noErr else { throw CommandFailure(message: "Could not read audio devices (\(readStatus)).") }
-        return try devices.compactMap { device in
-            var streams = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams,
-                                                    mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
-            var streamSize: UInt32 = 0
-            let status = AudioObjectGetPropertyDataSize(device, &streams, 0, nil, &streamSize)
-            if status != noErr || streamSize == 0 { return nil }
-            return ["id": String(device), "name": try audioName(device)]
-        }
     }
 }

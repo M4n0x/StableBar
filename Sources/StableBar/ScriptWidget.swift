@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 
 struct ScriptEvent: Sendable {
     var sender: String
@@ -15,7 +16,7 @@ struct ScriptEvent: Sendable {
     }
 }
 
-struct WidgetMenuItem: Decodable, Sendable {
+struct WidgetMenuItem: Decodable, Equatable, Sendable {
     let title: String
     var detail: String?
     var onClick: String?
@@ -31,7 +32,7 @@ struct WidgetMenuItem: Decodable, Sendable {
     }
 }
 
-struct ScriptOutput: Decodable, Sendable {
+struct ScriptOutput: Decodable, Equatable, Sendable {
     var text: String
     var icon: String?
     var color: HexColor?
@@ -96,8 +97,12 @@ final class ScriptWidget {
     var error: String?
     var samples: [Double] = []
     var diagnostics = ScriptDiagnostics()
-    /// Called after each new output or failure, so the store can re-resolve the styles it affects.
+    /// Called when the output or the error changes, so the store can re-resolve the styles it affects,
+    /// and for each output with a `temporary`, which the store shows again after it ran out.
     @ObservationIgnored var onUpdate: (() -> Void)?
+    /// Called when an output replaces an earlier one, so the store can send the events that a data
+    /// source's changes stand for, such as `powerSourceChange`.
+    @ObservationIgnored var onOutputChange: ((_ previous: ScriptOutput, _ output: ScriptOutput) -> Void)?
     /// Numbers each accepted output, unique across scripts, so the store can tell a new output from
     /// one it applies again. 0 before the first.
     @ObservationIgnored private(set) var outputNumber = 0
@@ -105,48 +110,56 @@ final class ScriptWidget {
     private var task: Task<Void, Never>?
     private var timer: Task<Void, Never>?
     private var events: AsyncStream<ScriptEvent>.Continuation?
-    private var source: Source?
-    private var environment: [String: String] = [:]
-    private var metrics = NativeMetrics()
-
-    private enum Source {
-        case command(String, Double?, Double)
-        case provider(ProviderConfiguration)
-
-        var interval: Double? {
-            switch self {
-            case let .command(_, interval, _): interval
-            case let .provider(provider): provider.interval
-            }
-        }
-
-        var streaming: Bool {
-            if case let .provider(provider) = self { return provider.type == .stream }
-            return false
-        }
-    }
+    private var makeSource: (@MainActor () -> any DataSource)?
+    private var source: (any DataSource)?
+    private var schedule = SourceSchedule()
+    private var changeObserver: (any NSObjectProtocol)?
+    /// A continuous run open this long is steady: an update it sends, or the failure that ends it,
+    /// starts a new failure streak. Tests shorten it.
+    @ObservationIgnored var steadyRun: Duration = .seconds(10)
 
     func start(command: String, interval: Double?, timeout: Double = 10, environment: [String: String] = [:]) {
-        stop()
-        source = .command(command, interval, timeout)
-        self.environment = environment
-        begin(ScriptEvent(sender: "startup"))
+        start(schedule: SourceSchedule(interval: interval)) {
+            PollingSource.command(command, timeout: timeout, environment: environment)
+        }
     }
 
-    func start(provider: ProviderConfiguration, environment: [String: String] = [:]) {
+    func start(provider: ProviderConfiguration, registry: DataSourceRegistry = .builtIn, environment: [String: String] = [:]) {
+        var variables = environment.merging(provider.environment) { _, value in value }
+        variables["NAME"] = environment["NAME"]
+        variables["CONFIG_DIR"] = environment["CONFIG_DIR"]
+        guard let type = registry[provider.type] else {
+            stop()
+            error = "Unknown data source type: \(provider.type)."
+            return
+        }
+        let change = type.changeNotification.map { SourceChange(notification: $0, event: type.name) }
+        start(schedule: SourceSchedule(interval: provider.interval, continuous: type.continuous, change: change)) {
+            type.makeSource(provider, variables)
+        }
+    }
+
+    /// Runs the source that `makeSource` creates. A fresh instance runs at startup, on resume and
+    /// when a refresh restarts a continuous source. While it runs, the schedule's `change`
+    /// notification refreshes it.
+    func start(schedule: SourceSchedule, source makeSource: @escaping @MainActor () -> any DataSource) {
         stop()
-        source = .provider(provider)
-        self.environment = environment.merging(provider.environment) { _, value in value }
-        self.environment["NAME"] = environment["NAME"]
-        self.environment["CONFIG_DIR"] = environment["CONFIG_DIR"]
-        metrics = NativeMetrics()
+        self.schedule = schedule
+        self.makeSource = makeSource
         begin(ScriptEvent(sender: "startup"))
     }
 
     private func begin(_ firstEvent: ScriptEvent) {
-        let source = source!
-        let environment = environment
+        guard let makeSource else { return }
+        let source = makeSource()
+        let schedule = schedule
+        self.source = source
         diagnostics.suspended = false
+        if let change = schedule.change, changeObserver == nil {
+            changeObserver = NotificationCenter.default.addObserver(forName: change.notification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refresh(ScriptEvent(sender: change.event)) }
+            }
+        }
         let (stream, events) = AsyncStream<ScriptEvent>.makeStream(bufferingPolicy: .bufferingNewest(1))
         self.events = events
         events.yield(firstEvent)
@@ -160,44 +173,42 @@ final class ScriptWidget {
                 diagnostics.lastStarted = Date()
                 diagnostics.executionCount += 1
                 let started = ContinuousClock.now
-                var delay = source.interval
+                var delay = schedule.interval
+                // The single-slot queue: while an update is being applied, only the newest waits. A
+                // failure ends the run, so it waits outside the slot until the output sent before it is applied.
+                let (updates, queue) = AsyncStream<SourceUpdate>.makeStream(bufferingPolicy: .bufferingNewest(1))
+                let failure = OSAllocatedUnfairLock<(any Error, CommandResult?)?>(initialState: nil)
+                source.start { update in
+                    if case let .output(.failure(error), process) = update {
+                        failure.withLock { $0 = $0 ?? (error, process) }
+                        queue.finish()
+                    } else if case .finished = update { queue.finish() } else { queue.yield(update) }
+                }
+                source.refresh(event: event)
                 do {
-                    switch source {
-                    case let .command(command, _, timeout):
-                        let result = try await runCommandResult("/bin/zsh", arguments: ["-c", command], timeout: timeout,
-                                                                environment: event.commandEnvironment(environment))
+                    for await update in updates {
                         try Task.checkCancellation()
-                        record(result)
-                        try accept(ScriptOutput.read(result.stdout))
-                    case let .provider(provider):
-                        switch provider.type {
-                        case .command:
-                            let result = try await runCommandResult("/bin/zsh", arguments: ["-c", provider.command!], timeout: provider.timeout,
-                                                                    environment: event.commandEnvironment(environment))
-                            try Task.checkCancellation()
-                            record(result)
-                            try accept(ScriptOutput.read(result.stdout))
-                        case .stream:
-                            for try await result in await commandLines("/bin/zsh", arguments: ["-c", provider.command!],
-                                                                environment: event.commandEnvironment(environment)) {
-                                try Task.checkCancellation()
-                                record(result)
-                                try accept(JSONDecoder().decode(ScriptOutput.self, from: result.stdout))
-                                if started.duration(to: .now) >= .seconds(10) { diagnostics.consecutiveFailures = 0 }
-                            }
-                            try Task.checkCancellation()
-                            throw CommandFailure(message: "Streaming provider exited.")
-                        default:
-                            try accept(metrics.sample(provider))
-                        }
+                        guard case let .output(result, process) = update else { continue }
+                        if let process { record(process) }
+                        try accept(result.get())
+                        if schedule.continuous, started.duration(to: .now) >= steadyRun { diagnostics.consecutiveFailures = 0 }
+                    }
+                    try Task.checkCancellation()
+                    if case let (error, process)? = failure.withLock({ $0 }) {
+                        if let process { record(process) }
+                        throw error
                     }
                     diagnostics.consecutiveFailures = 0
                     if delay != nil { delay = output.interval ?? delay }
                 } catch {
                     if Task.isCancelled { return }
-                    self.error = error.localizedDescription
-                    onUpdate?()
+                    let message = error.localizedDescription
+                    if self.error != message {
+                        self.error = message
+                        onUpdate?()
+                    }
                     diagnostics.failureCount += 1
+                    if schedule.continuous, started.duration(to: .now) >= steadyRun { diagnostics.consecutiveFailures = 0 }
                     diagnostics.consecutiveFailures += 1
                     if let failure = error as? CommandFailure {
                         if !failure.stdout.isEmpty { diagnostics.lastStdout = String(decoding: failure.stdout.suffix(16_384), as: UTF8.self) }
@@ -207,6 +218,7 @@ final class ScriptWidget {
                         delay = providerRetryDelay(interval: interval, failures: diagnostics.consecutiveFailures)
                     }
                 }
+                source.stop()
                 let duration = started.duration(to: .now).components
                 diagnostics.lastDuration = Double(duration.seconds) + Double(duration.attoseconds) / 1e18
                 diagnostics.running = false
@@ -216,7 +228,7 @@ final class ScriptWidget {
                         do {
                             try await Task.sleep(for: .seconds(delay))
                             try Task.checkCancellation()
-                            if source.streaming { diagnostics.restartCount += 1 }
+                            if schedule.continuous { diagnostics.restartCount += 1 }
                             events.yield(ScriptEvent(sender: "routine"))
                         } catch {}
                     }
@@ -231,26 +243,34 @@ final class ScriptWidget {
         diagnostics.cpuTime += result.cpuTime
     }
 
+    /// Applies a source's new output. Only what changed is assigned, so an update that repeats the
+    /// current output invalidates no views; its `value` still adds a graph sample, and its `temporary`
+    /// still reaches the store, so it can show again after it ran out.
     func accept(_ next: ScriptOutput) throws {
         if let interval = next.interval, !interval.isFinite || interval <= 0 {
             throw CommandFailure(message: "A script interval must be greater than zero.")
         }
-        output = next
-        output.series = output.series?.mapValues { Array($0.suffix(60)) }
-        if let value = output.value {
-            samples.append(value)
-            if samples.count > 60 { samples.removeFirst() }
+        var next = next
+        next.series = next.series?.mapValues { Array($0.suffix(60)) }
+        let previous = diagnostics.lastUpdated == nil ? nil : output
+        let outputChanged = next != output
+        let changed = outputChanged || error != nil
+        if outputChanged { output = next }
+        if let value = next.value {
+            let history = Array((samples + [value]).suffix(60))
+            if history != samples { samples = history }
         }
-        error = nil
+        if error != nil { error = nil }
         diagnostics.lastUpdated = Date()
         Self.acceptedOutputs += 1
         outputNumber = Self.acceptedOutputs
-        onUpdate?()
+        if changed || next.temporary != nil { onUpdate?() }
+        if let previous, outputChanged { onOutputChange?(previous, next) }
     }
 
     func refresh(_ event: ScriptEvent) {
-        if diagnostics.suspended { return }
-        if source?.streaming == true {
+        if makeSource == nil || diagnostics.suspended { return }
+        if schedule.continuous {
             cancel()
             diagnostics.restartCount += 1
             begin(event)
@@ -261,14 +281,13 @@ final class ScriptWidget {
     }
 
     func suspend() {
-        if source == nil || diagnostics.suspended { return }
+        if makeSource == nil || diagnostics.suspended { return }
         cancel()
         diagnostics.suspended = true
     }
 
     func resume() {
         if !diagnostics.suspended { return }
-        metrics = NativeMetrics()
         begin(ScriptEvent(sender: "resume"))
     }
 
@@ -276,16 +295,20 @@ final class ScriptWidget {
         task?.cancel()
         timer?.cancel()
         events?.finish()
+        source?.stop()
+        if let changeObserver { NotificationCenter.default.removeObserver(changeObserver) }
         task = nil
         timer = nil
         events = nil
+        source = nil
+        changeObserver = nil
         diagnostics.running = false
         diagnostics.nextDelay = nil
     }
 
     func stop() {
         cancel()
-        source = nil
+        makeSource = nil
         diagnostics.suspended = false
     }
 }

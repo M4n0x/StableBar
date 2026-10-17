@@ -150,7 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func woke() {
         store.setSleeping(false)
         screensChanged()
-        store.refreshScripts(for: "wake")
+        store.send(.wake)
     }
 
     private func updatePanels() {

@@ -8,7 +8,7 @@ The default configuration includes a System Settings shortcut, the active app an
 
 Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, theme, appearance, placement, clock format, and opening at login. Run it again from **Customize StableBar → General**.
 
-The starter bar needs no special permissions. Keeping windows clear of the bar requires Accessibility access for StableBar. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. A [calendar provider](#calendar) asks for Calendars access the first time it updates. AeroSpace and yabai manage their own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
+The starter bar needs no special permissions. Keeping windows clear of the bar requires Accessibility access for StableBar. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. A [calendar provider](#calendar) asks for Calendars access the first time it updates. Setup also lists any access that the data sources of your enabled widgets need, such as Calendars, with a link to its System Settings pane. AeroSpace and yabai manage their own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
 
 Setup offers the [themes](#themes) that ship with StableBar and any you have installed. Every theme has light and dark colors and follows the system's light or dark mode; choose **Light** or **Dark** to keep the bar in one appearance, which sets `bar.appearance`. Individual widget styles still take precedence. Setup preserves custom widgets, scripts, and other settings. Closing setup leaves it available on the next launch. New configurations place the bar below the macOS menu bar; existing configurations retain their position.
 
@@ -125,7 +125,7 @@ Widget properties override their template recursively. `widgetOverrides` applies
 
 Included files are watched even outside the main directory. A missing module or directory is watched for repair; the last working bar remains visible meanwhile.
 
-[examples/modular](examples/modular/config.json) is a complete, dependency-free starter with a theme that styles the shared data states, a template, an event-only status that fades in new text, a CPU widget whose rules set those states, a clock whose digits roll, and an optional volume widget that shows the volume for a moment after a scroll changes it. Try it without replacing your personal configuration:
+[examples/modular](examples/modular/config.json) is a complete, dependency-free starter with a theme that styles the shared data states, a template, an event-only status that fades in new text, a CPU widget whose rules set those states, a clock whose digits roll, and an optional volume widget that shows the volume for a moment after a scroll or click, or when `volumeChange` reports a change made elsewhere. Try it without replacing your personal configuration:
 
 ```sh
 ./dist/StableBar.app/Contents/MacOS/StableBar --validate examples/modular/config.json
@@ -475,7 +475,20 @@ Your own `tokens.appGlyphs` merges into the module's map, so `{ "tokens": { "app
 
 ### Script events
 
-Add `events` to a script widget to refresh it on named events, alongside its interval. Set `"interval": null` to run once at startup and then only on events or after a click action. Omitting the interval keeps the default 30-second polling. Numeric intervals must be greater than zero. `frontApp`, `workspace`, `aerospaceMode` and `wake` are emitted by StableBar. Other names subscribe to macOS distributed notifications, for example `com.spotify.client.PlaybackStateChanged`.
+Add `events` to a script widget to refresh it on named events, alongside its interval. Set `"interval": null` to run once at startup and then only on events or after a click action. Omitting the interval keeps the default 30-second polling. Numeric intervals must be greater than zero. StableBar knows these events:
+
+| Event | Sent when | `INFO` |
+| --- | --- | --- |
+| `frontApp` | The frontmost app changes | The app's name, or `Desktop` |
+| `workspace` | The focused workspace changes | The workspace's name; `SID` is its display number |
+| `aerospaceMode` | AeroSpace switches binding mode | The mode's name |
+| `wake` | The Mac wakes from sleep | Not set |
+| `yabai` | `StableBar --trigger yabai` runs, usually from a yabai signal; StableBar also refreshes its workspaces | The trigger's `INFO`, if any |
+| `powerSourceChange` | The Mac switches between its power adapter and battery | `ac` or `battery` |
+| `volumeChange` | The default output device's volume or mute state changes | The volume as a whole percentage, empty without a volume control; `MUTED` is `true` or `false` |
+| `outputDeviceChange` | The default output device changes | The device's name, empty when there is none |
+
+`powerSourceChange` comes from the `battery` data source, and `volumeChange` and `outputDeviceChange` from the `audio` source. Subscribing to one of them runs that source while the subscribing widget is enabled, even when no widget shows it, and keeps it running while its own widgets are hidden. A provider of another type named `battery` or `audio`, such as your own stream, keeps the built-in source from starting. Other names subscribe to macOS distributed notifications, for example `com.spotify.client.PlaybackStateChanged`.
 
 External hooks can trigger an event without launching another bar:
 
@@ -493,7 +506,7 @@ Commands inherit your login shell's environment, then top-level `environment`, t
 | `NAME` | Widget ID; event data cannot replace it |
 | `CONFIG_DIR` | Directory containing the main configuration; event data cannot replace it |
 | `SENDER` | `startup`, `routine`, the subscribed event name, `action` after an action completes, or a mouse event below |
-| `INFO` | Explicit trigger value; front-app name for `frontApp`; focused workspace name for `workspace`; mode name for `aerospaceMode`; otherwise the distributed notification's JSON payload when available |
+| `INFO` | For StableBar's events, as the table above lists; for a trigger, its `INFO` value; otherwise the distributed notification's JSON payload when available |
 | `SID` | Display number for pointer actions and workspace events |
 | `BUTTON` | `left`, `right` or `middle` for widget mouse clicks |
 | `MODIFIER` | Space-separated `shift`, `ctrl`, `alt`, `cmd`, `fn` for pointer actions |
@@ -581,7 +594,7 @@ Changes in these sections apply to the bar immediately, like command-line edits 
 
 **Packages** reviews local folders and [store](#store) packages and their declared commands, edits typed settings, installs versions and enables a chosen version. Enabling a theme makes it the active theme; themes have no commands to review. Select an older installed version to roll back, or **Uninstall…** to remove one.
 
-**Diagnostics** shows the composed widget configuration, defaults, source paths, what the widget shows (its `text`, `icon`, `fields` and `temporaryFields`), provider output and data state, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while Diagnostics is visible. Closing the window restores its visibility policy.
+**Diagnostics** shows the composed widget configuration, defaults, source paths, what the widget shows (its `text`, `icon`, `fields` and `temporaryFields`), provider output and data state, the provider's data source and the events it sends, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while Diagnostics is visible. Closing the window restores its visibility policy.
 
 ## Built-in widgets
 
@@ -658,7 +671,7 @@ Return plain text, or one JSON object:
 - `hidden`: removes the widget when true (unless it has an error). Give the widget a `transition` to fade or roll it in and out.
 - `interval`: overrides the next polling delay in seconds; must be greater than zero. Omit it to use the configured interval.
 - `menu`: an array of `{ "title": "Issue", "detail": "In progress", "onClick": "open …" }`, displayed in a themed popup. Rows without `onClick` show information. A menu takes precedence over the widget's click command. Static widgets can also define `menu` in their configuration.
-- `value`: a graph sample, displayed on a 0–1 scale with the last 60 samples.
+- `value`: a graph sample, displayed on a 0–1 scale with the last 60 samples. Each update adds one, even when it repeats the previous output; such an update changes only the graph, unless it repeats a `temporary` that ran out.
 - `fields`: named display strings for popup field blocks.
 - `lists`: named arrays of objects containing display strings for popup list blocks.
 - `state`: the widget's data state, such as `warning`; see [Data states](#data-states).
@@ -701,15 +714,15 @@ Define a provider once and reference it from several widgets. StableBar keeps on
 }
 ```
 
-Provider `type` is `command`, `stream`, `system`, `network`, `battery`, `audio` or `calendar`. `command` and `stream` require a shell `command`. `interval` defaults to 5 seconds: the polling interval for commands and native sources, or the initial reconnect delay for streams. `timeout` defaults to 10 seconds and applies to command providers; streams remain running until they exit, fail, suspend or stop. Provider intervals and timeouts must be positive and finite.
+Provider `type` is `command`, `stream`, `system`, `network`, `battery`, `audio` or `calendar`. `command` and `stream` require a shell `command`. `interval` defaults to 5 seconds: the polling interval for commands, `system` and `network`, and for `calendar` until it has access; the first reconnect delay for streams; and for `audio` and `battery`, which update when macOS reports a change, the first retry delay after a failure. That first delay is `interval`, or 1 second if `interval` is shorter. `timeout` defaults to 10 seconds and applies to command providers; streams remain running until they exit, fail, suspend or stop. Provider intervals and timeouts must be positive and finite.
 
 A widget with `type` set to `system`, `network`, `battery`, `audio` or `calendar` uses the provider of that name. Without a definition in `providers`, it is a native provider of that type with default settings, shared by every widget that names it. Define a provider with the same name to change its interval or other settings. `{ "id": "power", "type": "battery", "position": "right" }` is enough for a battery widget.
 
-Provider `environment` overlays the top-level environment. `NAME` is the provider name and `CONFIG_DIR` remains the main configuration directory. The environment of a consuming widget applies to that widget's actions, not the shared update process. Add `events` to a provider or consuming widget to request updates; one event refreshes a shared provider once. An explicit stream refresh restarts its process with the new event payload.
+Provider `environment` overlays the top-level environment. `NAME` is the provider name and `CONFIG_DIR` remains the main configuration directory. The environment of a consuming widget applies to that widget's actions, not the shared update process. Add `events` to a provider or consuming widget to request updates; one event refreshes a shared provider once. An explicit refresh restarts a stream's process with the new event payload, and restarts the listener of a push source such as `battery`, which then reads its current state again.
 
 A stream writes one complete JSON object per line, including `text`, and flushes stdout after each update. Empty lines are ignored; the final line may omit its newline. Streaming output represents current state: when updates arrive faster than the UI consumes them, only the newest pending update is retained. Each line is limited to 1 MiB; stderr retains its latest 16 KiB. Malformed output stops the process and retains the last good value. Clean exits and failures reconnect with exponential backoff, capped at five minutes or the configured interval if longer. Ten seconds of successful streaming resets the failure streak.
 
-Set `whenVisible` to `true` to suspend a provider when none of its consumers is visible on any display, including widgets moved to overflow. Removing or disabling the last consuming widget stops the provider. System sleep suspends scripts and providers; resuming preserves the last output and graph history, and starts a fresh update with `SENDER=resume`.
+Set `whenVisible` to `true` to suspend a provider when none of its consumers is visible on any display, including widgets moved to overflow. Removing or disabling the last consuming widget stops the provider. System sleep suspends scripts and providers; resuming preserves the last output and graph history, and starts a fresh update with `SENDER=resume`. A suspended or stopped `audio` or `battery` provider removes its macOS listeners. A provider whose events a widget subscribes to stays running; see [Script events](#script-events).
 
 Native providers use public macOS APIs and launch no shell commands:
 
@@ -717,19 +730,19 @@ Native providers use public macOS APIs and launch no shell commands:
 | --- | --- |
 | `system` | `value` and `values.cpu`: CPU fraction; `values.memory`: used-memory fraction; `values.memoryUsed` and `values.memoryTotal`: bytes. `fields.cpu` and `fields.memory` are whole percentages. Used memory includes internal, wired and compressed pages, excluding purgeable pages. |
 | `network` | `values.download` and `values.upload`: aggregate bytes/second across up `en*` Wi-Fi/Ethernet interfaces. `fields.interface`: interface names. `lists.interfaces`: rows with `name`, `download`, `upload`. Virtual VPN interfaces are excluded to avoid counting the same traffic twice. |
-| `battery` | `value` and `values.percent`: charge fraction. `fields.percent`: whole percentage; `fields.state`: `charging`, `charged`, `battery` or `ac`; `fields.present`: `true`/`false`; optional `fields.timeRemaining`: minutes. Desktops without a battery return `AC` without a charge value. |
-| `audio` | `value` and `values.volume`: output-volume fraction when supported. `fields.device`, `fields.deviceID`, `fields.volumeAvailable` and optional `fields.muted`; `lists.devices`: output-device rows with `id` and `name`. Fixed-volume devices can omit volume, and no output device returns `No output`. |
+| `battery` | `value` and `values.percent`: charge fraction. `fields.percent`: whole percentage; `fields.state`: `charging`, `charged`, `battery` or `ac`; `fields.present`: `true`/`false`; optional `fields.timeRemaining`: minutes. Desktops without a battery return `AC` without a charge value. Updates when the charge, the time remaining or the power source changes, without polling. |
+| `audio` | `value` and `values.volume`: output-volume fraction when supported. `fields.device`, `fields.deviceID`, `fields.volumeAvailable` and optional `fields.muted`; `lists.devices`: output-device rows with `id` and `name`. Fixed-volume devices can omit volume, and no output device returns `No output`. Updates as soon as the volume, the mute state or the default output device changes, without polling. |
 | `calendar` | The next meeting and today's agenda; see [Calendar](#calendar). |
 
-Fractions use 0–1. CPU and network rates are deltas; their first sample after startup or resume is zero. Native audio is a data source; use a control's `onChange` command to change volume or devices.
+Fractions use 0–1. CPU and network rates are deltas; their first sample after startup or resume is zero. `audio` and `battery` add a graph sample for each change rather than each interval. Native audio is a data source; use a control's `onChange` command to change volume or devices.
 
 Native providers can't return `state`. Give their widgets `rules` to set a data state from `values` or `fields`, such as a battery `warning` at 20 %; see [Data states](#data-states).
 
-Scripts and providers expose diagnostics in **Customize → Diagnostics** and the runtime query: running/suspended state, last event/start/update, execution duration, bounded stdout/stderr, execution/failure/restart counts and next retry delay. CPU time is cumulative completed-command CPU time, not a live resource meter for a running stream. Diagnostics and graph history survive style-only edits and suspension. The existing process-group cancellation limit for deliberately detached descendants also applies to streams.
+Scripts and providers expose diagnostics in **Customize → Diagnostics** and the runtime query: running/suspended state, last event/start/update, execution duration, bounded stdout/stderr, execution/failure/restart counts and next retry delay. Streams and the native sources macOS notifies of changes, such as `battery` and `audio`, count as running while connected, and each update sets their last update time. CPU time is cumulative completed-command CPU time, not a live resource meter for a running stream. Diagnostics and graph history survive style-only edits and suspension. The existing process-group cancellation limit for deliberately detached descendants also applies to streams.
 
 ### Calendar
 
-A `calendar` provider reads your calendars through EventKit. It asks for Calendars access the first time it updates, not when StableBar starts. All-day events are skipped.
+A `calendar` provider reads your calendars through EventKit. It asks for Calendars access the first time it updates, not when StableBar starts, and setup lists that access whenever an enabled widget shows a calendar provider. All-day events are skipped.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -940,11 +953,16 @@ For new native widget types, add a case to `WidgetContent`, decode its settings 
 - [ConfigurationEdits.swift](Sources/StableBar/ConfigurationEdits.swift): file-preserving edits shared by CLI and editor.
 - [RuntimeControl.swift](Sources/StableBar/RuntimeControl.swift): local request/reply control endpoint.
 - [ConfigurationEditor.swift](Sources/StableBar/ConfigurationEditor.swift): preview, undo/redo and validated persistence.
-- [NativeMetrics.swift](Sources/StableBar/NativeMetrics.swift): public macOS metric sources.
+- [NativeMetrics.swift](Sources/StableBar/NativeMetrics.swift): CPU, memory, network and calendar readings.
+- [AudioMonitor.swift](Sources/StableBar/AudioMonitor.swift): output-device readings and CoreAudio change listeners.
+- [PowerMonitor.swift](Sources/StableBar/PowerMonitor.swift): battery readings and power-change notifications.
 - [WidgetPackage.swift](Sources/StableBar/WidgetPackage.swift): package inspection, installation, store downloads and version selection.
 - [Workspaces.swift](Sources/StableBar/Workspaces.swift): AeroSpace subscriptions, yabai refreshes and workspace actions.
 - [Yabai.swift](Sources/StableBar/Yabai.swift): yabai snapshots mapped to workspaces and screen numbers.
-- [ScriptWidget.swift](Sources/StableBar/ScriptWidget.swift): custom widget output and refresh tasks.
+- [ScriptWidget.swift](Sources/StableBar/ScriptWidget.swift): the runner that applies a data source's output, with diagnostics, retries and suspension.
+- [DataSource.swift](Sources/StableBar/DataSource.swift): the data source protocol, and the command, stream, polling and push sources.
+- [DataSourceRegistry.swift](Sources/StableBar/DataSourceRegistry.swift): each data source type, the settings it reads, how it runs and the access it needs.
+- [BuiltInEvents.swift](Sources/StableBar/BuiltInEvents.swift): the events StableBar sends itself and what `INFO` holds.
 - [BarView.swift](Sources/StableBar/BarView.swift): native rendering and selection animation.
 - [LayoutConfiguration.swift](Sources/StableBar/LayoutConfiguration.swift): groups, priority overflow and notch-aware placement.
 - [PopupConfiguration.swift](Sources/StableBar/PopupConfiguration.swift): popup layout blocks.

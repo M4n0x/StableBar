@@ -15,6 +15,7 @@
       "id": "volume",
       "template": "metric",
       "icon": "speaker.wave.2",
+      "events": ["volumeChange"],
       "command": "/bin/sh \"$CONFIG_DIR/volume.sh\"",
       "onClick": "osascript -e 'set volume output muted not (output muted of (get volume settings))'",
       "actions": {
