@@ -17,10 +17,123 @@ struct SetupPreferences: Equatable {
         case current, builtIn, package(id: String, version: String?)
     }
 
+    enum WidgetSet: Hashable {
+        case system, meetings, workspaces(WorkspaceSource)
+
+        var title: String {
+            switch self {
+            case .system: "System"
+            case .meetings: "Meetings"
+            case .workspaces: "Workspaces"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .system: "CPU and memory use, with details when you click it."
+            case .meetings: "Your next meeting and today's agenda. Needs Calendars access."
+            case let .workspaces(source): "Your \(source.title) workspaces and their apps. Click one to switch."
+            }
+        }
+
+        var widgets: [[String: ConfigurationValue]] {
+            let json = switch self {
+            case .system: #"""
+                [
+                  {
+                    "id": "system-monitor", "type": "system", "position": "right",
+                    "layout": {
+                      "type": "row",
+                      "children": [
+                        { "type": "symbol", "name": "cpu" },
+                        { "type": "field", "field": "text" },
+                        { "type": "symbol", "name": "memorychip" },
+                        {
+                          "type": "row", "style": { "spacing": 0 },
+                          "children": [{ "type": "field", "field": "memory" }, { "type": "text", "text": "%" }]
+                        }
+                      ]
+                    },
+                    "popup": {
+                      "style": { "width": 280 },
+                      "layout": {
+                        "type": "column",
+                        "children": [
+                          { "type": "text", "text": "System", "role": "heading" },
+                          { "type": "graph", "height": 36 },
+                          {
+                            "type": "row",
+                            "children": [
+                              { "type": "text", "text": "CPU", "role": "key" },
+                              { "type": "field", "field": "cpu", "alignment": "trailing", "role": "value" },
+                              { "type": "text", "text": "%", "role": "value", "style": { "width": 14 } }
+                            ]
+                          },
+                          { "type": "progress", "source": "cpu", "height": 3, "role": "meter" },
+                          {
+                            "type": "row",
+                            "children": [
+                              { "type": "text", "text": "Memory", "role": "key" },
+                              { "type": "field", "field": "memory", "alignment": "trailing", "role": "value" },
+                              { "type": "text", "text": "%", "role": "value", "style": { "width": 14 } }
+                            ]
+                          },
+                          { "type": "progress", "source": "memory", "height": 3, "role": "meter" },
+                          { "type": "divider", "role": "separator" },
+                          { "type": "text", "text": "Activity Monitor", "open": "com.apple.ActivityMonitor", "role": "button" }
+                        ]
+                      }
+                    }
+                  }
+                ]
+                """#
+            case .meetings: #"""
+                [
+                  {
+                    "id": "meeting", "type": "calendar", "position": "right",
+                    "layout": {
+                      "type": "row",
+                      "children": [
+                        { "type": "symbol", "source": "icon" },
+                        { "type": "field", "field": "text" },
+                        { "type": "field", "field": "start", "hideWhenEmpty": "start", "role": "secondary" }
+                      ]
+                    },
+                    "popup": {
+                      "style": { "width": 320 },
+                      "layout": {
+                        "type": "column",
+                        "children": [
+                          { "type": "text", "text": "Today", "role": "heading" },
+                          {
+                            "type": "list", "source": "today",
+                            "row": {
+                              "type": "row", "openField": "link",
+                              "children": [
+                                { "type": "field", "field": "start", "role": "key", "style": { "width": 56 } },
+                                { "type": "field", "field": "title", "role": "primary" }
+                              ]
+                            }
+                          },
+                          { "type": "divider", "role": "separator" },
+                          { "type": "text", "text": "Calendar", "open": "com.apple.iCal", "role": "button" }
+                        ]
+                      }
+                    }
+                  }
+                ]
+                """#
+            case .workspaces: #"[{ "id": "workspaces", "type": "workspaces", "position": "left" }]"#
+            }
+            return try! JSONDecoder().decode([[String: ConfigurationValue]].self, from: Data(json.utf8))
+        }
+    }
+
     var appearance = Appearance.current
     var placement = Placement.current
     var clock = Clock.current
     var theme = Theme.current
+    var widgetSets: [WidgetSet] = []
 
     func save(to url: URL, menuBarHeight: Double, context: ConfigurationContext) throws {
         let original = try Data(contentsOf: url)
@@ -67,9 +180,30 @@ struct SetupPreferences: Equatable {
                 }
             }
         }
+        var order = configuration.widgets.map(\.id)
+        var appended = order
+        for set in widgetSets {
+            for widget in set.widgets {
+                guard case let .string(id)? = widget["id"], !order.contains(id) else { continue }
+                edits.append(ConfigurationEdit(action: .add, properties: widget))
+                appended.append(id)
+                let anchor = configuration.widgets.first { existing in
+                    switch existing.content {
+                    case .activeApp: widget["position"] == .string("left")
+                    case .clock: widget["position"] == .string("right")
+                    default: false
+                    }
+                }
+                order.insert(id, at: anchor.flatMap { order.firstIndex(of: $0.id) } ?? order.endIndex)
+            }
+        }
+        if order != appended { edits.append(ConfigurationEdit(action: .reorder, ids: order)) }
         var document = try JSONDecoder().decode([String: ConfigurationValue].self, from: data)
         var ids = configuration.widgets.map(\.id)
         for edit in edits { document = try edit.applying(to: document, widgetIDs: &ids) }
+        for case let .workspaces(source) in widgetSets where source != configuration.workspaceSource {
+            document["workspaceSource"] = .string(source.rawValue)
+        }
         return try configurationData(document, editing: data)
     }
 }

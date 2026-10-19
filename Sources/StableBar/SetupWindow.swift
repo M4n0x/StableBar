@@ -27,6 +27,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        window?.contentView = nil
         window = nil
     }
 }
@@ -37,9 +38,13 @@ struct SetupView: View {
     @State private var step = 0
     @State private var preferences = SetupPreferences()
     @State private var preview = BarStore()
+    @State private var catalog = BarStore()
+    @State private var sources: [String: ScriptWidget] = [:]
     @State private var error: String?
     @State private var loginStatus = SMAppService.mainApp.status
+    @State private var wallpaper = NSScreen.main.flatMap { NSWorkspace.shared.desktopImageURL(for: $0) }.flatMap(NSImage.init(contentsOf:))
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     private var installed: Bool {
         let directory = Bundle.main.bundleURL.deletingLastPathComponent().standardizedFileURL
@@ -55,6 +60,14 @@ struct SetupView: View {
         max(NSStatusBar.system.thickness, NSScreen.main?.safeAreaInsets.top ?? 0)
     }
 
+    private var sets: [SetupPreferences.WidgetSet] {
+        let path = shellEnvironment.withLock { $0["PATH", default: ""] }.split(separator: ":")
+        let source = [store.configuration?.workspaceSource ?? .aerospace, .aerospace, .yabai].first { source in
+            path.contains { FileManager.default.isExecutableFile(atPath: "\($0)/\(source.rawValue)") }
+        }
+        return [.system, .meetings] + (source.map { [.workspaces($0)] } ?? [])
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
@@ -63,16 +76,16 @@ struct SetupView: View {
                     .foregroundStyle(Color.accentColor)
                 Text("StableBar").font(.headline)
                 Spacer()
-                Text("\(step + 1) of 3").font(.callout).foregroundStyle(.secondary).monospacedDigit()
+                Text("\(step + 1) of 4").font(.callout).foregroundStyle(.secondary).monospacedDigit()
             }
             .padding(.horizontal, 36)
             .padding(.top, 24)
             HStack(spacing: 6) {
-                ForEach(0..<3) { index in
+                ForEach(0..<4) { index in
                     Capsule().fill(index <= step ? Color.accentColor : Color.primary.opacity(0.08)).frame(height: 3)
                 }
             }
-            .accessibilityLabel("Setup step \(step + 1) of 3")
+            .accessibilityLabel("Setup step \(step + 1) of 4")
             .padding(.horizontal, 36)
             .padding(.top, 20)
 
@@ -81,6 +94,7 @@ struct SetupView: View {
                     switch step {
                     case 0: welcome
                     case 1: customization
+                    case 2: widgets
                     default: access
                     }
                     if let error {
@@ -101,11 +115,11 @@ struct SetupView: View {
                     Button("Set up later", action: close)
                 }
                 Spacer()
-                Text(step == 2 ? "You can run setup again from Customize StableBar → General." : "Changes apply when you finish.")
+                Text(step == 3 ? "You can run setup again from Customize StableBar → General." : "Changes apply when you finish.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button(step == 2 ? "Start StableBar" : "Continue") {
-                    if step == 2 { finish() } else { step += 1 }
+                Button(step == 3 ? "Start StableBar" : "Continue") {
+                    if step == 3 { finish() } else { step += 1 }
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
@@ -118,6 +132,7 @@ struct SetupView: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: step)
         .onAppear(perform: refreshPreview)
         .onChange(of: preferences) { refreshPreview() }
+        .onDisappear { for source in sources.values { source.stop() } }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             loginStatus = SMAppService.mainApp.status
         }
@@ -183,6 +198,62 @@ struct SetupView: View {
         }
     }
 
+    private var widgets: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            heading("Add what you check most.", detail: "Each set adds built-in widgets that run no scripts. Rearrange or remove them later in Customize → Widgets.")
+            barPreview
+            HStack(alignment: .top, spacing: 12) {
+                ForEach(sets, id: \.self) { set in
+                    setCard(set)
+                }
+            }
+        }
+    }
+
+    private func setCard(_ set: SetupPreferences.WidgetSet) -> some View {
+        let selected = preferences.widgetSets.contains(set)
+        return Button {
+            if selected { preferences.widgetSets.removeAll { $0 == set } } else { preferences.widgetSets.append(set) }
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack {
+                    if let configuration = catalog.configuration {
+                        let ids = set.widgets.map { $0["id"] }
+                        HStack(spacing: configuration.bar.spacing) {
+                            ForEach(configuration.widgets.filter { ids.contains(.string($0.id)) }) { widget in
+                                WidgetView(widget: widget, defaults: configuration.defaults, popupDefaults: configuration.popupDefaults,
+                                           store: catalog, monitor: 1, animationDuration: configuration.bar.animationDuration)
+                            }
+                        }
+                        .padding(.horizontal, configuration.bar.inset)
+                        .frame(height: configuration.bar.height)
+                        .modifier(BarSurface(store: catalog, settings: configuration.bar))
+                        .environment(\.colorScheme, configuration.bar.appearance?.colorScheme ?? colorScheme)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 72)
+                .background { backdrop }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.15), lineWidth: selected ? 2 : 1)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                HStack(spacing: 4) {
+                    Text(set.title).font(.headline)
+                    if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor) }
+                }
+                Text(set.detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
     private var access: some View {
         VStack(alignment: .leading, spacing: 20) {
             heading("Just the access you need.", detail: "The starter bar needs no special access. Optional integrations ask for permission when you use them.")
@@ -190,7 +261,7 @@ struct SetupView: View {
                 Label("Built-in widgets are ready", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green).font(.headline)
                 Divider()
-                SourcePermissionList(permissions: store.registry.permissions(for: store.configuration))
+                SourcePermissionList(permissions: store.registry.permissions(for: preview.configuration))
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: "app.connected.to.app.below.fill").font(.title2).frame(width: 28)
                     VStack(alignment: .leading, spacing: 5) {
@@ -249,17 +320,30 @@ struct SetupView: View {
                         Spacer()
                     }
                     .font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, 16).frame(height: 24)
+                    .background(.bar)
                 }
-                BarView(store: preview, display: BarDisplay(id: 1, isBuiltIn: true, isMain: true, notch: nil))
-                    .frame(height: preview.configuration?.barGeometry(for: BarDisplay(id: 1, isBuiltIn: true, isMain: true, notch: nil)).panelHeight ?? 40)
+                let height = preview.configuration?.barGeometry(for: BarDisplay(id: 1, isBuiltIn: true, isMain: true, notch: nil)).panelHeight ?? 40
+                GeometryReader { proxy in
+                    BarView(store: preview, display: BarDisplay(id: 1, isBuiltIn: true, isMain: true, notch: nil))
+                        .frame(width: proxy.size.width / 0.7, height: height)
+                        .scaleEffect(0.7, anchor: .topLeading)
+                }
+                    .frame(height: height * 0.7)
                     .allowsHitTesting(false)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Preview of your bar")
                 Spacer(minLength: 24)
             }
             .frame(height: 100)
-            .background(Color(nsColor: .underPageBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+            .background { backdrop }
             .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private var backdrop: some View {
+        ZStack {
+            Color(nsColor: .underPageBackgroundColor)
+            if let wallpaper { Image(nsImage: wallpaper).resizable().scaledToFill() }
         }
     }
 
@@ -272,17 +356,41 @@ struct SetupView: View {
 
     private func refreshPreview() {
         do {
-            let data = try preferences.applying(to: Data(contentsOf: store.configurationURL), menuBarHeight: menuBarHeight,
-                                               configurationURL: store.configurationURL, context: store.context)
-            var loader = ConfigurationLoader()
-            preview.configuration = try loader.load(store.configurationURL, data: data, context: store.context)
-            preview.scripts = store.scripts
-            preview.preparePresentations()
-            preview.workspaceStore.workspaces = store.workspaceStore.workspaces
+            try load(preview, preferences)
+            var everySet = preferences
+            everySet.widgetSets = sets
+            try load(catalog, everySet)
             error = nil
         } catch {
             self.error = errorMessage(error)
         }
+    }
+
+    private func load(_ bar: BarStore, _ preferences: SetupPreferences) throws {
+        let data = try preferences.applying(to: Data(contentsOf: store.configurationURL), menuBarHeight: menuBarHeight,
+                                            configurationURL: store.configurationURL, context: store.context)
+        var loader = ConfigurationLoader()
+        let configuration = try loader.load(store.configurationURL, data: data, context: store.context)
+        bar.configuration = configuration
+        bar.scripts = store.scripts
+        for widget in configuration.widgets where widget.enabled && bar.scripts[widget.id] == nil {
+            guard case let .provider(name) = widget.content, let provider = configuration.providers[name],
+                  let type = store.registry[provider.type], type.isNative else { continue }
+            if type.permission != nil {
+                let script = ScriptWidget()
+                script.output = previewMeeting
+                bar.scripts[widget.id] = script
+                continue
+            }
+            if sources[name] == nil {
+                let source = ScriptWidget()
+                source.start(provider: provider, registry: store.registry)
+                sources[name] = source
+            }
+            bar.scripts[widget.id] = sources[name]
+        }
+        bar.preparePresentations()
+        bar.workspaceStore.workspaces = store.workspaceStore.workspaces.isEmpty ? previewWorkspaces : store.workspaceStore.workspaces
     }
 
     private func setLaunchAtLogin(_ enabled: Bool) {
@@ -306,6 +414,17 @@ struct SetupView: View {
         }
     }
 }
+
+private let previewMeeting = ScriptOutput(text: "Design review", icon: "calendar", fields: ["start": "10:30"])
+
+private let previewWorkspaces = [
+    Workspace(name: "1", isFocused: true, isVisible: true, monitor: 1,
+              apps: [WorkspaceApp(workspace: "1", name: "Safari", bundleID: "com.apple.Safari")]),
+    Workspace(name: "2", isFocused: false, isVisible: false, monitor: 1,
+              apps: [WorkspaceApp(workspace: "2", name: "Mail", bundleID: "com.apple.mail")]),
+    Workspace(name: "3", isFocused: false, isVisible: false, monitor: 1,
+              apps: [WorkspaceApp(workspace: "3", name: "Notes", bundleID: "com.apple.Notes")])
+]
 
 /// The access that the data sources of enabled widgets need, each with a link to System Settings.
 struct SourcePermissionList: View {
