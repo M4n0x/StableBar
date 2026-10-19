@@ -211,6 +211,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             do {
                 try update.updater.start()
                 store.update = update
+                if update.updater.automaticallyChecksForUpdates {
+                    update.updater.checkForUpdatesInBackground()
+                }
             } catch {
                 FileHandle.standardError.write(Data("\(errorMessage(error))\n".utf8))
             }

@@ -10,6 +10,58 @@ private var presentationRepository: URL {
     URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 }
 
+@Test(arguments: [false, true], [false, true]) @MainActor
+func popupResizesWithItsContentAndKeepsItsWidthAndTopEdge(fixedHeight: Bool, animated: Bool) async throws {
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data("""
+    {"widgets":[{"id":"update","type":"text","text":"Update","position":"right","popup":{
+        \(fixedHeight ? "\"height\":140," : "")
+        \(animated ? "\"animation\":{\"duration\":0.05}," : "")
+        "style":{"width":300,"paddingHorizontal":14,"paddingVertical":14},
+        "layout":{"type":"text","text":"An update is available"}}}]}
+    """.utf8))
+    var presented: PopupPanel?
+    let popup = WidgetPopup(present: { presented = $0 })
+    let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), popup: popup)
+    store.configuration = configuration
+    store.preparePresentations()
+    defer { store.stop() }
+    let bar = OffscreenBar(configuration: configuration,
+                           display: BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil), width: 600, sharedStore: store)
+    defer { bar.close() }
+    await bar.settle()
+    let widget = configuration.widgets[0]
+    popup.toggle(widget.popup!, widget: widget, defaults: configuration.defaults, store: store,
+                 anchor: try #require(bar.anchors(widget.id).first))
+    let panel = try #require(presented)
+    defer { popup.close() }
+    for _ in 0..<8 {
+        panel.contentView!.layoutSubtreeIfNeeded()
+        let host = panel.contentView!.subviews[0]
+        host.cacheDisplay(in: host.bounds, to: try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds)))
+        try await Task.sleep(for: .milliseconds(25))
+    }
+    let initial = panel.frame
+    for lines in [5, 100, 0] {
+        store.actionErrors[widget.id] = lines == 0 ? nil : Array(repeating: "Download progress", count: lines).joined(separator: "\n")
+        for _ in 0..<8 {
+            panel.contentView!.layoutSubtreeIfNeeded()
+            let host = panel.contentView!.subviews[0]
+            host.cacheDisplay(in: host.bounds, to: try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds)))
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        #expect(panel.frame.width == initial.width)
+        #expect(abs(panel.frame.maxY - initial.maxY) < 0.5)
+        #expect(panel.frame.minY >= bar.panel.screen!.visibleFrame.minY + 8)
+        #expect(panel.contentView!.subviews[0].frame == panel.contentView!.bounds)
+        if fixedHeight || lines == 0 {
+            #expect(abs(panel.frame.height - initial.height) < 0.5)
+        } else {
+            #expect(panel.frame.height > initial.height)
+        }
+        #expect(!panel.isVisible)
+    }
+}
+
 @MainActor private final class PresentationFixtureSource: DataSource {
     let output: ScriptOutput
     var starts = 0

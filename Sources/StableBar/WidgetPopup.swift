@@ -55,21 +55,40 @@ final class WidgetPopup {
         let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let shadowInset = CGFloat(appearance.shadowRadius * 2 + 2)
         let width = min(CGFloat(popup.style.width ?? 360), screen.visibleFrame.width - shadowInset * 2 - 16)
-        let host = NSHostingView(rootView: PopupView(popup: popup, style: style, store: store, widget: widget)
-            .frame(width: width)
-            .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
-            .padding(shadowInset))
-        let height = min(popup.height.map { CGFloat($0) } ?? host.fittingSize.height - shadowInset * 2,
-                         popupTop - screen.visibleFrame.minY - shadowInset * 2 - 8 - popup.offset)
+        let maximumHeight = popupTop - screen.visibleFrame.minY - shadowInset * 2 - 8 - popup.offset
         let alignedX: CGFloat = switch popup.alignment {
         case .leading: frame.minX
         case .center: frame.midX - width / 2
         case .trailing: frame.maxX - width
         }
         let x = min(max(alignedX, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - width - 8)
-        let panel = PopupPanel(contentRect: NSRect(x: x - shadowInset, y: popupTop - height - popup.offset - shadowInset,
-                                                  width: width + shadowInset * 2, height: height + shadowInset * 2),
+        let panel = PopupPanel(contentRect: NSRect(x: x - shadowInset, y: popupTop - popup.offset + shadowInset,
+                                                  width: width + shadowInset * 2, height: 0),
                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: PopupView(popup: popup, style: style, store: store, widget: widget)
+            .frame(width: width)
+            .onPreferenceChange(PopupHeightPreference.self) { [weak self, weak panel] contentHeight in
+                guard popup.height == nil, let panel, panel === self?.panel else { return }
+                let height = (min(contentHeight, maximumHeight) + shadowInset * 2).rounded(.up)
+                guard abs(panel.frame.height - height) > 0.5 else { return }
+                let frame = NSRect(x: panel.frame.minX, y: panel.frame.maxY - height, width: panel.frame.width, height: height)
+                let reveal = panel.contentView!
+                reveal.subviews[0].frame = NSRect(x: 0, y: reveal.bounds.height - height, width: frame.width, height: height)
+                if let animation = popup.animation, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                    NSAnimationContext.runAnimationGroup { context in
+                        context.duration = animation.duration
+                        context.timingFunction = animation.timingFunction
+                        panel.animator().setFrame(frame, display: true)
+                    }
+                } else {
+                    panel.setFrame(frame, display: true)
+                }
+            }
+            .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
+            .padding(shadowInset))
+        let height = min(popup.height.map { CGFloat($0) } ?? host.fittingSize.height - shadowInset * 2, maximumHeight)
+        panel.setFrame(NSRect(x: x - shadowInset, y: popupTop - height - popup.offset - shadowInset,
+                              width: width + shadowInset * 2, height: height + shadowInset * 2), display: false)
         panel.title = "\(widget.id) popup"
         panel.isOpaque = false
         panel.backgroundColor = .clear

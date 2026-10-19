@@ -15,4 +15,5 @@
     <key>NSCalendarsFullAccessUsageDescription</key><string>Show your next meeting and today's agenda in calendar widgets.</string>
     <key>SUFeedURL</key><string>https://github.com/Seb-GRAF/StableBar/releases/download/appcast/appcast.xml</string>
     <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUScheduledCheckInterval</key><integer>3600</integer>
 </dict></plist>

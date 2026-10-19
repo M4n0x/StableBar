@@ -5,7 +5,6 @@ struct BarView: View {
     let display: BarDisplay
     var nativeDecorations = false
     @State private var measuredWidths: [String: CGFloat] = [:]
-    /// The units the last measurement had: only an active app that stayed in the bar animates a resize.
     @State private var measuredUnits: Set<String> = []
     @State private var overflowAnchor = NSView()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -62,6 +61,7 @@ struct BarView: View {
                                 .offset(x: x)
                         }
                     }
+                    .animation(reduceMotion ? nil : .easeOut(duration: config.bar.animationDuration), value: store.update?.version != nil)
                     .overlay {
                         HStack(spacing: 0) {
                             ForEach(units) { unit in

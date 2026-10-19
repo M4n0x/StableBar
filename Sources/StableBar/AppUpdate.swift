@@ -10,9 +10,13 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
         case available, downloading, extracting, ready, installing
     }
 
-    static let widgetID = "stablebar.update"
-    static let popup = PopupConfiguration(style: WidgetStyle(paddingHorizontal: 14, paddingVertical: 14, spacing: 10),
-                                          layout: PopupBlock(content: .appUpdate))
+    nonisolated static let widgetID = "stablebar.update"
+    static let popup: PopupConfiguration = {
+        var popup = PopupConfiguration(style: WidgetStyle(paddingHorizontal: 14, paddingVertical: 14, spacing: 10),
+                                       layout: PopupBlock(content: .appUpdate))
+        popup.animation = WidgetAnimation()
+        return popup
+    }()
 
     @ObservationIgnored private(set) var updater: SPUUpdater!
     /// The version on offer, nil when there is no update.
@@ -41,13 +45,15 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
     static func tile(_ stage: Stage) -> WidgetConfiguration {
         let (icon, text) = switch stage {
         case .available: ("arrow.down.circle.fill", "Update")
-        case .downloading, .extracting: ("arrow.down.circle", "Downloading…")
+        case .downloading: ("arrow.down.circle", "Downloading…")
+        case .extracting: ("arrow.down.circle", "Preparing…")
         case .ready: ("arrow.clockwise.circle.fill", "Relaunch to update")
         case .installing: ("arrow.clockwise.circle", "Installing…")
         }
         return try! ConfigurationValue.object([
             "id": .string(widgetID), "position": .string("right"), "type": .string("text"),
-            "text": .string(text), "icon": .string(icon), "overflow": .string("never")
+            "text": .string(text), "icon": .string(icon), "overflow": .string("never"),
+            "transition": .string("fade")
         ]).decoded(WidgetConfiguration.self)
     }
 
@@ -193,20 +199,33 @@ struct UpdateDetails: View {
                 }
                 .foregroundStyle(.secondary)
             }
-            if update.stage == .downloading || update.stage == .extracting {
-                ProgressView(value: update.progress)
+            Divider()
+            VStack(spacing: 8) {
+                if update.stage == .downloading || update.stage == .extracting {
+                    HStack {
+                        Text(update.action)
+                        Spacer()
+                        Text(update.progress, format: .percent.precision(.fractionLength(0)))
+                            .monospacedDigit()
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    ProgressView(value: update.progress)
+                        .tint(appearance.accent)
+                }
+                Button(action: update.proceed) {
+                    Text(update.action)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(appearance.accentText)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(appearance.accent, in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!update.canProceed)
             }
-            Button(action: update.proceed) {
-                Text(update.action)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(appearance.accentText)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-                    .background(appearance.accent, in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!update.canProceed)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
