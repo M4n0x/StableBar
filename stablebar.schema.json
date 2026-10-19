@@ -1486,6 +1486,10 @@
           "$ref": "#/definitions/boolean",
           "description": "Move ordinary windows below the bar using Accessibility access. Disabled by default."
         },
+        "keepNotificationsClear": {
+          "$ref": "#/definitions/boolean",
+          "description": "Move notification banners below the bar using Accessibility access on macOS 26. Disabled by default."
+        },
         "glass": {
           "$ref": "#/definitions/glass"
         },

@@ -402,6 +402,7 @@ struct BarSettings: Decodable, Sendable {
     var offset = 0.0
     var margin = 0.0
     var keepWindowsClear = false
+    var keepNotificationsClear = false
     var inset = 12.0
     var spacing = 8.0
     var background = HexColor(0x00000000)
@@ -413,7 +414,7 @@ struct BarSettings: Decodable, Sendable {
     var glass = GlassSettings()
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case height, displayScale, offset, margin, keepWindowsClear, inset, spacing, background, animationDuration, notchWidth, notchSpacing, style, appearance, glass
+        case height, displayScale, offset, margin, keepWindowsClear, keepNotificationsClear, inset, spacing, background, animationDuration, notchWidth, notchSpacing, style, appearance, glass
     }
 
     init() {}
@@ -429,6 +430,7 @@ struct BarSettings: Decodable, Sendable {
         offset = try values.decodeIfPresent(Double.self, forKey: .offset) ?? offset
         margin = try values.decodeIfPresent(Double.self, forKey: .margin) ?? margin
         keepWindowsClear = try values.decodeIfPresent(Bool.self, forKey: .keepWindowsClear) ?? keepWindowsClear
+        keepNotificationsClear = try values.decodeIfPresent(Bool.self, forKey: .keepNotificationsClear) ?? keepNotificationsClear
         inset = try values.decodeIfPresent(Double.self, forKey: .inset) ?? inset
         spacing = try values.decodeIfPresent(Double.self, forKey: .spacing) ?? spacing
         background = try values.decodeIfPresent(HexColor.self, forKey: .background) ?? background

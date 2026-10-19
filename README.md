@@ -76,6 +76,8 @@ Native fullscreen windows, minimized windows and dialogs are left alone. Some ap
 
 Leave this option off when another window manager controls your gaps. With AeroSpace, set `gaps.outer.top` in `~/.aerospace.toml` to the bar's panel height (40 by default), plus any `bar.offset` beyond the menu bar; AeroSpace accepts per-monitor values. yabai users can set `external_bar` with the same clearance. A below-bar underline adds its maximum configured gap plus thickness beyond the existing bottom margin. For example, a 38 pt bar with no margin, a 2 pt underline and a 3 pt gap needs 43 pt. With display scale `s`, round upward to whole screen points: `max(ceil(height × s), ceil(height × s − margin + maximum gap × s) + ceil(maximum thickness × s))`. StableBar reserves this maximum across states, so focus or mode changes never move windows or resize panels.
 
+On macOS 26, enable **Customize → Appearance → Windows → Keep notifications clear of StableBar** (`bar.keepNotificationsClear`, off by default) to move notification banners 16 points below the bar on the display that shows them. It uses the same Accessibility access and can stay on with AeroSpace or yabai. The Notification Center panel and desktop widgets stay where macOS puts them. This depends on Notification Center's Accessibility structure and does not support macOS 14 or 15.
+
 ## Layout and style
 
 Save the configuration to apply changes. Direct saves and atomic file replacements are watched, including files imported with `includes`. Invalid edits retain the last working configuration and show an error indicator; click it to open Customize StableBar, which shows the error. Script instances, their last output, and graph history survive style-only changes, including when a script has an error.
