@@ -10,6 +10,13 @@ private var presentationRepository: URL {
     URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 }
 
+@MainActor private func waitForPopup(_ condition: () -> Bool) async throws {
+    for _ in 0..<100 {
+        if condition() { return }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+}
+
 @Test(arguments: [false, true]) @MainActor func hoverTooltipsFitTheirTextAndDoNotCaptureClicks(long: Bool) async throws {
     let configuration = try JSONDecoder().decode(Configuration.self, from: Data(##"""
     {"defaults":{"foreground":"#f4f4f5","background":"#25252c","borderWidth":0,"cornerRadius":9,"fontSize":12},
@@ -38,7 +45,7 @@ private var presentationRepository: URL {
     }
     hover(true)
     #expect(presentations.isEmpty)
-    try await Task.sleep(for: .milliseconds(500))
+    try await waitForPopup { !presentations.isEmpty }
     let tooltip = try #require(presentations.first)
     try capturePopup(tooltip.panel, name: "hover-tooltip-after-\(long)")
     #expect(tooltip.onHover)
@@ -57,9 +64,9 @@ private var presentationRepository: URL {
     #expect(popup.isOpen)
     popup.close()
     hover(true)
-    try await Task.sleep(for: .milliseconds(500))
+    try await waitForPopup { popup.isOpen }
     hover(false)
-    try await Task.sleep(for: .milliseconds(250))
+    try await waitForPopup { !popup.isOpen }
     #expect(!popup.isOpen)
     #expect(presentations.allSatisfy { !$0.panel.isVisible })
 }
@@ -100,7 +107,7 @@ private var presentationRepository: URL {
     #expect(presentations.isEmpty)
 
     hover(true)
-    try await Task.sleep(for: .milliseconds(500))
+    try await waitForPopup { popup.isOpen }
     #expect(popup.isOpen)
     #expect(presentations.count == 1)
     #expect(presentations.first?.onHover == true)
@@ -116,16 +123,16 @@ private var presentationRepository: URL {
     #expect(popup.isOpen)
     #expect(presentations.count == 1)
     hover(false)
-    try await Task.sleep(for: .milliseconds(250))
+    try await waitForPopup { !popup.isOpen }
     #expect(!popup.isOpen)
     #expect(store.presentations["first"]?.popupAnchor == nil)
 
     hover(true)
-    try await Task.sleep(for: .milliseconds(500))
+    try await waitForPopup { popup.isOpen }
     hover(false)
     hover(true, 1)
     popup.hoverPopup(false)
-    try await Task.sleep(for: .milliseconds(500))
+    try await waitForPopup { store.presentations["second"]?.popupAnchor != nil }
     #expect(popup.isOpen)
     #expect(store.presentations["first"]?.popupAnchor == nil)
     #expect(store.presentations["second"]?.popupAnchor == ObjectIdentifier(anchors[1]))
