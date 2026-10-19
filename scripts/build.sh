@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -eu
 cd "${0:A:h:h}"
-swift build -c release
+swift build -c release --disable-keychain
 app="${1:-dist/StableBar.app}"
 sparkle="$app/Contents/Frameworks/Sparkle.framework"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
