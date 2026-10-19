@@ -258,7 +258,8 @@ func widgetActionsRunInOrderAndStoppingCancelsQueuedWork(stop: Bool) async throw
     let configuration: [String: Any] = [
         "environment": ["LOG": log.path, "STARTED": started.path, "RELEASE": release.path],
         "widgets": [
-            ["id": "volume", "type": "text", "position": "right", "text": "Volume", "timeout": 4],
+            // The first action runs until the test releases it, which other tests can delay for seconds.
+            ["id": "volume", "type": "text", "position": "right", "text": "Volume", "timeout": 60],
             ["id": "other", "type": "text", "position": "left", "text": "Other", "timeout": 4]
         ]
     ]
