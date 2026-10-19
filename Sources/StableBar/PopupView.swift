@@ -45,6 +45,11 @@ struct PopupView: View {
             }
             .padding(.horizontal, appearance.paddingHorizontal)
             .padding(.vertical, appearance.paddingVertical)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: PopupHeightPreference.self, value: proxy.size.height)
+                }
+            }
         }
         .clipShape(RoundedRectangle(cornerRadius: appearance.cornerRadius))
         .modifier(GlassBackground(color: presentationStyle.background, glass: store.configuration?.bar.glass ?? GlassSettings(), surface: \.popups,
@@ -54,6 +59,13 @@ struct PopupView: View {
                 .strokeBorder(appearance.borderColor, lineWidth: appearance.borderWidth)
         }
         .accessibilityIdentifier("\(widget.id)-popup")
+    }
+}
+
+struct PopupHeightPreference: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

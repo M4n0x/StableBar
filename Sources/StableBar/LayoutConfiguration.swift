@@ -46,14 +46,12 @@ struct BarUnit: Identifiable {
         return units
     }
 
-    /// Whether the bar animates taking new `widths`: only when an active app that was in the last
-    /// measurement (`measured`) changed width from `previous`. A unit that returns appears at its new
-    /// width, though `previous` keeps its old one for planning.
     static func animatesResize(_ units: [BarUnit], measured: Set<String>, from previous: [String: CGFloat],
                                to widths: [String: CGFloat], reduceMotion: Bool) -> Bool {
         !reduceMotion && units.contains { unit in
-            unit.widgets.contains { $0.content == .activeApp }
-                && measured.contains(unit.id) && previous[unit.id] != widths[unit.id]
+            previous[unit.id] != widths[unit.id] && unit.widgets.contains {
+                $0.id == AppUpdate.widgetID || ($0.content == .activeApp && measured.contains(unit.id))
+            }
         }
     }
 }

@@ -209,7 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil {
             let update = AppUpdate()
             do {
-                try update.updater.start()
+                try update.start()
                 store.update = update
             } catch {
                 FileHandle.standardError.write(Data("\(errorMessage(error))\n".utf8))
@@ -383,6 +383,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        store.update?.stop()
         editingKeyboard.stop()
         editingControls.close()
         themeTrial.cancel()
