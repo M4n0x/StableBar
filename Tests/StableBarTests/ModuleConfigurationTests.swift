@@ -30,7 +30,7 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     try writeConfiguration(##"""
     {"includes":["modules/system.json","../shared/clock.json"],
      "bar":{"height":44,"style":{"fontSize":15}},"defaults":{"foreground":"#abcdef"},
-     "environment":{"SHARED":"root"},"popups":{"details":{"style":{"foreground":"#abcdef"}}},
+     "environment":{"SHARED":"root"},"popups":{"details":{"openOnHover":true,"style":{"foreground":"#abcdef"}}},
      "widgets":[{"id":"local","type":"text","position":"right","text":"Local"}]}
     """##, to: root)
     var loader = ConfigurationLoader()
@@ -44,6 +44,7 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     #expect(configuration.defaults.foreground == HexColor(0xabcdefff))
     #expect(configuration.environment == ["SHARED": "root", "THEME": "dark"])
     #expect(configuration.popups["details"]?.height == 180)
+    #expect(configuration.popups["details"]?.openOnHover == true)
     #expect(configuration.popups["details"]?.style.fontSize == 12)
     #expect(configuration.popups["details"]?.style.foreground == HexColor(0xabcdefff))
     #expect(loader.dependencies == [root, module, theme, shared])
@@ -180,7 +181,8 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     defer { try? FileManager.default.removeItem(at: directory) }
     let root = directory.appending(path: "config.json")
     try writeConfiguration(##"""
-    {"templates":{"metric":{"type":"script","position":"right","interval":15,"enabled":false,
+    {"templates":{"metric":{"type":"script","position":"right","interval":15,"enabled":false,"tooltip":"CPU usage",
+       "popup":{"openOnHover":false,"style":{},"layout":{"type":"text","text":"Details"}},
        "style":{"fontSize":12,"foreground":"#eeeeee"},"events":["workspace","wake"]}},
      "widgets":[{"id":"cpu","template":"metric","command":"echo 10%"},
                 {"id":"clock","type":"clock","position":"right","format":"HH:mm"}],
@@ -188,7 +190,8 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     """##, to: directory.appending(path: "module.json"))
     try writeConfiguration(##"""
     {"includes":["module.json"],"widgetOverrides":{
-      "cpu":{"enabled":true,"interval":null,"events":["refresh"],"style":{"fontSize":16}},
+      "cpu":{"enabled":true,"interval":null,"events":["refresh"],"style":{"fontSize":16},
+             "tooltip":"System load","popup":{"openOnHover":true}},
       "clock":{"enabled":false,"format":"h:mm a"}}}
     """##, to: root)
     var loader = ConfigurationLoader()
@@ -201,6 +204,12 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     #expect(cpu.style.fontSize == 16)
     #expect(cpu.style.foreground == HexColor(0xeeeeeeff))
     #expect(cpu.style.background == HexColor(0x111111ff))
+    #expect(cpu.tooltip == "System load")
+    #expect(cpu.popup?.openOnHover == true)
+    guard case .text("Details") = cpu.popup?.layout.content else {
+        Issue.record("The popup layout from the template was not preserved.")
+        return
+    }
     #expect(!configuration.widgets[1].enabled)
     #expect(configuration.widgets[1].content == .clock(format: "h:mm a"))
 }

@@ -24,7 +24,7 @@ final class PopupRevealView: NSView {
 
 @MainActor
 final class WidgetPopup {
-    private let present: (PopupPanel) -> Void
+    private let present: (PopupPanel, Bool) -> Void
     private var panel: PopupPanel?
     private var widgetID: String?
     private weak var store: BarStore?
@@ -32,8 +32,14 @@ final class WidgetPopup {
     private var localMonitor: Any?
     private var globalMonitor: Any?
     private var animation: WidgetAnimation?
+    private var hoverTask: Task<Void, Never>?
+    private weak var hoveredAnchor: NSView?
+    private var pointerInPopup = false
+    private var pinned = false
 
-    init(present: @escaping (PopupPanel) -> Void = { $0.makeKeyAndOrderFront(nil) }) {
+    init(present: @escaping (PopupPanel, Bool) -> Void = { panel, onHover in
+        if onHover { panel.orderFront(nil) } else { panel.makeKeyAndOrderFront(nil) }
+    }) {
         self.present = present
     }
 
@@ -43,10 +49,101 @@ final class WidgetPopup {
                 store: BarStore, anchor: NSView) {
         guard store.barEditing.allowsWidgetActions else { return }
         if self.anchor === anchor && widgetID == widget.id {
-            close()
+            if pinned { close() } else { keepOpen() }
             return
         }
+        open(popup, widget: widget, defaults: defaults, store: store, anchor: anchor, onHover: false)
+    }
+
+    func hover(_ inside: Bool, store: BarStore, anchor: NSView, show: @escaping () -> Void) {
+        guard !pinned else { return }
+        if inside {
+            hoverTask?.cancel()
+            hoveredAnchor = anchor
+            guard self.anchor !== anchor else { return }
+            hoverTask = Task {
+                do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+                guard store.barEditing.allowsWidgetActions else { return }
+                show()
+            }
+        } else if hoveredAnchor === anchor {
+            hoveredAnchor = nil
+            hoverTask?.cancel()
+            closeAfterHover()
+        }
+    }
+
+    func hoverPopup(_ inside: Bool) {
+        pointerInPopup = inside
+        if inside { hoverTask?.cancel() } else { closeAfterHover() }
+    }
+
+    private func closeAfterHover() {
+        guard !pinned, panel != nil, hoveredAnchor == nil, !pointerInPopup else { return }
+        hoverTask?.cancel()
+        hoverTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+            self?.close()
+        }
+    }
+
+    private func keepOpen() {
+        pinned = true
+        hoverTask?.cancel()
+        panel?.makeKey()
+    }
+
+    func showTooltip(_ text: String, widget: WidgetConfiguration, defaults: WidgetStyle,
+                     store: BarStore, anchor: NSView) {
         close()
+        let window = anchor.window!
+        let screen = window.screen!
+        let frame = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
+        let top = popupAttachmentTop(anchor: frame, window: window.frame, geometry: (window as? BarPanel)?.barGeometry)
+        let style = resolveStyle([defaults, widget.style], states: StyleStates(mode: store.modePresentation))
+        let appearance = WidgetAppearance(style, defaults: WidgetStyle())
+        let shadowInset = CGFloat(appearance.shadowRadius * 2 + 2)
+        let host = NSHostingView(rootView: Text(text)
+            .font(appearance.font)
+            .foregroundStyle(appearance.foreground)
+            .padding(.horizontal, appearance.paddingHorizontal)
+            .padding(.vertical, appearance.paddingVertical)
+            .frame(maxWidth: 320 - shadowInset * 2, alignment: .leading)
+            .fixedSize()
+            .modifier(GlassBackground(color: style.background, glass: store.configuration?.bar.glass ?? GlassSettings(), surface: \.popups,
+                                      shape: RoundedRectangle(cornerRadius: appearance.cornerRadius)))
+            .overlay {
+                RoundedRectangle(cornerRadius: appearance.cornerRadius)
+                    .strokeBorder(appearance.borderColor, lineWidth: appearance.borderWidth)
+            }
+            .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
+            .padding(shadowInset))
+        let size = host.fittingSize
+        let x = min(max(frame.midX - size.width / 2, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - size.width - 8)
+        let panel = PopupPanel(contentRect: NSRect(x: x, y: top - size.height - 6 + shadowInset, width: size.width, height: size.height),
+                               styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.title = "Widget tooltip"
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.ignoresMouseEvents = true
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
+        panel.appearance = window.appearance
+        panel.contentView = host
+        self.panel = panel
+        self.anchor = anchor
+        hoveredAnchor = anchor
+        present(panel, true)
+    }
+
+    func open(_ popup: PopupConfiguration, widget: WidgetConfiguration, defaults: WidgetStyle,
+              store: BarStore, anchor: NSView, onHover: Bool) {
+        close()
+        pinned = !onHover
+        hoveredAnchor = onHover ? anchor : nil
         let window = anchor.window!
         let screen = window.screen!
         let frame = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
@@ -85,7 +182,10 @@ final class WidgetPopup {
                 }
             }
             .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
-            .padding(shadowInset))
+            .padding(shadowInset)
+            .onHover { [weak self, weak panel] inside in
+                if panel === self?.panel { self?.hoverPopup(inside) }
+            })
         let height = min(popup.height.map { CGFloat($0) } ?? host.fittingSize.height - shadowInset * 2, maximumHeight)
         panel.setFrame(NSRect(x: x - shadowInset, y: popupTop - height - popup.offset - shadowInset,
                               width: width + shadowInset * 2, height: height + shadowInset * 2), display: false)
@@ -114,7 +214,9 @@ final class WidgetPopup {
                         self.close()
                         return true
                     }
-                } else if event.window !== self.panel {
+                } else if event.window === self.panel {
+                    self.keepOpen()
+                } else {
                     let onAnchor = event.window === anchor.window && anchor.bounds.contains(anchor.convert(event.locationInWindow, from: nil))
                     if !onAnchor { self.close() }
                 }
@@ -132,7 +234,7 @@ final class WidgetPopup {
                 panel.setFrame(NSRect(x: fullFrame.minX, y: fullFrame.maxY - 1, width: fullFrame.width, height: 1), display: false)
             }
         }
-        present(panel)
+        present(panel, onHover)
         if let animation = popup.animation {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = animation.duration
@@ -144,6 +246,11 @@ final class WidgetPopup {
     }
 
     func close() {
+        hoverTask?.cancel()
+        hoverTask = nil
+        hoveredAnchor = nil
+        pointerInPopup = false
+        pinned = false
         store?.setPopupVisibleWidget(nil)
         store = nil
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
@@ -172,7 +279,7 @@ final class WidgetPopup {
     }
 
     func removeAnchor(_ view: NSView) {
-        if anchor === view { close() }
+        if anchor === view || hoveredAnchor === view { close() }
     }
 }
 

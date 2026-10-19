@@ -289,6 +289,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let position: WidgetPosition
     let content: WidgetContent
     let icon: String?
+    let tooltip: String?
     let onClick: String?
     let open: String?
     let menu: [WidgetMenuItem]?
@@ -312,7 +313,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let transition: WidgetTransition?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case id, role, position, type, icon, onClick, open, menu, popup, popupName, style, format, text, command, interval
+        case id, role, position, type, icon, tooltip, onClick, open, menu, popup, popupName, style, format, text, command, interval
         case display, layout, overlay, animation, workspace, events, environment, timeout, actions, enabled, provider, group, priority, overflow, rules, transition
     }
 
@@ -323,6 +324,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
         role = try values.decodeIfPresent(PresentationRole.self, forKey: .role)
         position = try values.decode(WidgetPosition.self, forKey: .position)
         icon = try values.decodeIfPresent(String.self, forKey: .icon)
+        tooltip = try values.decodeIfPresent(String.self, forKey: .tooltip)
         onClick = try values.decodeIfPresent(String.self, forKey: .onClick)
         open = try values.decodeIfPresent(String.self, forKey: .open)
         if let open, OpenTarget(open) == nil {
