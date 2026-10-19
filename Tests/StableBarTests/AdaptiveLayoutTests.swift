@@ -56,6 +56,34 @@ import Testing
     #expect(frameBelowBar(window, displays: []) == nil)
 }
 
+@Test func notificationClearanceMovesBannerWindowsBelowTheBarOnce() {
+    let display = WindowClearanceDisplay(frame: CGRect(x: 0, y: 0, width: 1800, height: 1169),
+        visibleFrame: CGRect(x: 0, y: 0, width: 1800, height: 1131),
+        barFrame: CGRect(x: 0, y: 1129, width: 1800, height: 40), desktopTop: 1169)
+    let window = CGRect(x: 0, y: 0, width: 1800, height: 1169)
+    #expect(originBelowBar(window, bannerTop: 16, displays: [display]) == CGPoint(x: 0, y: 40))
+    #expect(originBelowBar(window.offsetBy(dx: 0, dy: 40), bannerTop: 56, displays: [display]) == nil)
+    #expect(originBelowBar(window.offsetBy(dx: 0, dy: 40), bannerTop: 52, displays: [display]) == nil)
+    #expect(originBelowBar(window, bannerTop: 56, displays: [display]) == nil)
+    let belowMenuBar = WindowClearanceDisplay(frame: CGRect(x: 0, y: 0, width: 1800, height: 1169),
+        visibleFrame: CGRect(x: 0, y: 0, width: 1800, height: 1131),
+        barFrame: CGRect(x: 0, y: 1091, width: 1800, height: 40), desktopTop: 1169)
+    #expect(originBelowBar(window, bannerTop: 54, displays: [belowMenuBar]) == CGPoint(x: 0, y: 40))
+}
+
+@Test func notificationClearanceUsesTheBarOfTheBannersDisplay() {
+    let main = WindowClearanceDisplay(frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+        visibleFrame: CGRect(x: 0, y: 60, width: 1440, height: 802),
+        barFrame: CGRect(x: 0, y: 822, width: 1440, height: 40), desktopTop: 900)
+    let left = WindowClearanceDisplay(frame: CGRect(x: -1920, y: -180, width: 1920, height: 1080),
+        visibleFrame: CGRect(x: -1870, y: -180, width: 1870, height: 1052),
+        barFrame: CGRect(x: -1920, y: 840, width: 1920, height: 60), desktopTop: 900)
+    #expect(originBelowBar(CGRect(x: -1920, y: 0, width: 1920, height: 1080), bannerTop: 16, displays: [main, left])
+            == CGPoint(x: -1920, y: 60))
+    #expect(originBelowBar(CGRect(x: 0, y: 0, width: 1440, height: 900), bannerTop: 16, displays: [main, left])
+            == CGPoint(x: 0, y: 78))
+}
+
 @Test func adaptiveLayoutKeepsHighPriorityWidgetsAndReservesOverflowSpace() {
     let planner = AdaptiveBarPlanner(inset: 10, spacing: 8, notchSpacing: 16, notch: nil)
     let plan = planner.plan(width: 300, items: [

@@ -308,7 +308,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         editingControls.update(store: store, bars: panels, visibleFrames: visibleFrames)
-        store.windowClearance.update(enabled: store.clearanceConfiguration?.bar.keepWindowsClear == true, displays: clearanceDisplays)
+        store.windowClearance.update(windows: store.clearanceConfiguration?.bar.keepWindowsClear == true,
+                                     notifications: store.clearanceConfiguration?.bar.keepNotificationsClear == true,
+                                     displays: clearanceDisplays)
         if store.barEditing.isActive {
             if editingKeyboard.start(store: store) {
                 let screen = screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main

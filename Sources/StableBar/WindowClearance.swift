@@ -24,24 +24,43 @@ struct WindowClearanceDisplay: Equatable {
     }
 }
 
-func frameBelowBar(_ frame: CGRect, displays: [WindowClearanceDisplay]) -> CGRect? {
+private let notificationCenterIdentifier = "com.apple.notificationcenterui"
+
+private func barDisplay(for frame: CGRect, in displays: [WindowClearanceDisplay]) -> WindowClearanceDisplay? {
     let overlaps = displays.map { display in
         let intersection = frame.intersection(display.frame)
         return (display, intersection.isNull ? 0 : intersection.width * intersection.height)
     }
     guard let (display, area) = overlaps.max(by: { $0.1 < $1.1 }), area > 0,
           display.barFrame.intersects(display.frame) else { return nil }
+    return display
+}
+
+func frameBelowBar(_ frame: CGRect, displays: [WindowClearanceDisplay]) -> CGRect? {
+    guard let display = barDisplay(for: frame, in: displays) else { return nil }
     let top = max(display.visibleFrame.minY, display.barFrame.maxY)
     let height = min(frame.height, display.visibleFrame.maxY - top)
     guard frame.minY < top, height > 0 else { return nil }
     return CGRect(x: frame.minX, y: top, width: frame.width, height: height)
 }
 
+func originBelowBar(_ window: CGRect, bannerTop: CGFloat, displays: [WindowClearanceDisplay]) -> CGPoint? {
+    guard let display = barDisplay(for: window, in: displays), window.origin == display.frame.origin else { return nil }
+    let bannerMargin = 16.0
+    let offset = display.barFrame.maxY + bannerMargin - bannerTop
+    guard offset > 0 else { return nil }
+    return CGPoint(x: window.minX, y: window.minY + offset)
+}
+
 @MainActor @Observable
 final class WindowClearance: NSObject {
     private(set) var isTrusted = AXIsProcessTrusted()
     private var displays: [WindowClearanceDisplay] = []
+    private var keepsWindowsClear = false
+    private var keepsNotificationsClear = false
     private var applications: [pid_t: WatchedApplication] = [:]
+    private var notificationCenter: (pid: pid_t, element: AXUIElement, observer: AXObserver)?
+    private var runningApplications: NSKeyValueObservation?
     private var permissionTimer: Timer?
     private var pending: Set<pid_t> = []
     private var task: Task<Void, Never>?
@@ -53,12 +72,14 @@ final class WindowClearance: NSObject {
         var adjustedFrames: [AXUIElement: CGRect] = [:]
     }
 
-    func update(enabled: Bool, displays: [WindowClearanceDisplay]) {
+    func update(windows: Bool, notifications: Bool, displays: [WindowClearanceDisplay]) {
         if self.displays != displays {
             self.displays = displays
             for pid in applications.keys { applications[pid]!.adjustedFrames.removeAll() }
         }
-        guard enabled else { stop(); return }
+        keepsWindowsClear = windows
+        keepsNotificationsClear = notifications
+        guard windows || notifications else { stop(); return }
         if permissionTimer == nil {
             let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refreshPermission() }
@@ -70,6 +91,12 @@ final class WindowClearance: NSObject {
                          NSWorkspace.didActivateApplicationNotification, NSWorkspace.didUnhideApplicationNotification,
                          NSWorkspace.activeSpaceDidChangeNotification] {
                 center.addObserver(self, selector: #selector(applicationsChanged), name: name, object: nil)
+            }
+            runningApplications = NSWorkspace.shared.observe(\.runningApplications, options: [.old, .new]) { [weak self] _, change in
+                guard ((change.oldValue ?? []) + (change.newValue ?? [])).contains(where: {
+                    $0.bundleIdentifier == notificationCenterIdentifier
+                }) else { return }
+                MainActor.assumeIsolated { self?.applicationsChanged() }
             }
         }
         refreshPermission()
@@ -93,7 +120,7 @@ final class WindowClearance: NSObject {
     @objc private func applicationsChanged() {
         guard permissionTimer != nil, isTrusted else { return }
         let running = NSWorkspace.shared.runningApplications.filter {
-            $0.activationPolicy == .regular && $0.processIdentifier != ProcessInfo.processInfo.processIdentifier
+            keepsWindowsClear && $0.activationPolicy == .regular && $0.processIdentifier != ProcessInfo.processInfo.processIdentifier
         }
         for (pid, application) in applications where !running.contains(where: { $0.processIdentifier == pid }) {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(application.observer), .commonModes)
@@ -122,6 +149,51 @@ final class WindowClearance: NSObject {
             }
             if !app.isHidden { schedule(pid) }
         }
+        watchNotificationCenter()
+    }
+
+    private func watchNotificationCenter() {
+        let pid = keepsNotificationsClear
+            ? NSRunningApplication.runningApplications(withBundleIdentifier: notificationCenterIdentifier).first?.processIdentifier : nil
+        guard pid != notificationCenter?.pid else { return }
+        if let notificationCenter {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(notificationCenter.observer), .commonModes)
+        }
+        notificationCenter = nil
+        var observer: AXObserver?
+        guard let pid, AXObserverCreate(pid, { _, _, _, context in
+            MainActor.assumeIsolated { Unmanaged<WindowClearance>.fromOpaque(context!).takeUnretainedValue().moveBanners() }
+        }, &observer) == .success, let observer else { return }
+        let element = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(element, 0.1)
+        notificationCenter = (pid, element, observer)
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
+        for name in [kAXWindowCreatedNotification, kAXWindowMovedNotification, kAXLayoutChangedNotification] {
+            AXObserverAddNotification(observer, element, name as CFString, Unmanaged.passUnretained(self).toOpaque())
+        }
+        moveBanners()
+    }
+
+    private func moveBanners() {
+        guard let notificationCenter,
+              let windows = attribute(kAXWindowsAttribute, of: notificationCenter.element) as? [AXUIElement] else { return }
+        for window in windows {
+            guard let banner = banner(in: window), let frame = windowFrame(window), let top = windowFrame(banner)?.minY,
+                  var origin = originBelowBar(frame, bannerTop: top, displays: displays) else { continue }
+            AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &origin)!)
+        }
+    }
+
+    private func banner(in window: AXUIElement) -> AXUIElement? {
+        var elements = [window]
+        while !elements.isEmpty {
+            let element = elements.removeFirst()
+            AXUIElementSetMessagingTimeout(element, 0.1)
+            if attribute(kAXIdentifierAttribute, of: element) as? String == "AXNotificationListItems" { return nil }
+            if (attribute(kAXSubroleAttribute, of: element) as? String)?.hasPrefix("AXNotificationCenter") == true { return element }
+            elements += attribute(kAXChildrenAttribute, of: element) as? [AXUIElement] ?? []
+        }
+        return nil
     }
 
     private func schedule(_ pid: pid_t) {
@@ -211,11 +283,16 @@ final class WindowClearance: NSObject {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(application.observer), .commonModes)
         }
         applications.removeAll()
+        if let notificationCenter {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(notificationCenter.observer), .commonModes)
+        }
+        notificationCenter = nil
     }
 
     func stop() {
         permissionTimer?.invalidate()
         permissionTimer = nil
+        runningApplications = nil
         removeObservers()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }

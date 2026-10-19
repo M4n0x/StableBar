@@ -198,19 +198,11 @@ struct AppearanceView: View {
                 bar.number("Spacing", "spacing", default: 8)
             }
             Section {
-                let origin = store.origins["bar.keepWindowsClear"]
-                OverrideRow(title: "Keep windows clear of StableBar", source: origin.map { "From \(store.sourceText($0))" },
-                            reset: origin.map(store.setsInMainFile) == true ? { unset(["bar": .object(["keepWindowsClear": .null])]) } : nil) {
-                    Toggle("Keep windows clear of StableBar", isOn: Binding(
-                        get: { store.configuration?.bar.keepWindowsClear == true },
-                        set: { enabled in
-                            editor.change(ConfigurationEdit(action: .bar, properties: ["keepWindowsClear": .bool(enabled)]))
-                            if enabled && !store.windowClearance.isTrusted { store.windowClearance.requestAccess() }
-                        }))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                }
-                if store.configuration?.bar.keepWindowsClear == true {
+                clearanceToggle("Keep windows clear of StableBar", "keepWindowsClear",
+                                isOn: store.configuration?.bar.keepWindowsClear == true)
+                clearanceToggle("Keep notifications clear of StableBar", "keepNotificationsClear",
+                                isOn: store.configuration?.bar.keepNotificationsClear == true)
+                if store.configuration?.bar.keepWindowsClear == true || store.configuration?.bar.keepNotificationsClear == true {
                     LabeledContent("Accessibility", value: store.windowClearance.isTrusted ? "Access granted" : "Access required")
                     if !store.windowClearance.isTrusted {
                         Button("Allow Accessibility Access…") { store.windowClearance.requestAccess() }
@@ -219,7 +211,7 @@ struct AppearanceView: View {
             } header: {
                 Text("Windows")
             } footer: {
-                Text("Moves ordinary windows below the bar and reduces their height when needed. Fullscreen windows are unchanged. Leave this off if AeroSpace or yabai already manages your window gaps.")
+                Text("Moves ordinary windows below the bar and reduces their height when needed. Fullscreen windows are unchanged. Leave the windows option off if AeroSpace or yabai already manages your window gaps. Notification clearance requires macOS 26 and works with either window manager.")
                     .font(.callout).foregroundStyle(.secondary)
             }
         }
@@ -244,5 +236,18 @@ struct AppearanceView: View {
 
     private func unset(_ properties: [String: ConfigurationValue]) {
         editor.change(ConfigurationEdit(action: .unset, properties: properties))
+    }
+
+    private func clearanceToggle(_ title: String, _ key: String, isOn: Bool) -> some View {
+        let origin = store.origins["bar.\(key)"]
+        return OverrideRow(title: title, source: origin.map { "From \(store.sourceText($0))" },
+                           reset: origin.map(store.setsInMainFile) == true ? { unset(["bar": .object([key: .null])]) } : nil) {
+            Toggle(title, isOn: Binding(get: { isOn }, set: { enabled in
+                editor.change(ConfigurationEdit(action: .bar, properties: [key: .bool(enabled)]))
+                if enabled && !store.windowClearance.isTrusted { store.windowClearance.requestAccess() }
+            }))
+            .labelsHidden()
+            .toggleStyle(.switch)
+        }
     }
 }
