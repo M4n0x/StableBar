@@ -35,7 +35,7 @@ The first launch creates `~/.config/stablebar/config.json` from [Resources/confi
 
 ### Download a release
 
-Stable releases after v0.4.0 on the [releases page](https://github.com/Seb-GRAF/StableBar/releases) include `StableBar.dmg`. Betas of the next version are marked **Pre-release**. Both are built for Apple silicon and are not notarized yet, so macOS blocks the app the first time you open it: allow it in **System Settings → Privacy & Security → Open Anyway**.
+Stable releases after v0.4.0 on the [releases page](https://github.com/Seb-GRAF/StableBar/releases) include `StableBar.dmg`. Betas of the next version are marked **Pre-release**. Both are built for Apple silicon. Releases signed with a Developer ID are notarized and open like any app. Earlier ones are ad-hoc signed, so macOS blocks them the first time you open them: allow it in **System Settings → Privacy & Security → Open Anyway**.
 
 ### Updates
 
