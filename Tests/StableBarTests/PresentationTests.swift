@@ -366,11 +366,7 @@ private func output(_ json: String) throws -> ScriptOutput {
     #expect(first.temporaryFields == ["text": "62"])
     try a.accept(output(#"{"text":"","icon":"speaker.wave.2"}"#))
     #expect(first.temporaryFields == ["text": "62"])
-    let deadline = ContinuousClock.now + .seconds(10)
-    while first.temporaryFields != nil, ContinuousClock.now < deadline {
-        try await Task.sleep(for: .milliseconds(20))
-    }
-    #expect(first.temporaryFields == nil)
+    _ = try await expiry(of: first)
     try await confirmation("Nothing runs after it expires", expectedCount: 0) { changed in
         withObservationTracking { _ = first.temporaryFields; _ = first.style; _ = first.hidden } onChange: { changed() }
         try await Task.sleep(for: .milliseconds(300))
@@ -392,10 +388,12 @@ private func output(_ json: String) throws -> ScriptOutput {
     }
 }
 
-/// Waits until `presentation` shows no temporary fields, and returns when it saw them go.
+/// Waits until `presentation` shows no temporary fields, and returns when it saw them go. It counts
+/// polls instead of watching a deadline: while other tests hold the main actor, the expiry waits in
+/// line behind a poll, and a deadline can pass before it runs.
 @MainActor private func expiry(of presentation: WidgetPresentation) async throws -> ContinuousClock.Instant {
-    let deadline = ContinuousClock.now + .seconds(20)
-    while presentation.temporaryFields != nil, ContinuousClock.now < deadline {
+    for _ in 0..<1000 {
+        if presentation.temporaryFields == nil { break }
         try await Task.sleep(for: .milliseconds(20))
     }
     try #require(presentation.temporaryFields == nil)

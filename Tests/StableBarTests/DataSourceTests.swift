@@ -557,7 +557,9 @@ private extension DataSourceRegistry {
     let sources = FakeSources()
     let script = ScriptWidget()
     defer { script.stop() }
-    script.steadyRun = .milliseconds(300)
+    // Other tests can hold the main actor for seconds before a failure is handled, so the runs that
+    // fail at once must not become steady while they wait. Only the run that stays open gets a short time.
+    script.steadyRun = .seconds(60)
     script.start(schedule: SourceSchedule(interval: 0.05, continuous: true)) { sources.make() }
     for run in 0..<2 {
         try await awaitCondition { sources.made.count == run + 1 && sources.made[run].emit != nil }
@@ -566,6 +568,7 @@ private extension DataSourceRegistry {
         #expect(script.diagnostics.nextDelay == Double(run + 1))
         script.refresh(ScriptEvent(sender: "manual"))
     }
+    script.steadyRun = .milliseconds(300)
     try await awaitCondition { sources.made.count == 3 && sources.made[2].emit != nil }
     try await Task.sleep(for: .milliseconds(400))
     sources.made[2].emit?(.output(.failure(CommandFailure(message: "Disconnected."))))
