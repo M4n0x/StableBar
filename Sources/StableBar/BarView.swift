@@ -33,7 +33,7 @@ struct BarView: View {
                     return widget.enabled && (presentation?.display ?? widget.display).includes(display, activeID: activeID)
                         && presentation?.hidden != true
                 }
-                let units = BarUnit.make(widgets: widgets, groups: config.groups)
+                let units = BarUnit.make(widgets: widgets + [store.update?.widget].compactMap { $0 }, groups: config.groups)
                 GeometryReader { geometry in
                     let items = units.map { unit in
                         BarLayoutItem(id: unit.id, position: unit.position, width: measuredWidths[unit.id] ?? 0,
@@ -254,6 +254,7 @@ private struct BarUnitView: View {
 
 @MainActor
 private func widgetPopup(_ widget: WidgetConfiguration, store: BarStore) -> PopupConfiguration? {
+    if widget.id == AppUpdate.widgetID { return AppUpdate.popup }
     if let popup = widget.popup { return popup }
     if let name = widget.popupName { return store.configuration?.popups[name] }
     if let menu = store.scripts[widget.id]?.output.menu ?? widget.menu, !menu.isEmpty {

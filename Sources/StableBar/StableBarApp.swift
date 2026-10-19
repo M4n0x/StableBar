@@ -178,6 +178,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.terminate(nil)
             return
         }
+        if Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil {
+            let update = AppUpdate()
+            do {
+                try update.updater.start()
+                store.update = update
+            } catch {
+                FileHandle.standardError.write(Data("\(errorMessage(error))\n".utf8))
+            }
+        }
         Task {
             try? await loadLoginShellEnvironment()
             store.start()
@@ -262,6 +271,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "StableBar", action: nil, keyEquivalent: "")
         menu.addItem(.separator())
         addItem("Customize StableBar…", action: #selector(showCustomization), to: menu)
+        if let update = store.update {
+            menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdate.checkForUpdates), keyEquivalent: "").target = update
+        }
         if let error = store.configurationError ?? store.workspaceStore.error {
             menu.addItem(.separator())
             menu.addItem(withTitle: error, action: nil, keyEquivalent: "")

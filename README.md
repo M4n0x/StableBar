@@ -23,6 +23,8 @@ Quit the running app before rebuilding its bundle.
 open dist/StableBar.app
 ```
 
+Local app builds show **Development** in **Customize → About**, with the source revision and a `-dirty` suffix when the checkout has changes. A local rebuild of beta source is still a development build; install the beta DMG for its published version and build number.
+
 For development checks:
 
 ```sh
@@ -33,7 +35,15 @@ The first launch creates `~/.config/stablebar/config.json` from [Resources/confi
 
 ### Download a release
 
-Stable releases after v0.4.0 on the [releases page](https://github.com/Seb-GRAF/StableBar/releases) include `StableBar.dmg`. Betas of the next version are marked **Pre-release**. Both are built for Apple silicon and are not notarized yet, so macOS blocks the app the first time you open it: allow it in **System Settings → Privacy & Security → Open Anyway**.
+Stable releases after v0.4.0 on the [releases page](https://github.com/Seb-GRAF/StableBar/releases) include `StableBar.dmg`. Betas of the next version are marked **Pre-release**. Both are built for Apple silicon. Releases signed with a Developer ID are notarized and open like any app. Earlier ones are ad-hoc signed, so macOS blocks them the first time you open them: allow it in **System Settings → Privacy & Security → Open Anyway**.
+
+### Updates
+
+A release signed with a Developer ID checks GitHub for a newer version once a day. When one is out, an **Update** tile appears at the right end of the bar, in your theme's style. Click it to see what's changed and **Download** the update, then **Install and Relaunch** once it's downloaded. **Check for Updates…** in the menu-bar icon's menu or in **Customize → About** checks right away, and About shows the same button while an update waits. **Customize → About** also turns off the daily check, or lets StableBar download updates and install them when it quits.
+
+**Update track** chooses the releases you get. **Stable** gets stable releases. **Beta** gets betas of the next version and stable releases, whichever is newer. An installed beta starts on Beta. Switching back to Stable keeps your beta until a newer stable release is out, because StableBar never installs an older version.
+
+Only an app signed with a Developer ID updates itself, because the update must be signed by the same developer as the app it replaces. Ad-hoc signed releases and the builds you make yourself don't check for updates; **Customize → About** links to the releases page instead.
 
 ### Build an installer
 
@@ -667,7 +677,7 @@ A batch validates the whole resulting configuration before replacing the running
 
 ### Customize
 
-Open **Customize StableBar…** from the menu-bar icon or by right-clicking the bar, reopen the running app, or run `StableBar --customize`. Its sidebar has six sections.
+Open **Customize StableBar…** from the menu-bar icon or by right-clicking the bar, reopen the running app, or run `StableBar --customize`. Its sidebar has seven sections.
 
 **General** opens the configuration file in your editor, shows it in Finder or reloads it, runs setup again, and reconnects the workspace source.
 
@@ -684,6 +694,8 @@ Changes in these sections apply to the bar immediately, like command-line edits 
 **Packages** reviews local folders and [store](#store) packages and their declared commands, edits typed settings, installs versions and enables a chosen version. Enabling a theme makes it the active theme; themes have no commands to review. Select an older installed version to roll back, or **Uninstall…** to remove one.
 
 **Diagnostics** shows the composed widget configuration, role and resolved style, ordered presentation layers and their source paths (including role/workspace defaults and tokens), AeroSpace mode/alias states and connection errors, what the widget shows (its `text`, `icon`, `fields` and `temporaryFields`), provider output and data state, the provider's data source and the events it sends, graph samples, command stdout/stderr, timing, CPU time and failure/restart counts. Run a refresh, invoke the widget’s click command, or send an event. Inspecting a hidden provider resumes it while Diagnostics is visible. Closing the window restores its visibility policy.
+
+**About** shows a released app's channel (Stable or Beta), full version and build number. Local app builds show Development and their source revision; builds without version metadata show Development with the version unavailable. It also checks for [updates](#updates), chooses the update track and turns automatic checks and installs on or off.
 
 ## Built-in widgets
 
