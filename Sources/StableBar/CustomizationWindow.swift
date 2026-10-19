@@ -519,6 +519,33 @@ struct StyleFields {
         }
     }
 
+    func toggle(_ title: String, _ key: String, default fallback: Bool) -> some View {
+        row(title, key) { _ in
+            let isOn = if case let .bool(value) = values[key] { value } else { fallback }
+            Toggle(title, isOn: Binding(get: { isOn }, set: { if $0 != isOn { set([key: .bool($0)]) } }))
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+    }
+
+    func percentage(_ title: String, _ key: String, default fallback: Double) -> some View {
+        row(title, key) { _ in
+            let value = if case let .number(number) = values[key] { number } else { fallback }
+            HStack(spacing: 8) {
+                Slider(value: Binding(get: { value }, set: {
+                    let rounded = ($0 * 100).rounded() / 100
+                    if rounded != value { set([key: .number(rounded)]) }
+                }), in: 0...1, step: 0.05)
+                .labelsHidden()
+                .frame(width: 160)
+                Text(value, format: .percent.precision(.fractionLength(0)))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 40, alignment: .trailing)
+            }
+        }
+    }
+
     func choice(_ title: String, _ key: String, choices: [String], default fallback: String) -> some View {
         row(title, key) { _ in
             Picker(title, selection: stringBinding(key, default: fallback)) {

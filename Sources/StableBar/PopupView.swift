@@ -45,8 +45,9 @@ struct PopupView: View {
             .padding(.horizontal, appearance.paddingHorizontal)
             .padding(.vertical, appearance.paddingVertical)
         }
-        .background(appearance.background, in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
         .clipShape(RoundedRectangle(cornerRadius: appearance.cornerRadius))
+        .modifier(GlassBackground(color: presentationStyle.background, glass: store.configuration?.bar.glass ?? GlassSettings(), surface: \.popups,
+                                  shape: RoundedRectangle(cornerRadius: appearance.cornerRadius)))
         .overlay {
             RoundedRectangle(cornerRadius: appearance.cornerRadius)
                 .strokeBorder(appearance.borderColor, lineWidth: appearance.borderWidth)

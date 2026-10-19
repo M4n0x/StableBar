@@ -330,7 +330,8 @@ struct WidgetView: View {
         }
         .font(appearance.font)
         .foregroundStyle(appearance.foreground)
-        .background(appearance.background, in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
+        .modifier(GlassBackground(color: style.background, glass: store.configuration?.bar.glass ?? GlassSettings(), surface: \.widgets,
+                                  shape: RoundedRectangle(cornerRadius: appearance.cornerRadius)))
         .overlay {
             RoundedRectangle(cornerRadius: appearance.cornerRadius)
                 .strokeBorder(appearance.borderColor, lineWidth: appearance.borderWidth)
