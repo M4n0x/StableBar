@@ -52,13 +52,11 @@ struct ProfilesView: View {
                     HStack {
                         TextField("New profile name", text: $newName)
                         Button("Add", systemImage: "plus") {
-                            editor.change(ConfigurationEdit(action: .profiles, profiles: store.profiles + [
-                                ConfigurationProfile(name: newName, when: nil, configuration: [:])
-                            ]))
+                            editor.setProfile(ConfigurationProfile(name: newName, when: nil, configuration: [:]))
                             if editor.error == nil { selectedName = newName; newName = "" }
                         }
                         .labelStyle(.iconOnly)
-                        .disabled(newName.isEmpty)
+                        .disabled(newName.isEmpty || store.profiles.contains { $0.name == newName })
                     }
                     .padding(10)
                 }
@@ -82,6 +80,11 @@ struct ProfilesView: View {
     private func settings(_ profile: ConfigurationProfile) -> some View {
         Form {
             Section(profile.name) {
+                Toggle("Enabled", isOn: Binding(get: { profile.enabled }, set: {
+                    var edited = profile
+                    edited.enabled = $0
+                    replace(edited)
+                }))
                 Text("All conditions must match in Automatic mode. A pinned profile ignores its conditions.")
                     .foregroundStyle(.secondary)
             }
@@ -142,7 +145,7 @@ struct ProfilesView: View {
     }
 
     private func replace(_ profile: ConfigurationProfile) {
-        editor.change(ConfigurationEdit(action: .profiles, profiles: store.profiles.map { $0.name == profile.name ? profile : $0 }))
+        editor.setProfile(profile)
     }
 
 }

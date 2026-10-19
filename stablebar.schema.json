@@ -1547,6 +1547,9 @@
         "name": {
           "$ref": "#/definitions/string"
         },
+        "enabled": {
+          "$ref": "#/definitions/boolean"
+        },
         "when": {
           "$ref": "#/definitions/conditions"
         },
