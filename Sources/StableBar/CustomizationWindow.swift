@@ -71,7 +71,7 @@ private struct CustomizationView: View {
                 case .profiles: ProfilesView(editor: editor)
                 case .packages: PackagesView(store: store)
                 case .diagnostics: DiagnosticsView(store: store)
-                case .about: AboutView()
+                case .about: AboutView(update: store.update)
                 }
                 if [.appearance, .widgets, .profiles].contains(section ?? .appearance) {
                     if let error = editor.error ?? store.configurationError {

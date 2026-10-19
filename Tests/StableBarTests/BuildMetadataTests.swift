@@ -24,7 +24,8 @@ private struct BuildMetadataFixture {
             "CFBundlePackageType": "APPL",
             "CFBundleShortVersionString": version,
             "CFBundleVersion": build,
-            "LSMinimumSystemVersion": "14.0"
+            "LSMinimumSystemVersion": "14.0",
+            "SUFeedURL": "https://example.invalid/appcast.xml"
         ], format: .xml, options: 0)
         try files.createDirectory(at: sourcePlist.deletingLastPathComponent(), withIntermediateDirectories: true)
         try files.createDirectory(at: repository.appending(path: "scripts"), withIntermediateDirectories: true)
@@ -60,9 +61,12 @@ private struct BuildMetadataFixture {
         if let tag { try await git(["tag", tag]) }
     }
 
-    func package(release: Bool = false) async throws -> Bundle {
+    func package(release: Bool = false, signed: Bool = false) async throws -> Bundle {
         _ = try await runCommand(repository.appending(path: "scripts/prepare-app-info.sh").path,
-            arguments: [packagedPlist.path], environment: ["STABLEBAR_RELEASE_BUILD": release ? "1" : "0"])
+            arguments: [packagedPlist.path], environment: [
+                "STABLEBAR_RELEASE_BUILD": release ? "1" : "0",
+                "SIGNING_IDENTITY": signed ? "Developer ID Application: StableBar Tests" : ""
+            ])
         #expect(try Data(contentsOf: sourcePlist) == originalPlist)
         let bundle = try #require(Bundle(url: app))
         let original = try #require(PropertyListSerialization.propertyList(
@@ -82,7 +86,7 @@ func packagedVersionReleasePreservesStampedMetadata(version: String) async throw
     try await fixture.initializeGit()
     try Data("unreleased changes".utf8).write(to: fixture.repository.appending(path: "untracked.txt"))
 
-    let bundle = try await fixture.package(release: true)
+    let bundle = try await fixture.package(release: true, signed: true)
     let metadata = AppVersion(bundle: bundle)
 
     #expect(try Data(contentsOf: fixture.packagedPlist) == fixture.originalPlist)
@@ -91,6 +95,16 @@ func packagedVersionReleasePreservesStampedMetadata(version: String) async throw
     #expect(metadata.version == version)
     #expect(metadata.build == "1057")
     #expect(metadata.channel == (version.contains("beta") ? .beta : .stable))
+}
+
+@Test(arguments: [(true, true), (true, false), (false, true)])
+func packagedFeedOnlyInSignedReleases(release: Bool, signed: Bool) async throws {
+    let fixture = try BuildMetadataFixture()
+    defer { fixture.remove() }
+
+    let bundle = try await fixture.package(release: release, signed: signed)
+
+    #expect((bundle.object(forInfoDictionaryKey: "SUFeedURL") != nil) == (release && signed))
 }
 
 @Test(arguments: ["0.5.0-beta.74", "0.5.0"])
