@@ -419,6 +419,17 @@ func popupFoldKeepsTheScrollViewportAndPosition(documentHeight: Double) {
     #expect(bundledResult["bar"] == .object(["height": .number(48), "offset": .number(38), "notchSpacing": .number(20), "appearance": .null]))
 }
 
+@Test func setupAddsChosenWidgetSetsAndKeepsWidgetsWithTheSameID() throws {
+    let data = Data(#"{ "widgets": [{"id":"battery","type":"text","position":"right","text":"Mine"}] }"#.utf8)
+    let updated = try SetupPreferences(widgetSets: [.meetings, .system, .workspaces(.yabai)]).applying(to: data, menuBarHeight: 24)
+    let configuration = try JSONDecoder().decode(Configuration.self, from: updated)
+    #expect(configuration.widgets.map(\.id) == ["battery", "meeting", "system-monitor", "network", "workspaces"])
+    #expect(configuration.widgets[0].content == .text("Mine"))
+    #expect(configuration.workspaceSource == .yabai)
+    let aerospace = try SetupPreferences(widgetSets: [.workspaces(.aerospace)]).applying(to: data, menuBarHeight: 24)
+    #expect(try JSONDecoder().decode([String: ConfigurationValue].self, from: aerospace)["workspaceSource"] == nil)
+}
+
 @Test func setupRejectsInvalidConfigurationBeforeEditing() {
     #expect(throws: CommandFailure.self) {
         try SetupPreferences(appearance: .dark).applying(

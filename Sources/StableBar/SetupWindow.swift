@@ -55,6 +55,16 @@ struct SetupView: View {
         max(NSStatusBar.system.thickness, NSScreen.main?.safeAreaInsets.top ?? 0)
     }
 
+    /// The widget sets setup offers: Workspaces only when AeroSpace or yabai is on the login shell's
+    /// `PATH`, preferring the configured source.
+    private var sets: [SetupPreferences.WidgetSet] {
+        let path = shellEnvironment.withLock { $0["PATH", default: ""] }.split(separator: ":")
+        let source = [store.configuration?.workspaceSource ?? .aerospace, .aerospace, .yabai].first { source in
+            path.contains { FileManager.default.isExecutableFile(atPath: "\($0)/\(source.rawValue)") }
+        }
+        return [.system, .meetings] + (source.map { [.workspaces($0)] } ?? [])
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
@@ -63,16 +73,16 @@ struct SetupView: View {
                     .foregroundStyle(Color.accentColor)
                 Text("StableBar").font(.headline)
                 Spacer()
-                Text("\(step + 1) of 3").font(.callout).foregroundStyle(.secondary).monospacedDigit()
+                Text("\(step + 1) of 4").font(.callout).foregroundStyle(.secondary).monospacedDigit()
             }
             .padding(.horizontal, 36)
             .padding(.top, 24)
             HStack(spacing: 6) {
-                ForEach(0..<3) { index in
+                ForEach(0..<4) { index in
                     Capsule().fill(index <= step ? Color.accentColor : Color.primary.opacity(0.08)).frame(height: 3)
                 }
             }
-            .accessibilityLabel("Setup step \(step + 1) of 3")
+            .accessibilityLabel("Setup step \(step + 1) of 4")
             .padding(.horizontal, 36)
             .padding(.top, 20)
 
@@ -81,6 +91,7 @@ struct SetupView: View {
                     switch step {
                     case 0: welcome
                     case 1: customization
+                    case 2: widgets
                     default: access
                     }
                     if let error {
@@ -101,11 +112,11 @@ struct SetupView: View {
                     Button("Set up later", action: close)
                 }
                 Spacer()
-                Text(step == 2 ? "You can run setup again from Customize StableBar → General." : "Changes apply when you finish.")
+                Text(step == 3 ? "You can run setup again from Customize StableBar → General." : "Changes apply when you finish.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button(step == 2 ? "Start StableBar" : "Continue") {
-                    if step == 2 { finish() } else { step += 1 }
+                Button(step == 3 ? "Start StableBar" : "Continue") {
+                    if step == 3 { finish() } else { step += 1 }
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
@@ -183,6 +194,34 @@ struct SetupView: View {
         }
     }
 
+    private var widgets: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            heading("Add what you check most.", detail: "Each set uses built-in widgets that run no scripts. Rearrange or remove them later in Customize → Widgets.")
+            barPreview
+            VStack(alignment: .leading, spacing: 18) {
+                let sets = sets
+                ForEach(sets, id: \.self) { set in
+                    Toggle(isOn: Binding(get: { preferences.widgetSets.contains(set) }, set: { added in
+                        if added { preferences.widgetSets.append(set) } else { preferences.widgetSets.removeAll { $0 == set } }
+                    })) {
+                        HStack(alignment: .top, spacing: 14) {
+                            Image(systemName: set.symbol).font(.title2).frame(width: 28)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(set.title).font(.headline)
+                                Text(set.detail).font(.callout).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    if set != sets.last { Divider() }
+                }
+            }
+            .padding(20)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
     private var access: some View {
         VStack(alignment: .leading, spacing: 20) {
             heading("Just the access you need.", detail: "The starter bar needs no special access. Optional integrations ask for permission when you use them.")
@@ -190,7 +229,7 @@ struct SetupView: View {
                 Label("Built-in widgets are ready", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green).font(.headline)
                 Divider()
-                SourcePermissionList(permissions: store.registry.permissions(for: store.configuration))
+                SourcePermissionList(permissions: store.registry.permissions(for: preview.configuration))
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: "app.connected.to.app.below.fill").font(.title2).frame(width: 28)
                     VStack(alignment: .leading, spacing: 5) {
@@ -277,8 +316,15 @@ struct SetupView: View {
             var loader = ConfigurationLoader()
             preview.configuration = try loader.load(store.configurationURL, data: data, context: store.context)
             preview.scripts = store.scripts
+            for set in preferences.widgetSets {
+                for (id, output) in set.preview where preview.scripts[id] == nil {
+                    let script = ScriptWidget()
+                    script.output = output
+                    preview.scripts[id] = script
+                }
+            }
             preview.preparePresentations()
-            preview.workspaceStore.workspaces = store.workspaceStore.workspaces
+            preview.workspaceStore.workspaces = store.workspaceStore.workspaces.isEmpty ? previewWorkspaces : store.workspaceStore.workspaces
             error = nil
         } catch {
             self.error = errorMessage(error)
@@ -309,6 +355,16 @@ struct SetupView: View {
         }
     }
 }
+
+/// What the preview's workspaces widget shows while no window manager reports workspaces.
+private let previewWorkspaces = [
+    Workspace(name: "1", isFocused: true, isVisible: true, monitor: 1,
+              apps: [WorkspaceApp(workspace: "1", name: "Safari", bundleID: "com.apple.Safari")]),
+    Workspace(name: "2", isFocused: false, isVisible: false, monitor: 1,
+              apps: [WorkspaceApp(workspace: "2", name: "Mail", bundleID: "com.apple.mail")]),
+    Workspace(name: "3", isFocused: false, isVisible: false, monitor: 1,
+              apps: [WorkspaceApp(workspace: "3", name: "Notes", bundleID: "com.apple.Notes")])
+]
 
 /// The access that the data sources of enabled widgets need, each with a link to System Settings.
 struct SourcePermissionList: View {
