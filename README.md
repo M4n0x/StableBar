@@ -623,6 +623,20 @@ Commands inherit your login shell's environment, then top-level `environment`, t
 
 Script output can also set `onClick` for a state-dependent click action; popups and menus still take precedence. Named graph data goes in `series`, a dictionary of arrays; only the latest 60 samples of each graph are retained.
 
+### Tooltips
+
+Set a widget's `tooltip` to show text when the pointer rests on it. It works without a popup and keeps the widget's click action. For example, add `"tooltip": "Will not sleep for 1 hour"` to an Amphetamine widget. You can also edit **Tooltip** in **Customize → Widgets**.
+
+Tooltips inherit `defaults`, `popupDefaults`, and the widget's explicit `style`, using the same colors, font, border, corners, shadow, and glass treatment as popups. Their size fits the text.
+
+A configured tooltip overrides the script's tooltip. To show changing information, such as the remaining awake time, leave the widget's `tooltip` unset and return `tooltip` in the script's JSON output:
+
+```json
+{"text":"","icon":"pill.fill","tooltip":"Will not sleep for 1 hour"}
+```
+
+The script supplies the current text on each update; StableBar does not calculate the remaining time. Clearing the field in Customize restores the script's tooltip. In JSON, `"tooltip": ""` hides it. Script errors still appear in tooltips.
+
 ### Mouse actions
 
 Keep `onClick` for the primary action. To open a URL or an app without a shell, set `open` instead: an `http`, `https`, `mailto` or `x-apple.systempreferences` URL, or an application bundle identifier. StableBar opens it through macOS. Any other value is a configuration error, and a widget cannot set both `onClick` and `open`. A popup or menu takes precedence over either.
@@ -980,6 +994,8 @@ The [interactive example](examples/interactive/config.json) combines groups, an 
 Add `popup` to any widget. For a popup shared by multiple widgets, define it once in the top-level `popups` object and set each widget's `popupName` to its key. Each anchor uses its own script data. An inline `popup` takes precedence over `popupName`. It takes precedence over `menu` and `onClick`. Its layout is independent of the script, so you can change the layout without changing the data source or rebuilding the app. The example below uses the fields returned by the script output that follows it. While a popup shows, the widget that opened it uses its `open` state; see [States](#states).
 
 Widgets with `menu` entries already open a shared popup without additional configuration. To customize that popup, add `popup` with your preferred style and `"layout": { "type": "menu" }`. You can also place a `menu` block alongside other blocks in a custom layout. Entries retain their titles, details and click commands, and refresh while the popup is open.
+
+Set `popup.openOnHover` to `true` to open after hovering for 0.4 seconds. The popup stays open while the pointer is over the widget or popup, with a short grace period to cross the gap. Leaving both closes it. Clicking the widget or inside the popup keeps it open until dismissed; buttons and controls still follow `dismissOnAction` and `dismissOnControl`. Hovering another widget does not replace a popup kept open by a click. Click-only behavior remains the default. **Customize → Widgets → Open popup on hover** changes an inline popup; for a shared popup, set `openOnHover` in its entry under `popups`.
 
 ```json
 "popup": {

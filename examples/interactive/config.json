@@ -45,6 +45,7 @@
       "command": "/bin/zsh \"$CONFIG_DIR/controls.sh\"",
       "icon": "slider.horizontal.3",
       "popup": {
+        "openOnHover": true,
         "height": 360,
         "dismissOnAction": false,
         "style": {
@@ -104,6 +105,7 @@
       "id": "session-label",
       "type": "text",
       "text": "Demo",
+      "tooltip": "Hover over the controls to try them",
       "position": "right",
       "group": "session"
     },

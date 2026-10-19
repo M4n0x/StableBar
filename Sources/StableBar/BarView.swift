@@ -301,6 +301,7 @@ struct WidgetView: View {
 
     var body: some View {
         let output = store.scripts[widget.id]?.output
+        let tooltip = store.scripts[widget.id]?.error ?? widget.tooltip ?? output?.tooltip
         let resolution = self.resolution
         let isOpen = store.presentations[widget.id]?.popupAnchor == ObjectIdentifier(popupAnchor)
         let style = resolution.style(hovered: hovered, open: isOpen)
@@ -379,6 +380,19 @@ struct WidgetView: View {
         .onHover { inside in
             guard store.barEditing.allowsWidgetActions else { return }
             hovered = inside
+            if !inside {
+                store.popup.hover(false, store: store, anchor: popupAnchor) {}
+            } else if let popup = widgetPopup(widget, store: store), popup.openOnHover {
+                store.popup.hover(inside, store: store, anchor: popupAnchor) {
+                    store.popup.open(popup, widget: widget, defaults: popupDefaults.inheriting(defaults),
+                                     store: store, anchor: popupAnchor, onHover: true)
+                }
+            } else if let tooltip, !tooltip.isEmpty {
+                store.popup.hover(inside, store: store, anchor: popupAnchor) {
+                    store.popup.showTooltip(tooltip, widget: widget, defaults: popupDefaults.inheriting(defaults),
+                                            store: store, anchor: popupAnchor)
+                }
+            }
             if let command = inside ? widget.actions?.mouseEntered : widget.actions?.mouseExited {
                 runAction(command, sender: inside ? "mouse.entered" : "mouse.exited")
             }
@@ -386,6 +400,7 @@ struct WidgetView: View {
         .animation(reduceMotion ? nil : animation.value, value: hovered)
         .animation(reduceMotion ? nil : animation.value, value: style)
         .animation(reduceMotion ? nil : animation.value, value: store.activeApp)
+        .accessibilityHint(tooltip ?? "")
         .accessibilityIdentifier(widget.id)
     }
 
@@ -424,7 +439,6 @@ struct WidgetView: View {
         WidgetBlocks(widget: widget, store: store,
                      style: resolution.layoutStyle(configured: widget.layout != nil, hovered: hovered, open: open),
                      date: date, motion: motion, runAction: blockAction)
-            .help(store.scripts[widget.id]?.error ?? store.scripts[widget.id]?.output.tooltip ?? "")
     }
 
     private func blockAction(_ command: String, _ environment: [String: String]) {

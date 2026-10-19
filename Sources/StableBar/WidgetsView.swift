@@ -253,6 +253,14 @@ struct WidgetsView: View {
             }
             Section {
                 clickFields(widget)
+                TextField("Tooltip", text: Binding(get: { widget.tooltip ?? "" }, set: {
+                    editor.set(["tooltip": $0.isEmpty ? .null : .string($0)], for: widget.id)
+                }), prompt: Text("Use the script's tooltip"))
+                if let popup = widget.popup {
+                    Toggle("Open popup on hover", isOn: Binding(get: { popup.openOnHover }, set: {
+                        editor.set(["popup": .object(["openOnHover": .bool($0)])], for: widget.id)
+                    }))
+                }
                 Picker("Screens", selection: Binding(get: { WidgetScreenChoice(widget.display) }, set: {
                     if $0 != WidgetScreenChoice(widget.display), let properties = $0.properties { editor.set(properties, for: widget.id) }
                 })) {

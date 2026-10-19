@@ -6,11 +6,12 @@ struct PopupConfiguration: Decodable, Sendable {
     let layout: PopupBlock
     var alignment: PopupAlignment = .center
     var offset = 6.0
+    var openOnHover = false
     var dismissOnAction = true
     var dismissOnControl = false
     var animation: WidgetAnimation?
 
-    enum CodingKeys: String, CodingKey, CaseIterable { case height, style, layout, alignment, offset, dismissOnAction, dismissOnControl, animation }
+    enum CodingKeys: String, CodingKey, CaseIterable { case height, style, layout, alignment, offset, openOnHover, dismissOnAction, dismissOnControl, animation }
 
     init(style: WidgetStyle, layout: PopupBlock) {
         height = nil
@@ -32,6 +33,7 @@ struct PopupConfiguration: Decodable, Sendable {
         layout = try values.decode(PopupBlock.self, forKey: .layout)
         alignment = try values.decodeIfPresent(PopupAlignment.self, forKey: .alignment) ?? alignment
         offset = try values.decodeIfPresent(Double.self, forKey: .offset) ?? offset
+        openOnHover = try values.decodeIfPresent(Bool.self, forKey: .openOnHover) ?? openOnHover
         dismissOnAction = try values.decodeIfPresent(Bool.self, forKey: .dismissOnAction) ?? dismissOnAction
         dismissOnControl = try values.decodeIfPresent(Bool.self, forKey: .dismissOnControl) ?? dismissOnControl
         animation = try values.decodeIfPresent(WidgetAnimation.self, forKey: .animation)

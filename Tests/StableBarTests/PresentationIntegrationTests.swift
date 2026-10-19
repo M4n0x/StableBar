@@ -10,6 +10,174 @@ private var presentationRepository: URL {
     URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 }
 
+@Test(arguments: [false, true]) @MainActor func hoverTooltipsFitTheirTextAndDoNotCaptureClicks(long: Bool) async throws {
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data(##"""
+    {"defaults":{"foreground":"#f4f4f5","background":"#25252c","borderWidth":0,"cornerRadius":9,"fontSize":12},
+     "widgets":[{"id":"session","type":"text","text":"Amphetamine","position":"right",
+      "popup":{"style":{},"layout":{"type":"text","text":"Session details"}}}]}
+    """##.utf8))
+    var presentations: [(panel: PopupPanel, onHover: Bool)] = []
+    let popup = WidgetPopup(present: { presentations.append(($0, $1)) })
+    let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), popup: popup)
+    store.configuration = configuration
+    store.preparePresentations()
+    defer { store.stop() }
+    let bar = OffscreenBar(configuration: configuration,
+                           display: BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil), width: 600, sharedStore: store)
+    defer { bar.close() }
+    await bar.settle()
+    _ = try bar.bitmap(name: "hover-tooltip-before-\(long)")
+    let widget = configuration.widgets[0]
+    let anchor = try #require(bar.anchors(widget.id).first)
+    let text = long ? Array(repeating: "Will not sleep for 1 hour", count: 10).joined(separator: "\n") : "Will not sleep for 1 hour"
+    func hover(_ inside: Bool) {
+        popup.hover(inside, store: store, anchor: anchor) {
+            popup.showTooltip(text, widget: widget, defaults: configuration.popupDefaults.inheriting(configuration.defaults),
+                              store: store, anchor: anchor)
+        }
+    }
+    hover(true)
+    #expect(presentations.isEmpty)
+    try await Task.sleep(for: .milliseconds(500))
+    let tooltip = try #require(presentations.first)
+    try capturePopup(tooltip.panel, name: "hover-tooltip-after-\(long)")
+    #expect(tooltip.onHover)
+    #expect(tooltip.panel.ignoresMouseEvents)
+    #expect(tooltip.panel.frame.width <= 320)
+    #expect(tooltip.panel.frame.height > (long ? 100 : 20))
+    #expect(bar.panel.screen!.visibleFrame.contains(tooltip.panel.frame))
+    #expect(store.presentations[widget.id]?.popupAnchor == nil)
+    popup.toggle(widget.popup!, widget: widget, defaults: configuration.defaults, store: store, anchor: anchor)
+    #expect(presentations.count == 2)
+    #expect(presentations.last?.onHover == false)
+    try capturePopup(try #require(presentations.last?.panel), name: "hover-tooltip-click-popup-\(long)")
+    #expect(store.presentations[widget.id]?.popupAnchor == ObjectIdentifier(anchor))
+    hover(false)
+    try await Task.sleep(for: .milliseconds(250))
+    #expect(popup.isOpen)
+    popup.close()
+    hover(true)
+    try await Task.sleep(for: .milliseconds(500))
+    hover(false)
+    try await Task.sleep(for: .milliseconds(250))
+    #expect(!popup.isOpen)
+    #expect(presentations.allSatisfy { !$0.panel.isVisible })
+}
+
+@Test @MainActor func hoveringPopupsWaitsAndKeepsBothTheWidgetAndPopupReachable() async throws {
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
+    {"popups":{"details":{"openOnHover":true,"style":{},"layout":{"type":"text","text":"Details"}}},
+     "widgets":[{"id":"first","type":"text","text":"First","position":"right","popupName":"details"},
+                {"id":"second","type":"text","text":"Second","position":"right","popupName":"details"}]}
+    """#.utf8))
+    var presentations: [(panel: PopupPanel, onHover: Bool)] = []
+    let popup = WidgetPopup(present: { presentations.append(($0, $1)) })
+    let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), popup: popup)
+    store.configuration = configuration
+    store.preparePresentations()
+    defer { store.stop() }
+    let bar = OffscreenBar(configuration: configuration,
+                           display: BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil), width: 600, sharedStore: store)
+    defer { bar.close() }
+    await bar.settle()
+    let anchors = try configuration.widgets.map { try #require(bar.anchors($0.id).first) }
+    let details = try #require(configuration.popups["details"])
+    func hover(_ inside: Bool, _ index: Int = 0) {
+        popup.hover(inside, store: store, anchor: anchors[index]) {
+            popup.open(details, widget: configuration.widgets[index], defaults: configuration.defaults,
+                       store: store, anchor: anchors[index], onHover: true)
+        }
+    }
+    func click(_ index: Int = 0) {
+        popup.toggle(details, widget: configuration.widgets[index], defaults: configuration.defaults, store: store, anchor: anchors[index])
+    }
+
+    hover(true)
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(!popup.isOpen)
+    hover(false)
+    try await Task.sleep(for: .milliseconds(450))
+    #expect(presentations.isEmpty)
+
+    hover(true)
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(popup.isOpen)
+    #expect(presentations.count == 1)
+    #expect(presentations.first?.onHover == true)
+    #expect(store.presentations["first"]?.popupAnchor == ObjectIdentifier(anchors[0]))
+    hover(false)
+    #expect(popup.isOpen)
+    popup.hoverPopup(true)
+    try await Task.sleep(for: .milliseconds(250))
+    #expect(popup.isOpen)
+    popup.hoverPopup(false)
+    hover(true)
+    try await Task.sleep(for: .milliseconds(250))
+    #expect(popup.isOpen)
+    #expect(presentations.count == 1)
+    hover(false)
+    try await Task.sleep(for: .milliseconds(250))
+    #expect(!popup.isOpen)
+    #expect(store.presentations["first"]?.popupAnchor == nil)
+
+    hover(true)
+    try await Task.sleep(for: .milliseconds(500))
+    hover(false)
+    hover(true, 1)
+    popup.hoverPopup(false)
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(popup.isOpen)
+    #expect(store.presentations["first"]?.popupAnchor == nil)
+    #expect(store.presentations["second"]?.popupAnchor == ObjectIdentifier(anchors[1]))
+    click(1)
+    let count = presentations.count
+    hover(false, 1)
+    hover(true)
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(presentations.count == count)
+    #expect(store.presentations["second"]?.popupAnchor == ObjectIdentifier(anchors[1]))
+    click(1)
+    #expect(!popup.isOpen)
+
+    hover(true)
+    click()
+    #expect(presentations.last?.onHover == false)
+    hover(false)
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(popup.isOpen)
+    #expect(presentations.count == count + 1)
+    click()
+    #expect(!popup.isOpen)
+    #expect(presentations.allSatisfy { !$0.panel.isVisible })
+}
+
+@Test(arguments: [false, true]) @MainActor func pendingHoverIsCancelledWhenDismissedOrRemoved(remove: Bool) async throws {
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
+    {"widgets":[{"id":"agenda","type":"text","text":"Agenda","position":"right",
+      "popup":{"openOnHover":true,"style":{},"layout":{"type":"text","text":"Today"}}}]}
+    """#.utf8))
+    var presentations = 0
+    let popup = WidgetPopup(present: { _, _ in presentations += 1 })
+    let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), popup: popup)
+    store.configuration = configuration
+    store.preparePresentations()
+    defer { store.stop() }
+    let bar = OffscreenBar(configuration: configuration,
+                           display: BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil), width: 600, sharedStore: store)
+    defer { bar.close() }
+    await bar.settle()
+    let widget = configuration.widgets[0]
+    let anchor = try #require(bar.anchors(widget.id).first)
+    popup.hover(true, store: store, anchor: anchor) {
+        popup.open(widget.popup!, widget: widget, defaults: configuration.defaults, store: store, anchor: anchor, onHover: true)
+    }
+    if remove { popup.removeAnchor(anchor) } else { popup.close() }
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(presentations == 0)
+    #expect(!popup.isOpen)
+    #expect(store.presentations[widget.id]?.popupAnchor == nil)
+}
+
 @Test(arguments: [false, true], [false, true]) @MainActor
 func popupResizesWithItsContentAndKeepsItsWidthAndTopEdge(fixedHeight: Bool, animated: Bool) async throws {
     let configuration = try JSONDecoder().decode(Configuration.self, from: Data("""
@@ -20,7 +188,7 @@ func popupResizesWithItsContentAndKeepsItsWidthAndTopEdge(fixedHeight: Bool, ani
         "layout":{"type":"text","text":"An update is available"}}}]}
     """.utf8))
     var presented: PopupPanel?
-    let popup = WidgetPopup(present: { presented = $0 })
+    let popup = WidgetPopup(present: { panel, _ in presented = panel })
     let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), popup: popup)
     store.configuration = configuration
     store.preparePresentations()
@@ -100,7 +268,7 @@ func popupResizesWithItsContentAndKeepsItsWidthAndTopEdge(fixedHeight: Bool, ani
     command.makeSource = { _, _ in source }
     let registry = DataSourceRegistry(types: [command])
     var popupPanel: PopupPanel?
-    let popup = WidgetPopup(present: { popupPanel = $0 }) // actual native popup, never ordered
+    let popup = WidgetPopup(present: { panel, _ in popupPanel = panel }) // actual native popup, never ordered
     let store = BarStore(configurationURL: directory.appending(path: "config.json"), registry: registry, popup: popup,
                          themesDirectory: repository.appending(path: "Resources/themes"))
     let executable = directory.appending(path: "aerospace-fixture")

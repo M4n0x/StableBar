@@ -993,6 +993,9 @@
         "dismissOnAction": {
           "$ref": "#/definitions/boolean"
         },
+        "openOnHover": {
+          "$ref": "#/definitions/boolean"
+        },
         "dismissOnControl": {
           "$ref": "#/definitions/boolean"
         },
@@ -1193,6 +1196,10 @@
         "icon": {
           "$ref": "#/definitions/string",
           "description": "SF Symbol name."
+        },
+        "tooltip": {
+          "$ref": "#/definitions/string",
+          "description": "Hover text. Overrides the script tooltip; an empty string hides it."
         },
         "onClick": {
           "$ref": "#/definitions/string"
