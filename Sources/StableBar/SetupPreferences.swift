@@ -17,7 +17,6 @@ struct SetupPreferences: Equatable {
         case current, builtIn, package(id: String, version: String?)
     }
 
-    /// Built-in widgets that setup adds together. They read native providers, so they run no commands.
     enum WidgetSet: Hashable {
         case system, meetings, workspaces(WorkspaceSource)
 
@@ -29,19 +28,11 @@ struct SetupPreferences: Equatable {
             }
         }
 
-        var symbol: String {
-            switch self {
-            case .system: "cpu"
-            case .meetings: "calendar"
-            case .workspaces: "rectangle.3.group"
-            }
-        }
-
         var detail: String {
             switch self {
-            case .system: "CPU and memory, network traffic and battery charge."
-            case .meetings: "Your next meeting, with today's agenda when you click it. Needs Calendars access."
-            case let .workspaces(source): "Your \(source.title) workspaces and their apps. Click one to switch to it."
+            case .system: "CPU and memory use, with details when you click it."
+            case .meetings: "Your next meeting and today's agenda. Needs Calendars access."
+            case let .workspaces(source): "Your \(source.title) workspaces and their apps. Click one to switch."
             }
         }
 
@@ -51,6 +42,18 @@ struct SetupPreferences: Equatable {
                 [
                   {
                     "id": "system-monitor", "type": "system", "position": "right",
+                    "layout": {
+                      "type": "row",
+                      "children": [
+                        { "type": "symbol", "name": "cpu" },
+                        { "type": "field", "field": "text" },
+                        { "type": "symbol", "name": "memorychip" },
+                        {
+                          "type": "row", "style": { "spacing": 0 },
+                          "children": [{ "type": "field", "field": "memory" }, { "type": "text", "text": "%" }]
+                        }
+                      ]
+                    },
                     "popup": {
                       "style": { "width": 280 },
                       "layout": {
@@ -81,11 +84,6 @@ struct SetupPreferences: Equatable {
                         ]
                       }
                     }
-                  },
-                  { "id": "network", "type": "network", "position": "right" },
-                  {
-                    "id": "battery", "type": "battery", "position": "right",
-                    "layout": { "type": "row", "children": [{ "type": "symbol", "source": "icon" }, { "type": "field", "field": "text" }] }
                   }
                 ]
                 """#
@@ -128,20 +126,6 @@ struct SetupPreferences: Equatable {
             case .workspaces: #"[{ "id": "workspaces", "type": "workspaces", "position": "left" }]"#
             }
             return try! JSONDecoder().decode([[String: ConfigurationValue]].self, from: Data(json.utf8))
-        }
-
-        /// What setup's preview shows for each widget, since its provider starts only once setup
-        /// finishes.
-        var preview: [String: ScriptOutput] {
-            switch self {
-            case .system: [
-                "system-monitor": ScriptOutput(text: "12%", icon: "cpu", value: 0.12),
-                "network": ScriptOutput(text: "↓24 ↑3 KiB/s", icon: "network"),
-                "battery": ScriptOutput(text: "82%", icon: "battery.100percent")
-            ]
-            case .meetings: ["meeting": ScriptOutput(text: "Design review", icon: "calendar", fields: ["start": "10:30"])]
-            case .workspaces: [:]
-            }
         }
     }
 
@@ -190,11 +174,24 @@ struct SetupPreferences: Equatable {
                 }
             }
         }
+        var order = configuration.widgets.map(\.id)
+        var appended = order
         for set in widgetSets {
-            for widget in set.widgets where !configuration.widgets.contains(where: { widget["id"] == .string($0.id) }) {
+            for widget in set.widgets {
+                guard case let .string(id)? = widget["id"], !order.contains(id) else { continue }
                 edits.append(ConfigurationEdit(action: .add, properties: widget))
+                appended.append(id)
+                let anchor = configuration.widgets.first { existing in
+                    switch existing.content {
+                    case .activeApp: widget["position"] == .string("left")
+                    case .clock: widget["position"] == .string("right")
+                    default: false
+                    }
+                }
+                order.insert(id, at: anchor.flatMap { order.firstIndex(of: $0.id) } ?? order.endIndex)
             }
         }
+        if order != appended { edits.append(ConfigurationEdit(action: .reorder, ids: order)) }
         var document = try JSONDecoder().decode([String: ConfigurationValue].self, from: data)
         var ids = configuration.widgets.map(\.id)
         for edit in edits { document = try edit.applying(to: document, widgetIDs: &ids) }

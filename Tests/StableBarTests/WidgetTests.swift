@@ -419,15 +419,24 @@ func popupFoldKeepsTheScrollViewportAndPosition(documentHeight: Double) {
     #expect(bundledResult["bar"] == .object(["height": .number(48), "offset": .number(38), "notchSpacing": .number(20), "appearance": .null]))
 }
 
-@Test func setupAddsChosenWidgetSetsAndKeepsWidgetsWithTheSameID() throws {
-    let data = Data(#"{ "widgets": [{"id":"battery","type":"text","position":"right","text":"Mine"}] }"#.utf8)
+@Test func setupPlacesChosenWidgetSetsBesideTheAppAndClockAndKeepsWidgetsWithTheSameID() throws {
+    let data = Data(#"""
+    { "widgets": [
+      {"id":"app","type":"activeApp","position":"left"},
+      {"id":"time","type":"clock","position":"right"},
+      {"id":"meeting","type":"text","position":"right","text":"Mine"}
+    ] }
+    """#.utf8)
     let updated = try SetupPreferences(widgetSets: [.meetings, .system, .workspaces(.yabai)]).applying(to: data, menuBarHeight: 24)
     let configuration = try JSONDecoder().decode(Configuration.self, from: updated)
-    #expect(configuration.widgets.map(\.id) == ["battery", "meeting", "system-monitor", "network", "workspaces"])
-    #expect(configuration.widgets[0].content == .text("Mine"))
+    #expect(configuration.widgets.map(\.id) == ["workspaces", "app", "system-monitor", "time", "meeting"])
+    #expect(configuration.widgets[4].content == .text("Mine"))
     #expect(configuration.workspaceSource == .yabai)
-    let aerospace = try SetupPreferences(widgetSets: [.workspaces(.aerospace)]).applying(to: data, menuBarHeight: 24)
-    #expect(try JSONDecoder().decode([String: ConfigurationValue].self, from: aerospace)["workspaceSource"] == nil)
+    let appended = try SetupPreferences(widgetSets: [.workspaces(.aerospace)])
+        .applying(to: Data(#"{"widgets":[{"id":"time","type":"clock","position":"right"}]}"#.utf8), menuBarHeight: 24)
+    let document = try JSONDecoder().decode([String: ConfigurationValue].self, from: appended)
+    #expect(try document["widgets"]!.decoded([[String: ConfigurationValue]].self).map { $0["id"] } == [.string("time"), .string("workspaces")])
+    #expect(document["workspaceSource"] == nil)
 }
 
 @Test func setupRejectsInvalidConfigurationBeforeEditing() {
