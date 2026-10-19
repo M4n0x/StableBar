@@ -28,13 +28,48 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
     @ObservationIgnored private var reply: ((SPUUserUpdateChoice) -> Void)?
     @ObservationIgnored private var expectedLength: UInt64 = 0
     @ObservationIgnored private var receivedLength: UInt64 = 0
+    @ObservationIgnored private var checkTimer: Timer?
+    @ObservationIgnored private var foundUpdate = false
 
-    override init() {
+    init(makeUpdater: (any SPUUserDriver, any SPUUpdaterDelegate) -> SPUUpdater = { driver, delegate in
+        SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: driver, delegate: delegate)
+    }) {
         super.init()
         if UserDefaults.standard.string(forKey: "updateTrack") == nil {
             UserDefaults.standard.set(AppVersion().channel == .beta ? "beta" : "stable", forKey: "updateTrack")
         }
-        updater = SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: self, delegate: self)
+        updater = makeUpdater(self, self)
+    }
+
+    func start() throws {
+        try updater.start()
+        let timer = Timer(fire: Date(timeIntervalSinceNow: 15), interval: 4 * 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkForUpdateInformation() }
+        }
+        timer.tolerance = 15
+        RunLoop.main.add(timer, forMode: .common)
+        checkTimer = timer
+    }
+
+    func stop() {
+        checkTimer?.invalidate()
+        checkTimer = nil
+    }
+
+    func checkForUpdateInformation() {
+        guard updater.automaticallyChecksForUpdates, !updater.sessionInProgress else { return }
+        foundUpdate = false
+        updater.checkForUpdateInformation()
+    }
+
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        foundUpdate = true
+    }
+
+    func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
+        guard updateCheck == .updateInformation, error == nil, foundUpdate, updater.automaticallyChecksForUpdates else { return }
+        foundUpdate = false
+        updater.checkForUpdatesInBackground()
     }
 
     /// The tile the bar adds at its right end while there's an update.

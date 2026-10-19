@@ -1,4 +1,5 @@
 import Foundation
+import Sparkle
 import Testing
 @testable import StableBar
 
@@ -94,4 +95,98 @@ func updateTileStaysAtTheRightEndOfTheBar(stage: AppUpdate.Stage) {
     let tile = AppUpdate.tile(stage)
     #expect(tile.position == .right)
     #expect(tile.overflow == .never)
+}
+
+@MainActor private final class ProbeUpdater: SPUUpdater {
+    var checksAutomatically = true
+    var busy = false
+    var probes = 0
+    var backgroundChecks = 0
+
+    override var automaticallyChecksForUpdates: Bool {
+        get { checksAutomatically }
+        set { checksAutomatically = newValue }
+    }
+
+    override var sessionInProgress: Bool { busy }
+
+    override func checkForUpdateInformation() {
+        #expect(!busy)
+        probes += 1
+        busy = true
+    }
+
+    override func checkForUpdatesInBackground() {
+        #expect(!busy)
+        backgroundChecks += 1
+        busy = true
+    }
+}
+
+@MainActor private func updateProbe() -> (AppUpdate, ProbeUpdater) {
+    let update = AppUpdate { driver, delegate in
+        ProbeUpdater(hostBundle: .main, applicationBundle: .main, userDriver: driver, delegate: delegate)
+    }
+    return (update, update.updater as! ProbeUpdater)
+}
+
+@Test @MainActor func updateProbesRespectAutomaticChecksAndDoNotOverlapSessions() {
+    let (update, updater) = updateProbe()
+    updater.checksAutomatically = false
+    update.checkForUpdateInformation()
+    #expect(updater.probes == 0)
+    updater.checksAutomatically = true
+    update.checkForUpdateInformation()
+    #expect(updater.probes == 1)
+    update.checkForUpdateInformation()
+    #expect(updater.probes == 1)
+    updater.busy = false
+    update.updater(updater, didFinishUpdateCycleFor: .updateInformation, error: nil)
+    update.checkForUpdateInformation()
+    #expect(updater.probes == 2)
+}
+
+@Test @MainActor func updateProbeHandsOffOnlyAfterFindingAReleaseAndFinishing() {
+    let (update, updater) = updateProbe()
+    update.checkForUpdateInformation()
+    update.updater(updater, didFindValidUpdate: .empty())
+    #expect(updater.backgroundChecks == 0)
+    updater.busy = false
+    update.updater(updater, didFinishUpdateCycleFor: .updateInformation, error: nil)
+    #expect(updater.backgroundChecks == 1)
+    update.checkForUpdateInformation()
+    #expect(updater.probes == 1)
+}
+
+@Test @MainActor func failedUpdateProbesWaitForTheNextPollAndForgetThePreviousResult() {
+    let (update, updater) = updateProbe()
+    update.checkForUpdateInformation()
+    update.updater(updater, didFindValidUpdate: .empty())
+    updater.busy = false
+    update.updater(updater, didFinishUpdateCycleFor: .updateInformation, error: URLError(.notConnectedToInternet))
+    #expect(updater.backgroundChecks == 0)
+    #expect(updater.probes == 1)
+    update.checkForUpdateInformation()
+    updater.busy = false
+    update.updater(updater, didFinishUpdateCycleFor: .updateInformation, error: nil)
+    #expect(updater.probes == 2)
+    #expect(updater.backgroundChecks == 0)
+}
+
+@Test @MainActor func disablingAutomaticChecksDuringAProbePreventsTheHandoff() {
+    let (update, updater) = updateProbe()
+    update.checkForUpdateInformation()
+    update.updater(updater, didFindValidUpdate: .empty())
+    updater.checksAutomatically = false
+    updater.busy = false
+    update.updater(updater, didFinishUpdateCycleFor: .updateInformation, error: nil)
+    #expect(updater.backgroundChecks == 0)
+}
+
+@Test(arguments: [SPUUpdateCheck.updates, .updatesInBackground]) @MainActor
+func completedUpdateSessionsDoNotStartAnotherBackgroundCheck(check: SPUUpdateCheck) {
+    let (update, updater) = updateProbe()
+    update.updater(updater, didFindValidUpdate: .empty())
+    update.updater(updater, didFinishUpdateCycleFor: check, error: nil)
+    #expect(updater.backgroundChecks == 0)
 }
