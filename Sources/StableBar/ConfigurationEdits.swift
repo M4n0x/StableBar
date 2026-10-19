@@ -75,7 +75,7 @@ struct ConfigurationEdit: Codable, Sendable {
                     root["widgetOverrides"] = overrides.isEmpty ? nil : .object(overrides)
                 }
             } else {
-                root = removing(properties, from: root)
+                root = removing(properties, from: root, scope: .document)
             }
         case .profile:
             root["profile"] = name.map(ConfigurationValue.string) ?? .null
@@ -129,13 +129,25 @@ private func changeDefinition(_ id: String, in document: inout [String: Configur
     return false
 }
 
-private func removing(_ keys: [String: ConfigurationValue], from object: [String: ConfigurationValue]) -> [String: ConfigurationValue] {
+private enum RemovalScope { case document, profile, object }
+
+private func removing(_ keys: [String: ConfigurationValue], from object: [String: ConfigurationValue],
+                      scope: RemovalScope = .object) -> [String: ConfigurationValue] {
     var result = object
     for (key, value) in keys {
         if case let .object(nested) = value, !nested.isEmpty {
             if case let .object(current) = result[key] {
-                let remaining = removing(nested, from: current)
-                result[key] = remaining.isEmpty ? nil : .object(remaining)
+                let profileConfiguration = scope == .profile && key == "configuration"
+                let remaining = removing(nested, from: current, scope: profileConfiguration ? .document : .object)
+                result[key] = remaining.isEmpty && !profileConfiguration ? nil : .object(remaining)
+            } else if scope == .document, case let .array(current) = result[key], ["widgets", "profiles"].contains(key) {
+                // A root unset can address several named definitions in one undoable change.
+                let identity = key == "widgets" ? "id" : "name"
+                result[key] = .array(current.map { value in
+                    guard case let .object(definition) = value, case let .string(id) = definition[identity],
+                          case let .object(mask) = nested[id] else { return value }
+                    return .object(removing(mask, from: definition, scope: key == "profiles" ? .profile : .object))
+                })
             }
         } else {
             result[key] = nil
@@ -216,7 +228,7 @@ func migrateConfigurationFile(_ url: URL) throws {
     }
     var ids: [String] = []
     for edit in edits { root = try edit.applying(to: root, widgetIDs: &ids) }
-    try configurationData(root, editing: original).write(to: url, options: .atomic)
+    try writeConfiguration(configurationData(root, editing: original), to: url)
 }
 
 private let earlierSetupColors: [(appearance: String, colors: [String: ConfigurationValue])] = [
@@ -239,7 +251,7 @@ func migrateEarlierColors(_ url: URL) throws {
     for (key, value) in defaults where value == .null && earlierSetupColors.contains(where: { $0.colors[key] != nil }) { defaults[key] = nil }
     guard root["defaults"] != .object(defaults) else { return }
     root["defaults"] = defaults.isEmpty ? nil : .object(defaults)
-    try configurationData(root, editing: original).write(to: url, options: .atomic)
+    try writeConfiguration(configurationData(root, editing: original), to: url)
 }
 
 func configurationData(_ document: [String: ConfigurationValue]) throws -> Data {
@@ -402,4 +414,17 @@ private struct ConfigurationText {
             return String(decoding: try encoder.encode(value), as: UTF8.self)
         }
     }
+}
+
+/// Atomic saves follow the main file's symlinks, including links managed by dotfile tools.
+func writeConfiguration(_ data: Data, to url: URL) throws {
+    let target = url.resolvingSymlinksInPath()
+    if FileManager.default.fileExists(atPath: target.path) {
+        if try Data(contentsOf: target) == data { return }
+        guard FileManager.default.isWritableFile(atPath: target.path) else {
+            throw CommandFailure(message: "The configuration file is read-only. Allow writing to it and try again.")
+        }
+    }
+    do { try data.write(to: target, options: .atomic) }
+    catch { throw CommandFailure(message: "The configuration file could not be saved. \(error.localizedDescription)") }
 }

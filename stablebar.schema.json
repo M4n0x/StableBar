@@ -1606,7 +1606,7 @@
           "$ref": "#/definitions/boolean"
         },
         "settings": {
-          "type": "object"
+          "type": ["object", "null"]
         }
       }
     },

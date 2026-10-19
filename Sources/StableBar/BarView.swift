@@ -13,7 +13,9 @@ struct BarView: View {
 
     var body: some View {
         Group {
-            if let config = store.configuration {
+            if store.barEditing.isActive {
+                BarEditView(store: store, display: display)
+            } else if let config = store.configuration {
                 let scale = CGFloat(config.bar.scale(for: display))
                 let barGeometry = config.barGeometry(for: display)
                 let notch = display.notch.map { range in
@@ -23,16 +25,7 @@ struct BarView: View {
                         return (center - width / 2)...(center + width / 2)
                     } ?? range
                 }
-                let activeID = store.workspaceStore.workspaces.first(where: \.isFocused)?.monitor ?? store.activeDisplayID
-                let widgets = config.widgets.filter { widget in
-                    let presentation = store.presentations[widget.id]
-                    if widget.content == .workspaces && widget.layout == nil && store.workspaceStore.error == nil
-                        && store.workspaceStore.workspaces(on: display.id, showEmpty: widget.workspace?.showEmpty == true).isEmpty {
-                        return false
-                    }
-                    return widget.enabled && (presentation?.display ?? widget.display).includes(display, activeID: activeID)
-                        && presentation?.hidden != true
-                }
+                let widgets = store.barEditing.widgets(on: display)
                 let units = BarUnit.make(widgets: widgets + [store.update?.widget].compactMap { $0 }, groups: config.groups)
                 GeometryReader { geometry in
                     let items = units.map { unit in
@@ -122,6 +115,8 @@ struct BarView: View {
         .contextMenu {
             Text("StableBar")
             Button("Customize StableBar…") { store.onCustomize?() }
+            Button("Try Themes…") { store.onTryThemes?(display.id) }
+            if store.barEditing.isAvailable { Button(store.barEditing.menuTitle, action: store.barEditing.toggle) }
             if let error = store.configurationError ?? store.workspaceStore.error {
                 Divider()
                 Text(error)
@@ -217,7 +212,7 @@ struct MeasuringCopy: ViewModifier {
     }
 }
 
-private struct BarUnitView: View {
+struct BarUnitView: View {
     let unit: BarUnit
     let config: Configuration
     let store: BarStore
@@ -230,8 +225,7 @@ private struct BarUnitView: View {
             Color.clear.frame(minWidth: unit.widgets[0].style.minWidth ?? 0,
                               idealWidth: unit.widgets[0].style.minWidth ?? 0, maxWidth: .infinity, minHeight: 1)
         } else {
-            let style = unit.style ?? WidgetStyle()
-            HStack(spacing: style.spacing ?? config.bar.spacing) {
+            BarUnitSurface(style: unit.style ?? WidgetStyle(), spacing: config.bar.spacing) {
                 ForEach(unit.widgets) { widget in
                     WidgetView(widget: widget, defaults: config.defaults, popupDefaults: config.popupDefaults, store: store,
                                monitor: display, animationDuration: config.bar.animationDuration)
@@ -239,6 +233,18 @@ private struct BarUnitView: View {
                         .transition(visibilityTransition(widget.transition, still: reduceMotion || measuring))
                 }
             }
+        }
+    }
+}
+
+/// The same group spacing and surface wrap normal widgets and their edit decorations.
+struct BarUnitSurface<Content: View>: View {
+    let style: WidgetStyle
+    let spacing: Double
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        HStack(spacing: style.spacing ?? spacing, content: content)
             .padding(.leading, style.paddingLeading ?? style.paddingHorizontal ?? 0)
             .padding(.trailing, style.paddingTrailing ?? style.paddingHorizontal ?? 0)
             .padding(.top, style.paddingTop ?? style.paddingVertical ?? 0)
@@ -248,7 +254,6 @@ private struct BarUnitView: View {
                 RoundedRectangle(cornerRadius: style.cornerRadius ?? 0)
                     .strokeBorder(style.borderColor?.color ?? .clear, lineWidth: style.borderWidth ?? 0)
             }
-        }
     }
 }
 
@@ -314,8 +319,11 @@ struct WidgetView: View {
             .frame(minWidth: style.minWidth.map { CGFloat($0) }, maxWidth: style.maxWidth.map { CGFloat($0) })
             .contentShape(Rectangle())
         Group {
-            if let popup = widgetPopup(widget, store: store) {
+            if store.barEditing.isActive {
+                tile.allowsHitTesting(false)
+            } else if let popup = widgetPopup(widget, store: store) {
                 Button {
+                    guard store.barEditing.allowsWidgetActions else { return }
                     store.popup.toggle(popup, widget: widget, defaults: popupDefaults.inheriting(defaults), store: store, anchor: popupAnchor)
                 } label: { tile }
                 .buttonStyle(.plain)
@@ -323,7 +331,7 @@ struct WidgetView: View {
                 Button { runAction(command, sender: "mouse.clicked", button: "left") } label: { tile }
                     .buttonStyle(.plain)
             } else if let open = widget.open {
-                Button { OpenTarget(open)!.open() } label: { tile }
+                Button { if store.barEditing.allowsWidgetActions { OpenTarget(open)!.open() } } label: { tile }
                     .buttonStyle(.plain)
             } else {
                 tile
@@ -353,7 +361,7 @@ struct WidgetView: View {
             }
         }
         .overlay {
-            if let actions = widget.actions {
+            if store.barEditing.allowsWidgetActions, let actions = widget.actions {
                 WidgetActionCapture(actions: actions, display: monitor) { command, context in
                     store.runAction(command, widget: widget,
                                     event: ScriptEvent(sender: context.sender, environment: context.environment))
@@ -361,7 +369,7 @@ struct WidgetView: View {
             }
         }
         .background {
-            if !measuring { PopupAnchor(view: popupAnchor, popup: store.popup, id: widget.id) }
+            if !measuring && store.barEditing.allowsWidgetActions { PopupAnchor(view: popupAnchor, popup: store.popup, id: widget.id) }
         }
         .transformAnchorPreference(key: BarAnchorPreference.self, value: .bounds) { anchors, bounds in
             if !measuring { anchors.widgets[widget.id] = BarWidgetAnchor(bounds: bounds, unit: unitID) }
@@ -369,6 +377,7 @@ struct WidgetView: View {
         .offset(x: style.offsetX ?? 0, y: style.offsetY ?? 0)
         .opacity(style.opacity ?? 1)
         .onHover { inside in
+            guard store.barEditing.allowsWidgetActions else { return }
             hovered = inside
             if let command = inside ? widget.actions?.mouseEntered : widget.actions?.mouseExited {
                 runAction(command, sender: inside ? "mouse.entered" : "mouse.exited")
@@ -450,7 +459,7 @@ struct WidgetBlocks: View {
                                                  menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
                                                  targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
                                                  series: script?.output.series ?? [:], roles: store.configuration?.roles ?? [:],
-                                                 fillsWidth: fillsWidth, open: { $0.open() },
+                                                 fillsWidth: fillsWidth, open: { if store.barEditing.allowsWidgetActions { $0.open() } },
                                                  states: style.states, tracksHover: style.tracksHover, appIcon: appIcon, motion: motion,
                                                  runAction: runAction))
         }

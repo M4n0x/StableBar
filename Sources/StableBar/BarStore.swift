@@ -9,7 +9,7 @@ final class BarStore: NSObject {
     var activeApp = NSWorkspace.shared.frontmostApplication
     var activeDisplayID = 1
     var scripts: [String: ScriptWidget] = [:]
-    let workspaceStore = WorkspaceStore()
+    let workspaceStore: WorkspaceStore
     let windowClearance = WindowClearance()
     let popup: WidgetPopup
     var update: AppUpdate?
@@ -17,12 +17,25 @@ final class BarStore: NSObject {
     let registry: DataSourceRegistry
     var onConfigurationChange: (() -> Void)?
     var onCustomize: (() -> Void)?
+    var onCustomizeWidget: ((String) -> Void)?
+    var onEndCustomizationEditing: (() -> Void)?
+    var onTryThemes: ((Int) -> Void)?
+    var onEndThemeTrial: (() -> Void)?
     var effectiveDocument: [String: ConfigurationValue] = [:]
     var origins: [String: ConfigurationOrigin] = [:]
+    var widgetPackageNames: [String: String] = [:]
     var activeProfiles: [String] = []
     var profiles: [ConfigurationProfile] = []
     var pinnedProfile: String?
     var sessionEdits: [ConfigurationEdit] = []
+    private(set) var customizationEdits: [ConfigurationEdit] = []
+    private var customizationBase: (Configuration, ConfigurationLoader)?
+    private let customizationSaveDelay: Duration
+    @ObservationIgnored lazy var customizationHistory = ConfigurationHistory(store: self, saveDelay: customizationSaveDelay)
+    @ObservationIgnored lazy var barEditing = BarEditing(store: self)
+    @ObservationIgnored lazy var packageStoreClient = PackageStoreClient(
+        packages: WidgetPackageStore(directory: configurationURL.deletingLastPathComponent().appending(path: "packages")))
+    var themesDirectory: URL? { configurationLoader.themesDirectory }
     var context = ConfigurationContext()
     private(set) var presentations: [String: WidgetPresentation] = [:]
     private(set) var barStyle = WidgetStyle()
@@ -33,6 +46,9 @@ final class BarStore: NSObject {
     private var inspectedWidgetID: String?
     private var inspectorOpen = false
     private var configurationLoader = ConfigurationLoader()
+    // A trial changes the displayed composition, never the saved or command-line edits.
+    private var normalComposition: (configuration: Configuration, loader: ConfigurationLoader)?
+    private var triedTheme: ThemeChoice?
     private var managesConnections = false
     private let configurationWatcher = ConfigurationWatcher()
     private var reloadTask: Task<Void, Never>?
@@ -42,10 +58,13 @@ final class BarStore: NSObject {
     private var actionTails: [String: (id: UUID, task: Task<Void, Never>)] = [:]
 
     init(configurationURL: URL = LaunchCommand.configurationURL, registry: DataSourceRegistry = .builtIn,
-         popup: WidgetPopup = WidgetPopup(), themesDirectory: URL? = bundledThemesDirectory) {
+         popup: WidgetPopup = WidgetPopup(), themesDirectory: URL? = bundledThemesDirectory,
+         customizationSaveDelay: Duration = .milliseconds(500)) {
         self.configurationURL = configurationURL
+        self.customizationSaveDelay = customizationSaveDelay
         self.registry = registry
         self.popup = popup
+        workspaceStore = WorkspaceStore()
         super.init()
         configurationLoader.themesDirectory = themesDirectory
         configurationWatcher.onChange = { [weak self] in self?.scheduleReload() }
@@ -75,7 +94,7 @@ final class BarStore: NSObject {
                 let data = try SetupPreferences(placement: .belowMenuBar).applying(
                     to: Data(contentsOf: template),
                     menuBarHeight: max(NSStatusBar.system.thickness, NSScreen.main?.safeAreaInsets.top ?? 0))
-                try data.write(to: configurationURL, options: .atomic)
+                try writeConfiguration(data, to: configurationURL)
             }
             try migrateConfigurationFile(configurationURL)
             if !UserDefaults.standard.bool(forKey: "migratedEarlierColors") {
@@ -98,31 +117,45 @@ final class BarStore: NSObject {
         send(.frontApp, ["INFO": activeApp?.localizedName ?? "Desktop"])
     }
 
-    func refreshContext() {
-        let next = SystemContext.current()
+    func refreshContext(_ next: ConfigurationContext = SystemContext.current()) {
         var nextWithSameApp = next
         nextWithSameApp.app = context.app
         let reload = nextWithSameApp != context || (next.app != context.app && configurationLoader.matchesApps)
         context = next
-        if reload { reloadConfiguration() }
+        if reload { readConfiguration(leavingEditMode: false) }
     }
 
     private func scheduleReload() {
         reloadTask?.cancel()
+        let generation = configurationWatcher.generation
         reloadTask = Task {
             do {
                 try await Task.sleep(for: .milliseconds(150))
+                guard configurationWatcher.generation == generation else { return }
                 reloadConfiguration()
             } catch {}
         }
     }
 
     func reloadConfiguration() {
+        readConfiguration(leavingEditMode: true)
+    }
+
+    private func readConfiguration(leavingEditMode: Bool) {
+        if leavingEditMode { barEditing.end() }
         defer { configurationWatcher.watch(configurationLoader.dependencies) }
+        customizationHistory.checkForExternalChanges()
         do {
             let base = try configurationLoader.load(configurationURL, context: context)
             let next: Configuration
-            if sessionEdits.isEmpty { next = base }
+            if !customizationEdits.isEmpty {
+                let edits = try customizationHistory.pendingEdits()
+                let data = try customizationData(edits, editing: Data(contentsOf: configurationURL))
+                let (preview, loader) = try configurationReplayingSession(over: data)
+                customizationEdits = edits
+                configurationLoader = loader
+                next = preview
+            } else if sessionEdits.isEmpty { next = base }
             else {
                 let root = try editedDocument([])
                 next = try configurationLoader.load(configurationURL, data: configurationData(root), context: context)
@@ -133,13 +166,10 @@ final class BarStore: NSObject {
         }
     }
 
-    func editedDocument(_ edits: [ConfigurationEdit]) throws -> [String: ConfigurationValue] {
-        let data = try Data(contentsOf: configurationURL)
-        var root = try JSONDecoder().decode([String: ConfigurationValue].self, from: data)
-        var loader = ConfigurationLoader()
-        var ids: [String] = []
-        for edit in sessionEdits { root = try edit.applying(to: root, widgetIDs: &ids) }
-        ids = try loader.load(configurationURL, data: configurationData(root), context: context).widgets.map(\.id)
+    func editedDocument(_ edits: [ConfigurationEdit], data: Data? = nil, replaying: [ConfigurationEdit]? = nil) throws -> [String: ConfigurationValue] {
+        var root = try editedMainDocument(data: data, replaying: replaying)
+        var loader = configurationLoader
+        var ids = try loader.load(configurationURL, data: configurationData(root), context: context).widgets.map(\.id)
         for edit in edits {
             try edit.validateTargets(in: ids)
             root = try edit.applying(to: root, widgetIDs: &ids)
@@ -150,13 +180,22 @@ final class BarStore: NSObject {
         return root
     }
 
+    func editedMainDocument(data: Data? = nil, replaying: [ConfigurationEdit]? = nil) throws -> [String: ConfigurationValue] {
+        let data = try data ?? Data(contentsOf: configurationURL)
+        var root = try JSONDecoder().decode([String: ConfigurationValue].self, from: data)
+        var ids: [String] = []
+        for edit in replaying ?? (customizationEdits + sessionEdits) { root = try edit.applying(to: root, widgetIDs: &ids) }
+        return root
+    }
+
     func applyEdits(_ edits: [ConfigurationEdit], persist: Bool) throws {
+        flushCustomization()
         let allEdits = sessionEdits + edits
         let root = try editedDocument(edits)
         let data = try configurationData(root)
-        var loader = ConfigurationLoader()
+        var loader = configurationLoader
         let next = try loader.load(configurationURL, data: data, context: context)
-        if persist { try configurationData(root, editing: Data(contentsOf: configurationURL)).write(to: configurationURL, options: .atomic) }
+        if persist { try writeConfiguration(configurationData(root, editing: Data(contentsOf: configurationURL)), to: configurationURL) }
         sessionEdits = persist ? [] : allEdits
         configurationLoader = loader
         apply(next)
@@ -170,12 +209,103 @@ final class BarStore: NSObject {
         catch { sessionEdits = previous; throw error }
     }
 
-    func uninstallPackage(id: String, version: String) throws {
+    func customizationProfiles(includingPending: Bool = true) throws -> [ConfigurationProfile] {
+        let root = try editedDocument([], replaying: includingPending ? customizationEdits : [])
+        var loader = configurationLoader
+        _ = try loader.load(configurationURL, data: configurationData(root), context: context)
+        return loader.profiles
+    }
+
+    func customizationData(_ edits: [ConfigurationEdit], editing original: Data) throws -> Data {
+        var edits = edits
+        if !sessionEdits.isEmpty {
+            var loader = configurationLoader
+            let savedIDs = try loader.load(configurationURL, data: original, context: context).widgets.map(\.id)
+            let temporaryIDs = Set(try configurationReplayingSession(over: original).0.widgets.map(\.id)).subtracting(savedIDs)
+            for index in edits.indices {
+                if edits[index].action == .reorder {
+                    edits[index].ids = edits[index].ids?.filter { !temporaryIDs.contains($0) }
+                } else if [.set, .remove, .unset].contains(edits[index].action),
+                          let id = edits[index].id, temporaryIDs.contains(id) {
+                    throw CommandFailure(message: "Save or discard command-line changes before editing this widget.")
+                }
+            }
+        }
+        let root = try editedDocument(edits, data: original, replaying: [])
+        var loader = configurationLoader
+        _ = try loader.load(configurationURL, data: configurationData(root), context: context)
+        return try configurationData(root, editing: original)
+    }
+
+    func setCustomizationEdits(_ edits: [ConfigurationEdit]) throws {
+        let original = try Data(contentsOf: configurationURL)
+        let data = try customizationData(edits, editing: original)
+        let (next, loader) = try configurationReplayingSession(over: data)
+        if customizationEdits.isEmpty { customizationBase = try configurationReplayingSession(over: original) }
+        customizationEdits = edits
+        configurationLoader = loader
+        apply(next)
+        configurationWatcher.watch(loader.dependencies)
+    }
+
+    func discardCustomizationEdits() {
+        customizationEdits = []
+        let base = customizationBase
+        customizationBase = nil
+        readConfiguration(leavingEditMode: false)
+        if let error = configurationError, let (next, loader) = base {
+            configurationLoader = loader
+            apply(next)
+            configurationError = error
+            configurationWatcher.watch(loader.dependencies)
+        }
+    }
+
+    func writeCustomization(_ data: Data, replacing original: Data) throws {
+        let (next, loader) = try configurationReplayingSession(over: data)
+        guard try Data(contentsOf: configurationURL) == original else {
+            throw CommandFailure(message: "The configuration file changed. Try your change again.")
+        }
+        try writeConfiguration(data, to: configurationURL)
+        customizationEdits = []
+        customizationBase = nil
+        configurationLoader = loader
+        apply(next)
+        configurationWatcher.watch(loader.dependencies)
+    }
+
+    func validateCustomization(_ data: Data) throws {
+        var loader = configurationLoader
+        _ = try loader.load(configurationURL, data: data, context: context)
+    }
+
+    private func configurationReplayingSession(over data: Data) throws -> (Configuration, ConfigurationLoader) {
+        try validateCustomization(data)
+        let root = try editedDocument([], data: data, replaying: sessionEdits)
+        var loader = configurationLoader
+        let next = try loader.load(configurationURL, data: configurationData(root), context: context)
+        return (next, loader)
+    }
+
+    @discardableResult
+    func flushCustomization() -> Bool {
+        do {
+            try customizationHistory.flush()
+            return true
+        } catch {
+            customizationHistory.error = errorMessage(error)
+            return false
+        }
+    }
+
+    func uninstallPackage(id: String, version: String, fromCustomization: Bool = false) throws {
         let packages = WidgetPackageStore(directory: configurationURL.deletingLastPathComponent().appending(path: "packages"))
         let directory = try packages.directory(id: id, version: version)
         let manifest = try packages.manifest(at: directory)
         var loader = ConfigurationLoader()
-        let document = try loader.compose(configurationURL, data: configurationData(editedDocument([])), context: context)
+        flushCustomization()
+        let document = try loader.compose(configurationURL, data: configurationData(
+            editedDocument([], replaying: fromCustomization ? [] : sessionEdits)), context: context)
         var selections = try document["packages"]?.decoded([WidgetPackageSelection].self) ?? []
         if let theme = document["theme"] { selections.append(try theme.decoded(WidgetPackageSelection.self)) }
         var edits: [ConfigurationEdit] = []
@@ -184,16 +314,103 @@ final class BarStore: NSObject {
                 "id": .string(id), "version": .string(version), "enabled": .bool(false), "settings": .object(selection.settings)
             ]))
         }
-        try applyEdits(edits, persist: true)
+        if fromCustomization {
+            let data = try customizationData(edits, editing: Data(contentsOf: configurationURL))
+            let (_, preview) = try configurationReplayingSession(over: data)
+            var active = try preview.document["packages"]?.decoded([WidgetPackageSelection].self) ?? []
+            if let theme = preview.document["theme"] { active.append(try theme.decoded(WidgetPackageSelection.self)) }
+            guard !active.contains(where: { $0.id == id && $0.version == version && $0.enabled }) else {
+                throw CommandFailure(message: "Save or discard command-line changes before uninstalling this version.")
+            }
+            for edit in edits { try customizationHistory.change(edit) }
+        } else {
+            try applyEdits(edits, persist: true)
+        }
         try FileManager.default.removeItem(at: directory)
+        if fromCustomization { customizationHistory.dropUnavailableHistory() }
     }
 
     private func apply(_ next: Configuration) {
-        profiles = configurationLoader.profiles
-        pinnedProfile = configurationLoader.pinnedProfile
-        if effectiveDocument == configurationLoader.document {
-            origins = configurationLoader.origins
-            activeProfiles = configurationLoader.activeProfiles
+        normalComposition = (next, configurationLoader)
+        if let triedTheme {
+            do {
+                let (preview, loader) = try configurationTryingTheme(triedTheme)
+                display(preview, loader: loader)
+            } catch { configurationError = errorMessage(error) }
+        } else {
+            display(next, loader: configurationLoader)
+        }
+    }
+
+    var selectedThemeKey: String {
+        let selection = try? effectiveDocument["theme"]?.decoded(WidgetPackageSelection.self)
+        return selection.flatMap { $0.enabled ? $0.key : nil } ?? "built-in"
+    }
+
+    func themeSettings(for choice: ThemeChoice, in previewDocument: [String: ConfigurationValue]? = nil) throws -> [String: ConfigurationValue] {
+        // Saving uses only the main file's own settings; previews can supply the temporary composition.
+        let document = try previewDocument ?? editedMainDocument(replaying: customizationEdits)
+        let selection = try document["theme"]?.decoded(WidgetPackageSelection.self)
+        return selection.flatMap { $0.key == choice.key ? $0.settings : nil } ?? [:]
+    }
+
+    func themeEdit(for choice: ThemeChoice) throws -> ConfigurationEdit {
+        var inheritedRoot = try editedMainDocument(replaying: [])
+        inheritedRoot["theme"] = nil
+        var loader = ConfigurationLoader()
+        loader.themesDirectory = themesDirectory
+        let document = try loader.compose(configurationURL, data: configurationData(inheritedRoot), context: context)
+        let inherited = try document["theme"]?.decoded(WidgetPackageSelection.self)
+        var edit = choice.edit
+        if choice.isBuiltIn {
+            if inherited?.enabled == true { edit.properties = choice.selection }
+        } else {
+            let settings = try themeSettings(for: choice)
+            if !settings.isEmpty { edit.properties?["settings"] = .object(settings) }
+        }
+        if edit.properties != nil {
+            if choice.isBundled, inherited?.version != nil { edit.properties?["version"] = .null }
+            if edit.properties?["settings"] == nil, inherited?.settings.isEmpty == false {
+                edit.properties?["settings"] = .null
+            }
+        }
+        return edit
+    }
+
+    var clearanceConfiguration: Configuration? { normalComposition?.configuration ?? configuration }
+
+    func tryTheme(_ choice: ThemeChoice) throws {
+        guard normalComposition != nil else {
+            throw CommandFailure(message: "Load a bar before trying themes.")
+        }
+        let (next, loader) = try configurationTryingTheme(choice)
+        triedTheme = choice
+        display(next, loader: loader)
+    }
+
+    func endThemeTrial() {
+        guard triedTheme != nil else { return }
+        triedTheme = nil
+        if let normalComposition { display(normalComposition.configuration, loader: normalComposition.loader) }
+    }
+
+    private func configurationTryingTheme(_ choice: ThemeChoice) throws -> (Configuration, ConfigurationLoader) {
+        var loader = ConfigurationLoader()
+        loader.themesDirectory = themesDirectory
+        let settings = try themeSettings(for: choice, in: configurationLoader.document)
+        let layer = try loader.readPackage(at: choice.directory, manifest: choice.manifest, settings: settings)
+        let next = try loader.load(configurationURL, data: configurationData(editedMainDocument()),
+                                   context: context, previewTheme: layer)
+        return (next, loader)
+    }
+
+    private func display(_ next: Configuration, loader: ConfigurationLoader) {
+        profiles = loader.profiles
+        pinnedProfile = loader.pinnedProfile
+        widgetPackageNames = loader.widgetPackageNames
+        if effectiveDocument == loader.document {
+            origins = loader.origins
+            activeProfiles = loader.activeProfiles
             configurationError = nil
             return
         }
@@ -251,9 +468,9 @@ final class BarStore: NSObject {
         configuration = next
         managesConnections = true
         preparePresentations()
-        effectiveDocument = configurationLoader.document
-        origins = configurationLoader.origins
-        activeProfiles = configurationLoader.activeProfiles
+        effectiveDocument = loader.document
+        origins = loader.origins
+        activeProfiles = loader.activeProfiles
         configurationError = nil
         let center = DistributedNotificationCenter.default()
         for observer in eventObservers { center.removeObserver(observer) }
@@ -378,8 +595,12 @@ final class BarStore: NSObject {
 
     func handle(_ request: RuntimeRequest) throws -> ConfigurationValue {
         switch request.action {
-        case .customize: onCustomize?()
-        case .reload: try applyEdits([], persist: false)
+        case .customize:
+            if let id = request.id { onCustomizeWidget?(id) }
+            else { onCustomize?() }
+        case .reload:
+            barEditing.end()
+            try applyEdits([], persist: false)
         case .batch: try applyEdits(request.edits ?? [], persist: request.persist)
         case .uninstallPackage:
             guard let id = request.id, let version = request.version else {
@@ -520,6 +741,7 @@ final class BarStore: NSObject {
     @discardableResult
     func runAction(_ command: String, widget: WidgetConfiguration,
                    event: ScriptEvent = ScriptEvent(sender: "mouse.clicked")) -> Task<Void, Never> {
+        guard barEditing.allowsWidgetActions else { return Task {} }
         let id = UUID()
         let script = scripts[widget.id]
         let environment = commandEnvironment(widget, configuration: configuration!)
@@ -553,6 +775,9 @@ final class BarStore: NSObject {
     }
 
     func stop() {
+        barEditing.end()
+        endThemeTrial()
+        flushCustomization()
         managesConnections = false
         popup.close()
         windowClearance.stop()

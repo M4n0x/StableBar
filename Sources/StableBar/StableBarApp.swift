@@ -76,8 +76,18 @@ struct StableBarApp {
 }
 
 @MainActor
-final class BarPanel: NSPanel {
+class BarPanel: NSPanel {
     var barGeometry: BarGeometry?
+    var isEditingBar = false {
+        didSet {
+            guard oldValue, !isEditingBar, isKeyWindow else { return }
+            // Ordering out releases a nonactivating panel's keyboard grab and restores
+            // the previous app's focus. Ordering front again does not make it key.
+            let wasVisible = isVisible
+            orderOut(nil)
+            if wasVisible { orderFrontRegardless() }
+        }
+    }
     private(set) var decorationPanel: PassiveBarPanel?
 
     var drawingFrame: CGRect {
@@ -86,7 +96,7 @@ final class BarPanel: NSPanel {
         return CGRect(x: frame.minX, y: frame.maxY - height, width: frame.width, height: height)
     }
 
-    override var canBecomeKey: Bool { false }
+    override var canBecomeKey: Bool { isEditingBar }
     override var canBecomeMain: Bool { false }
     @objc var hasKeyAppearance: Bool { true }
 
@@ -151,13 +161,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let store: BarStore
     private let setup = SetupWindow()
     private let customization = CustomizationWindow()
+    private let themeTrial = ThemeTrialPanel()
+    private let editingControls = BarEditControls()
+    private let editingKeyboard = BarEditingKeyboard()
     private var control: RuntimeControl?
     private var systemContext: SystemContext?
     private var panels: [CGDirectDisplayID: BarPanel] = [:]
     private var statusItem: NSStatusItem!
 
-    init(configurationURL: URL) {
-        store = BarStore(configurationURL: configurationURL)
+    convenience init(configurationURL: URL) {
+        self.init(store: BarStore(configurationURL: configurationURL))
+    }
+
+    init(store: BarStore, panels: [CGDirectDisplayID: BarPanel] = [:]) {
+        self.store = store
+        self.panels = panels
         super.init()
     }
 
@@ -169,6 +187,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
         store.onConfigurationChange = { [weak self] in self?.updatePanels() }
         store.onCustomize = { [weak self] in self?.showCustomization() }
+        store.onCustomizeWidget = { [weak self] id in
+            guard let self else { return }
+            customization.show(store: store, widgetID: id)
+        }
+        store.onEndThemeTrial = { [weak self] in self?.themeTrial.cancel() }
+        store.onTryThemes = { [weak self] displayID in
+            let screens = NSScreen.screens
+            guard screens.indices.contains(displayID - 1) else { return }
+            self?.showThemeTrial(on: screens[displayID - 1])
+        }
         do {
             let control = RuntimeControl { [store] in try store.handle($0) }
             try control.start(url: store.configurationURL)
@@ -203,6 +231,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func screensChanged() {
+        store.barEditing.screensChanged()
+        themeTrial.cancel()
         store.popup.close()
         store.retainDisplays(Set(NSScreen.screens.map { BarDisplay(screen: $0).id }))
         store.refreshContext()
@@ -221,10 +251,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.send(.wake)
     }
 
+    func clearanceDisplay(frame: CGRect, visibleFrame: CGRect, display: BarDisplay, desktopTop: CGFloat) -> WindowClearanceDisplay? {
+        guard let configuration = store.clearanceConfiguration else { return nil }
+        return WindowClearanceDisplay(frame: frame, visibleFrame: visibleFrame, configuration: configuration,
+                                      display: display, desktopTop: desktopTop)
+    }
+
     private func updatePanels() {
+        if !store.barEditing.isActive { editingControls.close() }
         guard let config = store.configuration else { return }
         let screens = NSScreen.screens
         var clearanceDisplays: [WindowClearanceDisplay] = []
+        var visibleFrames: [CGDirectDisplayID: CGRect] = [:]
         let ids = screens.map { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as! NSNumber).uint32Value }
         for (id, panel) in panels where !ids.contains(id) {
             panel.close()
@@ -245,6 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 panel.hidesOnDeactivate = false
                 panel.isReleasedWhenClosed = false
                 panel.animationBehavior = .none
+                panel.autorecalculatesKeyViewLoop = true
                 panel.level = .floating
                 panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
                 panel.contentView = NSHostingView(rootView: BarView(store: store, display: BarDisplay(screen: screen), nativeDecorations: true))
@@ -254,16 +293,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             host.sizingOptions = []
             host.rootView = BarView(store: store, display: BarDisplay(screen: screen), nativeDecorations: true)
             let top = screen.frame.maxY
-            let geometry = config.barGeometry(for: BarDisplay(screen: screen))
+            let geometry = store.barEditing.geometry(for: BarDisplay(screen: screen))!
+            panel.isEditingBar = store.barEditing.isActive
+            if panel.isEditingBar { panel.setDecorations(nil) }
             panel.barGeometry = geometry
             let height = geometry.inputHeight
             panel.setFrame(NSRect(x: screen.frame.minX, y: top - config.bar.offset - height,
                                   width: screen.frame.width, height: height), display: true)
             panel.orderFrontRegardless()
-            clearanceDisplays.append(WindowClearanceDisplay(frame: screen.frame, visibleFrame: screen.visibleFrame,
-                                                            barFrame: panel.drawingFrame, desktopTop: screens[0].frame.maxY))
+            visibleFrames[id] = screen.visibleFrame
+            if let clearance = clearanceDisplay(frame: screen.frame, visibleFrame: screen.visibleFrame,
+                                                      display: BarDisplay(screen: screen), desktopTop: screens[0].frame.maxY) {
+                clearanceDisplays.append(clearance)
+            }
         }
-        store.windowClearance.update(enabled: config.bar.keepWindowsClear, displays: clearanceDisplays)
+        editingControls.update(store: store, bars: panels, visibleFrames: visibleFrames)
+        store.windowClearance.update(enabled: store.clearanceConfiguration?.bar.keepWindowsClear == true, displays: clearanceDisplays)
+        if store.barEditing.isActive {
+            if editingKeyboard.start(store: store) {
+                let screen = screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+                if let screen {
+                    let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as! NSNumber).uint32Value
+                    panels[id]?.makeKeyAndOrderFront(nil)
+                    panels[id]?.selectNextKeyView(nil)
+                }
+            }
+        } else { editingKeyboard.stop() }
+        themeTrial.reposition()
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -271,6 +327,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "StableBar", action: nil, keyEquivalent: "")
         menu.addItem(.separator())
         addItem("Customize StableBar…", action: #selector(showCustomization), to: menu)
+        if !panels.isEmpty { addItem("Try Themes…", action: #selector(tryThemes), to: menu) }
+        if !panels.isEmpty, store.barEditing.isAvailable { addItem(store.barEditing.menuTitle, action: #selector(editBar), to: menu) }
         if let update = store.update {
             menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdate.checkForUpdates), keyEquivalent: "").target = update
         }
@@ -288,6 +346,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showCustomization() { customization.show(store: store) }
+    @objc private func editBar() { store.barEditing.toggle() }
+    @objc private func tryThemes() {
+        let screens = NSScreen.screens
+        let barIndices = screens.indices.filter { index in
+            let id = (screens[index].deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as! NSNumber).uint32Value
+            return panels[id] != nil
+        }
+        guard let index = ThemeTrialPlacement.screenIndex(at: NSEvent.mouseLocation, frames: screens.map(\.frame),
+                                                         mainIndex: screens.firstIndex { $0 === NSScreen.main },
+                                                         barIndices: barIndices) else { return }
+        showThemeTrial(on: screens[index])
+    }
+
+    private func showThemeTrial(on screen: NSScreen) {
+        let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as! NSNumber).uint32Value
+        guard let bar = panels[id] else { return }
+        themeTrial.show(store: store, bar: bar, screen: screen)
+    }
+
     @objc func showSetup() { setup.show(store: store) }
     @objc private func quit() { NSApp.terminate(nil) }
 
@@ -296,7 +373,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return false
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        store.barEditing.end()
+        themeTrial.cancel()
+        store.flushCustomization()
+        return .terminateNow
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        editingKeyboard.stop()
+        editingControls.close()
+        themeTrial.cancel()
         control?.stop()
         systemContext?.stop()
         store.stop()

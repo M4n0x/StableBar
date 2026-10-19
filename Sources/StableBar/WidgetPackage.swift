@@ -123,6 +123,11 @@ struct WidgetPackageInspection: Sendable {
     let commands: [String]
     let screenshot: URL?
 
+    var requiresReview: Bool {
+        !commands.isEmpty || !manifest.permissions.isEmpty || !manifest.hosts.isEmpty || !manifest.requires.isEmpty
+            || manifest.settings.values.contains { $0.type == "secret" }
+    }
+
     func additions(since previous: WidgetPackageInspection) -> [String] {
         commands.filter { !previous.commands.contains($0) }.map { "Command: \($0)" }
             + manifest.hosts.filter { !previous.manifest.hosts.contains($0) }.map { "Host: \($0)" }
@@ -206,7 +211,7 @@ func packageFile(_ path: String, inside directory: URL) throws -> URL {
     return url
 }
 
-struct WidgetPackageStore {
+struct WidgetPackageStore: Sendable {
     let directory: URL
     var appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
 
@@ -283,6 +288,8 @@ struct WidgetPackageStore {
         }
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let package = directory.appending(path: "package")
+        var completed = false
+        defer { if !completed { try? FileManager.default.removeItem(at: directory) } }
         try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
         let archive = directory.appending(path: "package.tar.gz")
         try data.write(to: archive)
@@ -291,6 +298,7 @@ struct WidgetPackageStore {
         guard manifest.id == entry.id, manifest.version == entry.version else {
             throw WidgetPackageError.archiveMismatch(entry.id, entry.version)
         }
+        completed = true
         return package
     }
 
@@ -308,8 +316,8 @@ struct WidgetPackageStore {
 }
 
 // Unlike manifests, the index ignores unknown keys and entries of unknown kinds, because older apps read the same index.
-struct PackageIndex: Decodable {
-    struct Entry: Decodable {
+struct PackageIndex: Decodable, Sendable {
+    struct Entry: Decodable, Sendable {
         let id: String
         let name: String
         let version: String
@@ -348,30 +356,6 @@ private func fetch(_ url: URL) async throws -> Data {
         throw WidgetPackageError.downloadFailed(url.absoluteString, response.statusCode)
     }
     return data
-}
-
-struct ThemeChoice {
-    let manifest: WidgetPackageManifest
-    let directory: URL
-    let isBundled: Bool
-
-    var key: String { isBundled ? manifest.id : manifest.versionKey }
-    var title: String { isBundled ? manifest.name : "\(manifest.name) · \(manifest.version)" }
-    var selection: [String: ConfigurationValue] {
-        isBundled ? ["id": .string(manifest.id)] : ["id": .string(manifest.id), "version": .string(manifest.version)]
-    }
-}
-
-func themeChoices(packages: URL) -> [ThemeChoice] {
-    let bundled = ((bundledThemesDirectory.flatMap {
-        try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
-    }) ?? []).filter { $0.lastPathComponent != "built-in" }.compactMap { directory in
-        (try? WidgetPackageStore(directory: directory).manifest(at: directory)).map { ThemeChoice(manifest: $0, directory: directory, isBundled: true) }
-    }
-    let installed = ((try? WidgetPackageStore(directory: packages).list()) ?? []).filter { $0.kind == .theme }.map {
-        ThemeChoice(manifest: $0, directory: packages.appending(path: $0.id).appending(path: $0.version), isBundled: false)
-    }
-    return bundled.sorted { $0.manifest.name < $1.manifest.name } + installed
 }
 
 func preparePackageDocument(_ document: [String: ConfigurationValue], directory: URL) throws -> [String: ConfigurationValue] {

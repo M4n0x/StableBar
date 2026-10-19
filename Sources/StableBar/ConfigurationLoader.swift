@@ -212,23 +212,31 @@ struct ConfigurationLoader {
     private(set) var dependencies: Set<URL> = []
     private(set) var document: [String: ConfigurationValue] = [:]
     private(set) var origins: [String: ConfigurationOrigin] = [:]
+    private(set) var widgetPackageNames: [String: String] = [:]
     private(set) var activeProfiles: [String] = []
     private(set) var profiles: [ConfigurationProfile] = []
     private(set) var pinnedProfile: String?
+    /// The fixed appearance used to match conditions, before profiles apply their settings.
+    private(set) var profileAppearance: String?
     private(set) var matchesApps = false
     private(set) var templates: [String: [String: ConfigurationValue]] = [:]
     private var packageSources: [String: URL] = [:]
+    private var packageNames: [String: String] = [:]
 
     mutating func load(_ url: URL, data: Data? = nil,
-                       context: ConfigurationContext = ConfigurationContext()) throws -> Configuration {
-        try ConfigurationValue.object(compose(url, data: data, context: context)).decoded(Configuration.self)
+                       context: ConfigurationContext = ConfigurationContext(),
+                       previewTheme: ConfigurationLayer? = nil) throws -> Configuration {
+        try ConfigurationValue.object(compose(url, data: data, context: context, previewTheme: previewTheme)).decoded(Configuration.self)
     }
 
     mutating func compose(_ url: URL, data: Data? = nil,
-                          context: ConfigurationContext = ConfigurationContext()) throws -> [String: ConfigurationValue] {
+                          context: ConfigurationContext = ConfigurationContext(),
+                          previewTheme: ConfigurationLayer? = nil) throws -> [String: ConfigurationValue] {
         dependencies = []
         activeProfiles = []
         packageSources = [:]
+        packageNames = [:]
+        widgetPackageNames = [:]
         let base = try read(url.standardizedFileURL, data: data, path: [])
         let packageStore = WidgetPackageStore(directory: url.deletingLastPathComponent().appending(path: "packages"))
         var layer = ConfigurationLayer(values: ["widgets": .array([])], origins: [:])
@@ -238,7 +246,9 @@ struct ConfigurationLoader {
         if themesDirectory != nil {
             try layer.merge(readBundledTheme(WidgetPackageSelection(id: "built-in")))
         }
-        if let theme = try base.values["theme"]?.decoded(WidgetPackageSelection.self, at: "theme"), theme.enabled {
+        if let previewTheme {
+            try layer.merge(previewTheme)
+        } else if let theme = try base.values["theme"]?.decoded(WidgetPackageSelection.self, at: "theme"), theme.enabled {
             try layer.merge(theme.version == nil ? readBundledTheme(theme) : readSelectedPackage(theme, from: packageStore, theme: true))
         }
         try layer.merge(base)
@@ -273,10 +283,12 @@ struct ConfigurationLoader {
     mutating func finish(_ input: ConfigurationLayer, context: ConfigurationContext) throws -> [String: ConfigurationValue] {
         var layer = input
         var context = context
+        profileAppearance = nil
         if case let .object(bar) = layer.values["bar"], let appearance = bar["appearance"],
            case let .string(name) = try substituteConfigurationReferences(appearance, prefix: "@token.",
                                                                           values: layer.values["tokens"]?.decoded([String: ConfigurationValue].self) ?? [:]) {
             context.appearance = name
+            profileAppearance = name
         }
         activeProfiles = []
         profiles = try layer.values["profiles"]?.decoded([ConfigurationProfile].self, at: "profiles") ?? []
@@ -354,6 +366,10 @@ struct ConfigurationLoader {
             .decoded([String: ConfigurationValue].self)
         let finalPaths = configurationOrigins(.object(document), source: ConfigurationOrigin(file: ""))
         origins = layer.origins.filter { finalPaths[$0.key] != nil }
+        widgetPackageNames = Dictionary(uniqueKeysWithValues: ids.compactMap { id in
+            guard let source = origins["widgets.\(id).id"], let name = packageNames[source.file] else { return nil }
+            return (id, name)
+        })
         return document
     }
 
@@ -441,6 +457,7 @@ struct ConfigurationLoader {
             .decoded([String: ConfigurationValue].self)
         try validateSecretReferences(.object(layer.values), package: manifest.id)
         layer.values = try preparePackageDocument(layer.values, directory: directory)
+        for source in layer.origins.values { packageNames[source.file] = manifest.name }
         return layer
     }
 }
@@ -449,9 +466,11 @@ struct ConfigurationLoader {
 final class ConfigurationWatcher {
     var onChange: (() -> Void)?
     private var sources: [DispatchSourceFileSystemObject] = []
+    private(set) var generation = 0
 
     func watch(_ urls: Set<URL>) {
         stop()
+        let generation = generation
         var targets = urls
         for url in urls {
             var directory = url.deletingLastPathComponent()
@@ -466,7 +485,10 @@ final class ConfigurationWatcher {
             let source = DispatchSource.makeFileSystemObjectSource(
                 fileDescriptor: descriptor, eventMask: [.write, .rename, .delete], queue: .main)
             source.setEventHandler { [weak self] in
-                Task { @MainActor in self?.onChange?() }
+                Task { @MainActor in
+                    guard let self, self.generation == generation else { return }
+                    self.onChange?()
+                }
             }
             source.setCancelHandler { close(descriptor) }
             source.resume()
@@ -475,6 +497,7 @@ final class ConfigurationWatcher {
     }
 
     func stop() {
+        generation += 1
         for source in sources { source.cancel() }
         sources.removeAll()
     }
