@@ -448,6 +448,18 @@ Popups inherit `popupDefaults` and then `defaults`, and the workspace highlight 
 
 A reference to a token that no layer defines is an error. Built-in defines all of these, so your own widgets can use them under any theme. Their names are reserved for colors: Built-in's `defaults` use `text`, `surface`, `surfaceRaised` and `accent`, so a token of yours with one of these names replaces the theme's color and must be a color. A widget package should still define fallback values for the shared tokens it uses, so it passes review on its own; Built-in and any other theme replace them.
 
+### Liquid Glass
+
+`bar.glass` is experimental. It draws backgrounds as native Liquid Glass, the material of the macOS 26 Dock, on top of any theme:
+
+```json
+"bar": { "glass": { "enabled": true, "transparency": 0.4 } }
+```
+
+Every widget, popup and bar that has a background becomes glass in the same shape, tinted with that background's color, so hover, open and data-state colors still show. Borders, corners, shadows and text keep the theme's style. Transparent backgrounds stay transparent. `transparency` (0.3 by default) sets how much glass shows through the color, from `0`, the theme's color, to `1`, pure glass; the higher it is, the more a busy or bright wallpaper can make text hard to read. StableBar uses Apple's clear glass with the theme's color as its dimming layer: the frosted regular glass switches small elements between light and dark to match what is behind them, which would leave theme text unreadable. Set `widgets`, `popups` or `bar` to `false` to keep that surface's plain color. Before macOS 26, StableBar draws the colors as usual.
+
+Glass in a background window renders flat, without refraction. StableBar's bar and popups report themselves as active to AppKit so the glass refracts; they still don't take keyboard focus.
+
 ### Displays and notch placement
 
 `notchLeft` ends before the notch and `notchRight` starts after it. `bar.notchSpacing` controls the gap on each side (16 by default). The notch comes from the screen's unobscured top areas; `bar.notchWidth` can override its width. On screens without a notch, `notchLeft`, `center` and `notchRight` form one centered group, measured from the visible content. Hidden groups leave no gap. With a notch, `center` remains at the screen's center and should be left empty.
@@ -659,7 +671,7 @@ Open **Customize StableBar…** from the menu-bar icon or by right-clicking the 
 
 **General** opens the configuration file in your editor, shows it in Finder or reloads it, runs setup again, and reconnects the workspace source.
 
-**Appearance** chooses the [theme](#themes), keeps the bar light or dark or lets it follow the system, and edits the theme's colors. Each theme color has a light and a dark value; changing one saves it in your configuration's `tokens`, so every widget, popup and package that uses the color follows. **All widgets** sets the default colors, shadow, font, weight, size, padding and corners. **Popups** sets their background, border, shadow and weight, which apply over All widgets. **Bar** sets the bar's background, border color, width and edges, corners, size and position. Together they reach every property the themes that ship with StableBar set, so you can build any of their looks here.
+**Appearance** chooses the [theme](#themes), keeps the bar light or dark or lets it follow the system, and edits the theme's colors. Each theme color has a light and a dark value; changing one saves it in your configuration's `tokens`, so every widget, popup and package that uses the color follows. **Liquid Glass**, below the theme, turns on [Liquid Glass](#liquid-glass) and sets how see-through it is and which surfaces use it. **All widgets** sets the default colors, shadow, font, weight, size, padding and corners. **Popups** sets their background, border, shadow and weight, which apply over All widgets. **Bar** sets the bar's background, border color, width and edges, corners, size and position. Together they reach every property the themes that ship with StableBar set, so you can build any of their looks here.
 
 **Widgets** lists your widgets by position; drag to reorder them. Change a widget's position, icon, text, clock format or transition, its colors, font and shape, or edit its properties as JSON. A color either follows one of the theme's colors, such as Text or Accent, or is a custom light and dark pair.
 
