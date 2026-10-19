@@ -63,6 +63,19 @@ final class ConfigurationEditor {
         set(changedProperties(from: current, to: properties))
     }
 
+    func setProfile(_ profile: ConfigurationProfile) {
+        do {
+            let edited = try JSONDecoder().decode([String: ConfigurationValue].self, from: JSONEncoder().encode(profile))
+            let current = try store.profiles.first { $0.name == profile.name }.map {
+                try JSONDecoder().decode([String: ConfigurationValue].self, from: JSONEncoder().encode($0))
+            } ?? [:]
+            var changes = changedProperties(from: current, to: edited)
+            if changes.isEmpty { return }
+            changes["name"] = .string(profile.name)
+            change(ConfigurationEdit(action: .profiles, profiles: [changes]))
+        } catch { self.error = errorMessage(error) }
+    }
+
     func undo() {
         guard let previous = undoSteps.popLast() else { return }
         redoSteps.append(store.sessionEdits)
