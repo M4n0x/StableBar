@@ -187,6 +187,14 @@ final class ConfigurationHistory {
     func clearNotice() { notice = nil }
     func showNotice(_ message: String) { notice = message }
 
+    /// Starts over when the bar switches to another file, after its pending change is saved.
+    func reset() {
+        undoSteps.removeAll()
+        redoSteps.removeAll()
+        lastFile = nil
+        notice = nil
+    }
+
     private func discardPendingChange() {
         writeTask?.cancel()
         writeTask = nil

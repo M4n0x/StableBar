@@ -160,6 +160,18 @@ private struct CustomizationView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            if let setup = store.screenSetup, [.widgets, .appearance, .general].contains(section ?? .widgets) {
+                if store.configurationURL == store.sharedConfigurationURL {
+                    Text("\(setup.title) uses the shared bar.").font(.callout).foregroundStyle(.secondary)
+                    Button("Give It Its Own Bar") {
+                        do { try store.giveScreenSetupItsOwnBar() }
+                        catch { editor.error = errorMessage(error) }
+                    }
+                    .help("Copies the shared bar for these screens. Changes then apply only while they are connected.")
+                } else {
+                    Text("Changes apply to the bar for \(setup.title.lowercased()).").font(.callout).foregroundStyle(.secondary)
+                }
+            }
         }
         .controlSize(.large)
         .padding(.horizontal, 16)

@@ -4,6 +4,7 @@ import SwiftUI
 struct GeneralSettingsView: View {
     let editor: ConfigurationEditor
     @State private var aboutExpanded = false
+    @State private var sharing: ScreenSetup?
     private var store: BarStore { editor.store }
 
     var body: some View {
@@ -13,6 +14,41 @@ struct GeneralSettingsView: View {
                     LoginItemSettings()
                 }
                 .id(SettingsSearchResult.login.id)
+                Section {
+                    if let setup = store.screenSetup, store.configurationURL == store.sharedConfigurationURL {
+                        LabeledContent {
+                            Button("Give It Its Own Bar") {
+                                do { try store.giveScreenSetupItsOwnBar() }
+                                catch { editor.error = errorMessage(error) }
+                            }
+                        } label: {
+                            Text(setup.title)
+                            Text("Connected now, using the shared bar")
+                        }
+                    }
+                    ForEach(store.screenSetupsWithOwnBars, id: \.fileName) { setup in
+                        LabeledContent {
+                            Button("Use Shared Bar…") { sharing = setup }
+                        } label: {
+                            Text(setup.title)
+                            Text(setup == store.screenSetup ? "Connected now, with its own bar" : "Its own bar")
+                        }
+                    }
+                } header: {
+                    Text("Screen setups")
+                } footer: {
+                    Text("Each combination of screens, such as the laptop alone or with a monitor, can have its own bar: its widgets on each screen, size, theme and placement. StableBar switches bars when you connect or disconnect a screen. Setups without their own bar use the shared bar, your main configuration.")
+                }
+                .id(SettingsSearchResult.screenSetups.id)
+                .confirmationDialog("Use the shared bar for \(sharing?.title.lowercased() ?? "")?", isPresented: Binding(
+                    get: { sharing != nil }, set: { if !$0 { sharing = nil } }), presenting: sharing) { setup in
+                    Button("Use Shared Bar") {
+                        do { try store.useSharedBar(for: setup) }
+                        catch { editor.error = errorMessage(error) }
+                    }
+                } message: { _ in
+                    Text("Its own bar moves to the Trash.")
+                }
                 Section {
                     let bar = StyleFields(store: store, path: "bar",
                         values: (try? store.effectiveDocument["bar"]?.decoded([String: ConfigurationValue].self)) ?? [:],
@@ -71,7 +107,7 @@ struct GeneralSettingsView: View {
                 } header: {
                     Text("Configuration")
                 } footer: {
-                    Text("Saved file changes apply automatically. Settings writes to your main configuration; imported files stay intact. Temporary command-line changes have their own Save and Discard actions.")
+                    Text("Saved file changes apply automatically. Settings writes to the file of the bar on your screens; imported files stay intact. Temporary command-line changes have their own Save and Discard actions.")
                 }
                 .id(SettingsSearchResult.configuration.id)
                 Section("Getting started") {

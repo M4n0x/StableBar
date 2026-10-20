@@ -83,6 +83,40 @@ import Testing
     #expect(store.configurationError == nil)
 }
 
+@Test @MainActor func eachScreenSetupShowsItsOwnBarAndChangesOnlyThatFile() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let shared = directory.appending(path: "config.json")
+    let sharedData = Data(#"{"bar":{"height":36},"widgets":[{"id":"clock","type":"clock","position":"right"}]}"#.utf8)
+    try sharedData.write(to: shared)
+    try Data(#"{"bar":{"height":30},"widgets":[{"id":"clock","type":"clock","position":"left","display":"monitor"}]}"#.utf8)
+        .write(to: directory.appending(path: "setup-laptop+monitor.json"))
+    let laptop = BarDisplay(id: 1, isBuiltIn: true, isMain: false, notch: nil)
+    let docked = ScreenSetup([laptop, BarDisplay(id: 2, isBuiltIn: false, isMain: true, notch: nil)])
+    let store = BarStore(configurationURL: shared)
+    defer { store.stop() }
+    store.start(on: docked)
+    #expect(store.configurationURL.lastPathComponent == "setup-laptop+monitor.json")
+    #expect(store.configuration?.bar.height == 30)
+    store.showScreenSetup(ScreenSetup([laptop]))
+    #expect(store.configurationURL == shared)
+    #expect(store.configuration?.bar.height == 36)
+
+    try store.giveScreenSetupItsOwnBar()
+    #expect(store.configurationURL.lastPathComponent == "setup-laptop.json")
+    let editor = ConfigurationEditor(store: store)
+    editor.change(ConfigurationEdit(action: .bar, properties: ["height": .number(28)]))
+    try editor.history.flush()
+    #expect(store.configuration?.bar.height == 28)
+    #expect(try Data(contentsOf: shared) == sharedData)
+    #expect(store.screenSetupsWithOwnBars == [docked, ScreenSetup([laptop])])
+    store.showScreenSetup(docked)
+    #expect(store.configuration?.bar.height == 30)
+    #expect(store.configuration?.widgets[0].display == .monitor)
+    #expect(!editor.history.canUndo)
+}
+
 @Test @MainActor func profilesUpdateEvenWhenEffectiveSettingsStayTheSame() throws {
     let url = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString + ".json")
     defer { try? FileManager.default.removeItem(at: url) }

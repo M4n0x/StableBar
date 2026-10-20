@@ -309,6 +309,14 @@ struct WidgetsView: View {
                         Text("Specific screens: \(ids.map(String.init).joined(separator: ", ")). Edit the list under Technical details.")
                             .font(.callout).foregroundStyle(.secondary)
                     }
+                    if case .any = widget.display {
+                        ForEach(ScreenKind.allCases, id: \.self) { kind in
+                            Toggle(kind.title, isOn: Binding(get: { kind.shows(widget.display, among: [], activeID: 0) }, set: { shown in
+                                let kinds = ScreenKind.allCases.filter { $0 == kind ? shown : $0.shows(widget.display, among: [], activeID: 0) }
+                                editor.set(["display": .array(kinds.map { .string($0.selection) })], for: widget.id)
+                            }))
+                        }
+                    }
                     Picker("Position", selection: Binding(get: { widget.position }, set: { if $0 != widget.position { move(widget.id, to: $0) } })) {
                         ForEach(WidgetPlacement.destinations, id: \.self) { Text($0.title).tag($0) }
                     }
