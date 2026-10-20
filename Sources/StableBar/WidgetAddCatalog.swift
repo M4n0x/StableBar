@@ -46,6 +46,8 @@ enum WidgetAddCatalog {
     static let builtIns: [WidgetAddChoice] = [
         .init(id: "clock", name: "Clock", symbol: "clock", description: "The local date and time.", properties: ["type": .string("clock"), "format": .string("EEE d MMM  HH:mm")]),
         .init(id: "activeApp", name: "Active app", symbol: "macwindow", description: "The frontmost app’s name and icon.", properties: ["type": .string("activeApp")]),
+        .init(id: "appleMenu", name: "Apple menu", symbol: "apple.logo", description: "The Apple menu. Needs Accessibility access.", properties: ["type": .string("appleMenu")]),
+        .init(id: "appMenu", name: "App menus", symbol: "menubar.rectangle", description: "The frontmost app’s menus. Needs Accessibility access.", properties: ["type": .string("appMenu")]),
         .init(id: "battery", name: "Battery", symbol: "battery.100percent", description: "Battery level and charging status.", properties: ["type": .string("battery")]),
         .init(id: "audio", name: "Sound", symbol: "speaker.wave.2", description: "The volume and current audio output.", properties: ["type": .string("audio")]),
         .init(id: "system", name: "CPU", symbol: "cpu", description: "CPU and memory use.", properties: ["type": .string("system")]),

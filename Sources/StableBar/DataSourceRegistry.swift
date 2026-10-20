@@ -51,6 +51,18 @@ extension SourcePermission {
     static let calendars = SourcePermission(title: "Calendars",
                                             detail: "Calendar widgets show your next meeting and today's agenda. macOS asks for access the first time one updates.",
                                             symbol: "calendar", privacyPane: "Privacy_Calendars")
+    static let accessibility = SourcePermission(title: "Accessibility",
+                                                detail: "App menus and the Apple menu read the frontmost app's menus and open them.",
+                                                symbol: "accessibility", privacyPane: "Privacy_Accessibility")
+}
+
+extension WidgetContent {
+    var permissions: [SourcePermission] {
+        switch self {
+        case .appMenu, .appleMenu: [.accessibility]
+        default: []
+        }
+    }
 }
 
 struct DataSourceRegistry: Sendable {
@@ -60,12 +72,14 @@ struct DataSourceRegistry: Sendable {
         types.first { $0.name == name }
     }
 
-    /// The permissions that the sources a configuration runs need, each once, in registry order.
+    /// The permissions that the sources a configuration runs need, in registry order, then those its
+    /// enabled widgets need, each once.
     func permissions(for configuration: Configuration?) -> [SourcePermission] {
         guard let configuration else { return [] }
         let running = Set(configuration.activeProviders.compactMap { configuration.providers[$0]?.type })
         var listed = Set<SourcePermission>()
-        return types.filter { running.contains($0.name) }.compactMap(\.permission).filter { listed.insert($0).inserted }
+        return (types.filter { running.contains($0.name) }.compactMap(\.permission)
+                + configuration.widgets.filter(\.enabled).flatMap(\.content.permissions)).filter { listed.insert($0).inserted }
     }
 
     static let builtIn = DataSourceRegistry(types: [.command, .stream, .battery, .system, .network, .audio, .calendar])

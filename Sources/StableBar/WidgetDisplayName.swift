@@ -6,6 +6,8 @@ enum WidgetDisplayName {
         switch content {
         case .clock: type = "clock"
         case .activeApp: type = "activeApp"
+        case .appMenu: type = "appMenu"
+        case .appleMenu: type = "appleMenu"
         case .provider(let name): type = providers[name]?.type ?? name
         case .workspaces: type = "workspaces"
         case .text: type = "text"

@@ -915,6 +915,14 @@ private struct RelayProbe {
     #expect(registry.permissions(for: try configuration(#"""
     {"widgets":[{"id":"power","type":"battery","position":"right","enabled":false},{"id":"cpu","type":"system","position":"right"}]}
     """#)).isEmpty)
+    for type in ["appMenu", "appleMenu"] {
+        #expect(registry.permissions(for: try configuration(#"""
+        {"widgets":[{"id":"menus","type":"\#(type)","position":"left"},{"id":"power","type":"battery","position":"right"}]}
+        """#)) == [calendars, .accessibility])
+        #expect(registry.permissions(for: try configuration(#"""
+        {"widgets":[{"id":"menus","type":"\#(type)","position":"left","enabled":false}]}
+        """#)).isEmpty)
+    }
     #expect(registry.permissions(for: nil).isEmpty)
     #expect(DataSourceRegistry.builtIn.types.filter { $0.permission != nil }.map(\.name) == ["calendar"])
     let listed = ImageRenderer(content: VStack { SourcePermissionList(permissions: [calendars]) }.frame(width: 480))

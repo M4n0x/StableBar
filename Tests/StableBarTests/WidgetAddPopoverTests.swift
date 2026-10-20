@@ -33,7 +33,7 @@ final class WidgetAddPopoverTests: XCTestCase {
         XCTAssertLessThan(frames[0].midX, frames[1].midX)
         XCTAssertGreaterThan(frames[2].midY, frames[0].midY)
         XCTAssertEqual(frames[0].minX, frames[2].minX, accuracy: 1)
-        XCTAssertEqual(model.rowCount, 6)
+        XCTAssertEqual(model.rowCount, 7)
         XCTAssertLessThanOrEqual(host.fittingSize.width, 340)
         XCTAssertLessThan(host.fittingSize.height, 420)
         model.search = "CPU"
@@ -66,13 +66,13 @@ final class WidgetAddPopoverTests: XCTestCase {
         XCTAssertEqual(model.selected, ids[1])
         model.move(by: 1)
         XCTAssertEqual(model.selected, ids[3])
-        model.selected = ids[9]
+        model.selected = ids[11]
         model.move(by: 1)
-        XCTAssertEqual(model.selected, ids[9], "The last row has no cell in this column")
+        XCTAssertEqual(model.selected, ids[11], "The last row has no row below")
         model.moveColumn(by: 1)
-        XCTAssertEqual(model.selected, ids[9], "Right must not wrap to the next row")
+        XCTAssertEqual(model.selected, ids[11], "Right must not wrap to the next row")
         model.moveColumn(by: -1)
-        XCTAssertEqual(model.selected, ids[8])
+        XCTAssertEqual(model.selected, ids[10])
         model.hover(ids[1], at: CGPoint(x: -100, y: -100))
         XCTAssertEqual(model.selected, ids[1])
         model.move(by: 1)

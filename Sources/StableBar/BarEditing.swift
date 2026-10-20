@@ -130,7 +130,11 @@ final class BarEditing {
             let output = store.scripts[widget.id]?.output
             let layout = widget.layout ?? widget.defaultLayout(label, output: output,
                                                                appIcon: widget.content == .activeApp && store.activeApp?.icon != nil)
-            let hasContent = widget.content == .workspaces && widget.layout == nil
+            let drawsCells = switch widget.content {
+            case .workspaces, .appMenu, .appleMenu: true
+            default: false
+            }
+            let hasContent = drawsCells && widget.layout == nil
                 || layout.map { BarEditContent.hasContent($0, fields: label.fields, output: output,
                                                           menu: output?.menu ?? widget.menu ?? []) } == true
             let transparent = store.presentations[widget.id]?.style.base.opacity == 0

@@ -4,7 +4,7 @@ import XCTest
 final class WidgetAddCatalogTests: XCTestCase {
     func testEveryBuiltInHasUsefulMetadataAndValidDefaults() throws {
         let choices = WidgetAddCatalog.compose()
-        XCTAssertEqual(choices.map(\.name), ["Clock", "Active app", "Battery", "Sound", "CPU", "Network", "Calendar", "Workspaces", "Text", "Spacer", "Script"])
+        XCTAssertEqual(choices.map(\.name), ["Clock", "Active app", "Apple menu", "App menus", "Battery", "Sound", "CPU", "Network", "Calendar", "Workspaces", "Text", "Spacer", "Script"])
         XCTAssertEqual(Set(choices.map(\.id)).count, choices.count)
         XCTAssertTrue(choices.last!.isScript)
         for choice in choices {

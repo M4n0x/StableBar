@@ -1,7 +1,23 @@
 import AppKit
+import ApplicationServices
 import SwiftUI
 import Testing
 @testable import StableBar
+
+@Test @MainActor func appleMenuKeepsItsIconWhenTheSourceAppChanges() throws {
+    let appMenu = AppMenu()
+    func image(title: String, pid: pid_t) throws -> CGImage {
+        let item = AppMenuItem(title: title, element: AXUIElementCreateApplication(pid))
+        let renderer = ImageRenderer(content: AppMenuView(appMenu: appMenu, items: [item], isAppleMenu: true,
+            appearance: WidgetAppearance(WidgetStyle(), defaults: WidgetStyle()), padding: EdgeInsets(), requestAccess: {}))
+        return try #require(renderer.cgImage)
+    }
+    let first = try image(title: "Apple", pid: 1)
+    let second = try image(title: "Another app's Apple menu", pid: 2)
+    #expect(first.width == second.width)
+    #expect(first.height == second.height)
+    #expect(first.dataProvider?.data == second.dataProvider?.data)
+}
 
 /// Actual AppKit/SwiftUI rendering, in a window that is never ordered onto the user's screen.
 @MainActor final class PresentationHostingView: NSHostingView<AnyView> {
