@@ -84,6 +84,38 @@ import Testing
             == CGPoint(x: 0, y: 78))
 }
 
+@Test func notificationClearanceFindsTheNearestBannerOutsideTheNotificationList() {
+    let window = [0: [1, 2], 1: [3], 2: [4], 4: [5]]
+    let kinds: [Int: NotificationElement] = [4: .banner, 5: .banner]
+    #expect(firstBanner(in: 0, kind: { kinds[$0] ?? .other }, children: { window[$0] ?? [] }) == 4)
+    let panel = [0: [1, 2], 2: [3]]
+    let panelKinds: [Int: NotificationElement] = [1: .list, 3: .banner]
+    #expect(firstBanner(in: 0, kind: { panelKinds[$0] ?? .other }, children: { panel[$0] ?? [] }) == nil)
+}
+
+@Test func notificationClearanceLooksAtEachAccessibilityElementOnce() {
+    let cyclic = [0: [1, 2], 1: [0, 2], 2: [0, 1]]
+    var looked: [Int] = []
+    var expansions = 0
+    let banner = firstBanner(in: 0, kind: { looked.append($0); return .other }, children: {
+        expansions += 1
+        return expansions > 1_000 ? [] : cyclic[$0] ?? []
+    })
+    #expect(banner == nil)
+    #expect(looked == [0, 1, 2])
+}
+
+@Test func notificationClearanceStopsSearchingAnEndlessAccessibilityTree() {
+    var looked = 0
+    var expansions = 0
+    let banner = firstBanner(in: 0, limit: 50, kind: { _ in looked += 1; return .other }, children: {
+        expansions += 1
+        return expansions > 1_000 ? [] : [$0 * 2 + 1, $0 * 2 + 2]
+    })
+    #expect(banner == nil)
+    #expect(looked == 50)
+}
+
 @Test func adaptiveLayoutKeepsHighPriorityWidgetsAndReservesOverflowSpace() {
     let planner = AdaptiveBarPlanner(inset: 10, spacing: 8, notchSpacing: 16, notch: nil)
     let plan = planner.plan(width: 300, items: [

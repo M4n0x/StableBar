@@ -52,6 +52,26 @@ func originBelowBar(_ window: CGRect, bannerTop: CGFloat, displays: [WindowClear
     return CGPoint(x: window.minX, y: window.minY + offset)
 }
 
+enum NotificationElement { case banner, list, other }
+
+func firstBanner<Element: Hashable>(in window: Element, limit: Int = 200, kind: (Element) -> NotificationElement,
+                                    children: (Element) -> [Element]) -> Element? {
+    var elements = [window]
+    var visited: Set<Element> = []
+    var next = 0
+    while next < elements.count, visited.count < limit {
+        let element = elements[next]
+        next += 1
+        guard visited.insert(element).inserted else { continue }
+        switch kind(element) {
+        case .banner: return element
+        case .list: return nil
+        case .other: elements += children(element)
+        }
+    }
+    return nil
+}
+
 @MainActor @Observable
 final class WindowClearance: NSObject {
     private(set) var isTrusted = AXIsProcessTrusted()
@@ -185,15 +205,12 @@ final class WindowClearance: NSObject {
     }
 
     private func banner(in window: AXUIElement) -> AXUIElement? {
-        var elements = [window]
-        while !elements.isEmpty {
-            let element = elements.removeFirst()
+        firstBanner(in: window, kind: { element in
             AXUIElementSetMessagingTimeout(element, 0.1)
-            if attribute(kAXIdentifierAttribute, of: element) as? String == "AXNotificationListItems" { return nil }
-            if (attribute(kAXSubroleAttribute, of: element) as? String)?.hasPrefix("AXNotificationCenter") == true { return element }
-            elements += attribute(kAXChildrenAttribute, of: element) as? [AXUIElement] ?? []
-        }
-        return nil
+            if attribute(kAXIdentifierAttribute, of: element) as? String == "AXNotificationListItems" { return .list }
+            return (attribute(kAXSubroleAttribute, of: element) as? String)?.hasPrefix("AXNotificationCenter") == true
+                ? .banner : .other
+        }, children: { attribute(kAXChildrenAttribute, of: $0) as? [AXUIElement] ?? [] })
     }
 
     private func schedule(_ pid: pid_t) {
