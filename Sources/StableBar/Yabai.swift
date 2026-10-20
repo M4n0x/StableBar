@@ -14,6 +14,8 @@ private struct YabaiSpace: Decodable {
 }
 
 private struct YabaiWindow: Decodable {
+    let id: Int
+    let title: String
     let pid: Int32
     let app: String
     let space: Int
@@ -35,14 +37,18 @@ func yabaiSnapshot(spaces: Data, windows: Data, displays: Data,
                   let monitor = screenIDs.firstIndex(of: display.id) else { return nil }
             let name = String(space.index)
             var apps: [WorkspaceApp] = []
+            var workspaceWindows: [WorkspaceWindow] = []
             var seen = Set<String>()
             for window in windows where window.space == space.index {
                 let bundleID = bundleIDs[window.pid] ?? window.app
+                let app = WorkspaceApp(workspace: name, name: window.app, bundleID: bundleID)
+                workspaceWindows.append(WorkspaceWindow(id: window.id, title: window.title, app: app))
                 if seen.insert(bundleID).inserted {
-                    apps.append(WorkspaceApp(workspace: name, name: window.app, bundleID: bundleID))
+                    apps.append(app)
                 }
             }
             return Workspace(name: name, isFocused: space.isFocused, isVisible: space.isVisible, monitor: monitor + 1,
-                             apps: apps.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending })
+                             apps: apps.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending },
+                             windows: workspaceWindows)
         }
 }

@@ -319,6 +319,8 @@
       "overflow": "never",
       "workspace": {
         "showEmpty": true,
+        "windows": true,
+        "titleLength": 24,
         "appGlyphs": {
           "com.apple.finder": "F",
           "com.apple.Terminal": "T"

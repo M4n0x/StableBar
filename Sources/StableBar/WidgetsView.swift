@@ -247,6 +247,17 @@ struct WidgetsView: View {
                     }))
                     .help("Show only the app's name until the pointer is over the widget")
                 }
+                if widget.content == .workspaces {
+                    Toggle("Show each window", isOn: Binding(get: { widget.workspace?.windows == true }, set: {
+                        editor.set(["workspace": .object(["windows": .bool($0)])], for: widget.id)
+                    }))
+                    if widget.workspace?.windows == true {
+                        TextField("Window title length", value: Binding(get: { widget.workspace?.titleLength ?? 0 }, set: {
+                            editor.set(["workspace": .object(["titleLength": .number(Double($0))])], for: widget.id)
+                        }), format: .number)
+                        .help("Maximum characters per window title; zero shows only the app icon or glyph")
+                    }
+                }
                 if case .text = widget.content { TextField("Text", text: string("text", for: widget)) }
                 if case let .clock(format) = widget.content {
                     Picker("Date format", selection: Binding(get: {
