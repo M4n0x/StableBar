@@ -8,7 +8,7 @@ The default configuration includes a System Settings shortcut, the active app an
 
 Open `StableBar.dmg`, drag StableBar to Applications, then open the app. The first launch walks you through a bar preview, theme, appearance, placement, clock format, sets of widgets to add, and opening at login. Run it again from **Customize StableBar → General**.
 
-The starter bar needs no special permissions. Keeping windows clear of the bar requires Accessibility access for StableBar. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. A [calendar provider](#calendar) asks for Calendars access the first time it updates. Setup also lists any access that the data sources of your enabled widgets and chosen widget sets need, such as Calendars, with a link to its System Settings pane. AeroSpace and yabai manage their own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
+The starter bar needs no special permissions. Keeping windows clear of the bar requires Accessibility access for StableBar. Scripts that control other apps may prompt for Automation access when used; setup links to the relevant System Settings. A [calendar provider](#calendar) asks for Calendars access the first time it updates. Setup also lists any access that your enabled widgets, their data sources and your chosen widget sets need, such as Calendars, or Accessibility for [app menus](#app-menus), with a link to its System Settings pane. AeroSpace and yabai manage their own Accessibility permission. Opening at login uses macOS Login Items and is off until you enable it.
 
 Setup offers the [themes](#themes) that ship with StableBar and any you have installed. Every theme has light and dark colors and follows the system's light or dark mode; choose **Light** or **Dark** to keep the bar in one appearance, which sets `bar.appearance`. Individual widget styles still take precedence. Setup preserves custom widgets, scripts, and other settings. Closing setup leaves it available on the next launch. New configurations place the bar below the macOS menu bar; existing configurations retain their position.
 
@@ -713,7 +713,7 @@ Open **Customize StableBar…** from the menu-bar icon or by right-clicking the 
 
 Choose **Edit Bar** here or in the bar's right-click or menu-bar icon menu to arrange widgets on every display. Widgets keep their look and size inside dashed outlines on the theme’s bar surface. Each position has a softly outlined tray, including empty positions; position names appear only while dragging. The bar grows just enough for the trays and badges. Turned-off widgets and widgets hidden by their output or screen choice appear as named placeholders with a crossed-out eye; empty widgets show their names too. Other names appear in tooltips. Drag a widget to an insertion line within or between positions; grouped widgets move together. If a position is too crowded to fit, faded edges and arrows show where more widgets are available: use the mouse wheel or swipe sideways to reach them. **+** opens an **Add here** popover below it, with search and a two-column choice of widgets. Adding puts the widget exactly where that **+** sits. Packages with commands, permissions, hosts, required tools or secret settings are reviewed in the popover first. The **−** badge on a widget’s top-left corner removes it; widgets from packages or includes are turned off. Click a widget to open its settings here. Its usual clicks, popups and mouse actions pause while editing. The update tile isn't shown while editing the bar. The widget's context menu also offers **Move Left**, **Move Right** and **Move To**. With VoiceOver, use the widget's **Move left** and **Move right** accessibility actions. Changes save automatically. **Undo** and **Done** sit in a small panel below the bar. Use **Undo**, or ⌘Z and ⇧⌘Z while the bar has focus, to undo and redo through the same history as Customize. **Esc** closes an open Add here popover first. **Done**, **Esc** while the bar has focus, **Finish Editing Bar** or an explicit or external configuration reload restores the normal bar. Automatic profile changes keep editing open. Temporary command-line changes stay separate and unsaved.
 
-Widgets use your chosen IDs as names. Widgets added in Customize use their package name, short text or type, with numbers to tell matching names apart. A widget’s settings start with whether it is on, its icon and text or clock format, **When clicked**, **Screens** and **Position**. Choose an app or web page to open on click. Workspaces keeps its own clicks to switch workspaces; Spacer has no click control. Existing commands, popups and menus stay intact and are edited under **Advanced**, along with specific screen numbers. **Advanced** also keeps the widget’s ID, presentation role, transition, colors, font, shape, workspace presentation and JSON editor. A color either follows one of the theme’s colors, such as Text or Accent, or is a custom light and dark pair.
+Widgets use your chosen IDs as names. Widgets added in Customize use their package name, short text or type, with numbers to tell matching names apart. A widget’s settings start with whether it is on, its icon and text or clock format, **When clicked**, **Screens** and **Position**. Choose an app or web page to open on click. Workspaces keeps its own clicks to switch workspaces and App menus to open menus; Spacer has no click control. Existing commands, popups and menus stay intact and are edited under **Advanced**, along with specific screen numbers. **Advanced** also keeps the widget’s ID, presentation role, transition, colors, font, shape, workspace presentation and JSON editor. A color either follows one of the theme’s colors, such as Text or Accent, or is a custom light and dark pair.
 
 Each style control says where its value comes from: a theme, a package, an included file, a template, a profile or your configuration. Opening a menu or selecting its current value leaves it unchanged. A value set in your configuration shows **Reset to default**, which removes it so the theme's or the inherited value applies again.
 
@@ -733,15 +733,34 @@ Changes in Appearance, Widgets, Profiles and Packages apply to the bar immediate
 | --- | --- | --- |
 | `workspaces` (or `aerospace`) | Occupied or visible workspaces on this display, with app icons; click to switch | — |
 | `activeApp` | Frontmost app name and icon | — |
+| `appMenu` | Frontmost app's menus; click a title to open its menu | `expandOnHover`: show only the app name until hovered (default `false`) |
+| `appleMenu` | Apple logo; click to open the Apple menu | — |
 | `clock` | Local date/time, updated each minute, or each second when the format shows seconds | `format`: DateFormatter format |
 | `text` | Static text and optional icon | `text` |
 | `script` | Output of a shell command | `command`, `interval` in seconds or `null` for event-only updates |
 | `provider` | Shared command, stream or native data | `provider`: key from the top-level `providers` object |
 | `system`, `network`, `battery`, `audio`, `calendar` | Native CPU and memory, network, battery, audio output or calendar data | — |
 
-**Add widget** includes Clock, Active app, Battery, Sound, CPU, Network, Calendar, Workspaces, Text and Spacer. Text starts with “New widget”. Calendar asks for Calendar access; Workspaces needs AeroSpace or yabai. Script starts with a clock command you can change under Advanced.
+**Add widget** includes Clock, Active app, Apple menu, App menus, Battery, Sound, CPU, Network, Calendar, Workspaces, Text and Spacer. Text starts with “New widget”. Apple menu and App menus need Accessibility access; Calendar asks for Calendar access; Workspaces needs AeroSpace or yabai. Script starts with a clock command you can change under Advanced.
 
 The AeroSpace connection subscribes to workspace, monitor, window and focus events. It loads an initial snapshot, coalesces pending events and reconnects after a disconnect. The accent color marks the focused workspace; an outline marks a workspace visible on another monitor. Empty, inactive workspaces are hidden. App icons are deduplicated per workspace. Active-app updates come from NSWorkspace notifications.
+
+### App menus
+
+An `appMenu` widget shows the frontmost app's menus, such as File, Edit and View, with the app's own menu in bold. In **Customize → Widgets**, select App menus and turn on **Expand on hover** to show only the app name until the pointer enters the widget. The menus stay expanded while one is open. Leave the setting off to show all titles.
+
+The Apple logo is a separate `appleMenu` widget. Add **Apple menu** to show it, or leave it out to keep only the app's menus.
+
+```json
+{
+  "widgets": [
+    { "id": "apple", "type": "appleMenu", "position": "left" },
+    { "id": "menus", "type": "appMenu", "position": "left", "expandOnHover": true }
+  ]
+}
+```
+
+StableBar reads the titles through Accessibility when you switch apps and again when the pointer enters either widget, which catches apps that set their menus late. Clicking a title opens that menu below it, read from the app when it opens, so it works while the macOS menu bar is hidden; choosing an item chooses it in the app. These menus show items, separators, checkmarks and submenus, but not keyboard shortcuts. Allow StableBar in **System Settings → Privacy & Security → Accessibility**; until then the widgets show a warning that opens that pane. While a StableBar window such as Customize is in front, the widgets keep the previous app's menus.
 
 ### yabai workspaces
 

@@ -17,20 +17,26 @@ extension WidgetConfiguration {
     /// Whether `transition` changes anything: workspaces and spacers draw their own views, which
     /// have no text or symbols to transition, unless they have a `layout` or `overlay`.
     var drawsTransitions: Bool {
-        switch content {
-        case .workspaces, .spacer: layout != nil || overlay != nil
-        default: true
-        }
+        !content.drawsOwnView || layout != nil || overlay != nil
     }
 }
 
 extension WidgetContent {
+    var drawsOwnView: Bool {
+        switch self {
+        case .workspaces, .appMenu, .appleMenu, .spacer: true
+        default: false
+        }
+    }
+
     var symbol: String {
         switch self {
         case .spacer: "arrow.left.and.right"
         case let .provider(name): DataSourceRegistry.builtIn[name]?.symbol ?? "gauge.with.dots.needle.33percent"
         case .workspaces: "rectangle.3.group"
         case .activeApp: "macwindow"
+        case .appMenu: "menubar.rectangle"
+        case .appleMenu: "apple.logo"
         case .clock: "clock"
         case .text: "textformat"
         case .script: "terminal"
@@ -234,7 +240,13 @@ struct WidgetsView: View {
                 }
             }
             Section("Content") {
-                if widget.content != .spacer && widget.content != .workspaces { iconField(widget) }
+                if !widget.content.drawsOwnView { iconField(widget) }
+                if case let .appMenu(expandOnHover) = widget.content {
+                    Toggle("Expand on hover", isOn: Binding(get: { expandOnHover }, set: {
+                        editor.set(["expandOnHover": .bool($0)], for: widget.id)
+                    }))
+                    .help("Show only the app's name until the pointer is over the widget")
+                }
                 if case .text = widget.content { TextField("Text", text: string("text", for: widget)) }
                 if case let .clock(format) = widget.content {
                     Picker("Date format", selection: Binding(get: {
@@ -294,7 +306,7 @@ struct WidgetsView: View {
                         }
                         .labelsHidden()
                     }
-                    if widget.content == .spacer || widget.content == .workspaces { iconField(widget) }
+                    if widget.content.drawsOwnView { iconField(widget) }
                     if widget.drawsTransitions {
                         Picker("Transition", selection: string("transition", for: widget, fallback: WidgetTransition.none.rawValue)) {
                             ForEach(WidgetTransition.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }

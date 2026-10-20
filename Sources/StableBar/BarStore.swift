@@ -11,6 +11,7 @@ final class BarStore: NSObject {
     var scripts: [String: ScriptWidget] = [:]
     let workspaceStore: WorkspaceStore
     let windowClearance = WindowClearance()
+    let appMenu = AppMenu()
     let popup: WidgetPopup
     var update: AppUpdate?
     let configurationURL: URL
@@ -114,7 +115,18 @@ final class BarStore: NSObject {
         if let screen = NSScreen.main { activeDisplayID = BarDisplay(screen: screen).id }
         popup.close()
         refreshContext()
+        readAppMenu()
         send(.frontApp, ["INFO": activeApp?.localizedName ?? "Desktop"])
+    }
+
+    private func readAppMenu() {
+        let shown = configuration?.widgets.contains { widget in
+            switch widget.content {
+            case .appMenu, .appleMenu: widget.enabled
+            default: false
+            }
+        } == true
+        appMenu.read(shown ? activeApp : nil)
     }
 
     func refreshContext(_ next: ConfigurationContext = SystemContext.current()) {
@@ -467,6 +479,7 @@ final class BarStore: NSObject {
         let needsWorkspaces = next.widgets.contains { $0.enabled && ($0.content == .workspaces || $0.display == .active) }
         configuration = next
         managesConnections = true
+        readAppMenu()
         preparePresentations()
         effectiveDocument = loader.document
         origins = loader.origins

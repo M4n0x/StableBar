@@ -18,6 +18,8 @@ enum WidgetClickChoice: String, CaseIterable {
 
     static func explanation(for widget: WidgetConfiguration, output: ScriptOutput? = nil) -> String? {
         if widget.content == .workspaces { return "Clicking a workspace switches to it." }
+        if case .appMenu = widget.content { return "Clicking a menu opens it." }
+        if widget.content == .appleMenu { return "Clicking it opens the Apple menu." }
         var actions: [String] = []
         if widget.onClick != nil || output?.onClick != nil { actions.append("runs a command") }
         if widget.popup != nil || widget.popupName != nil { actions.append("opens a popup") }

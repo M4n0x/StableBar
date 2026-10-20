@@ -278,6 +278,8 @@ enum WidgetContent: Equatable, Sendable {
     case provider(String)
     case workspaces
     case activeApp
+    case appMenu(expandOnHover: Bool)
+    case appleMenu
     case clock(format: String)
     case text(String)
     case script(command: String, interval: Double?)
@@ -315,6 +317,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id, role, position, type, icon, tooltip, onClick, open, menu, popup, popupName, style, format, text, command, interval
         case display, layout, overlay, animation, workspace, events, environment, timeout, actions, enabled, provider, group, priority, overflow, rules, transition
+        case expandOnHover
     }
 
     init(from decoder: Decoder) throws {
@@ -360,6 +363,8 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
         case "provider": content = .provider(try values.decode(String.self, forKey: .provider))
         case "aerospace", "workspaces": content = .workspaces
         case "activeApp": content = .activeApp
+        case "appMenu": content = .appMenu(expandOnHover: try values.decodeIfPresent(Bool.self, forKey: .expandOnHover) ?? false)
+        case "appleMenu": content = .appleMenu
         case "clock": content = .clock(format: try values.decodeIfPresent(String.self, forKey: .format) ?? "EEE d MMM  HH:mm")
         case "text": content = .text(try values.decode(String.self, forKey: .text))
         case "script":

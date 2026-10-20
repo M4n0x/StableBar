@@ -1173,6 +1173,8 @@
                 "aerospace",
                 "workspaces",
                 "activeApp",
+                "appMenu",
+                "appleMenu",
                 "clock",
                 "text",
                 "script",
@@ -1246,6 +1248,10 @@
         "format": {
           "$ref": "#/definitions/string",
           "description": "DateFormatter format for clock widgets."
+        },
+        "expandOnHover": {
+          "$ref": "#/definitions/boolean",
+          "description": "Show only the app name until hovered in appMenu widgets. Off by default."
         },
         "text": {
           "$ref": "#/definitions/string"

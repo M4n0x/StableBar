@@ -145,9 +145,18 @@ struct BarView: View {
                     ForEach(unit.widgets) { widget in
                         let popup = widgetPopup(widget, store: store)
                         let command = store.scripts[widget.id]?.output.onClick ?? widget.onClick
+                        let menuItems: [AppMenuItem]? = switch widget.content {
+                        case .appleMenu: [store.appMenu.appleMenu].compactMap { $0 }
+                        case .appMenu: store.appMenu.items
+                        default: nil
+                        }
                         if widget.content == .workspaces && popup == nil && command == nil {
                             ForEach(store.workspaceStore.workspaces.filter { $0.monitor == display.id }) { workspace in
                                 Button("Workspace \(workspace.name)") { store.workspaceStore.select(workspace) }
+                            }
+                        } else if popup == nil && command == nil, let items = menuItems {
+                            ForEach(items, id: \.self) { item in
+                                Button(item.title) { store.appMenu.open(item, at: NSEvent.mouseLocation, in: nil) }
                             }
                         } else {
                             Button(overflowTitle(widget)) {
@@ -309,13 +318,16 @@ struct WidgetView: View {
         let animation = output?.animation ?? widget.animation ?? WidgetAnimation(duration: animationDuration)
         let padding = EdgeInsets(top: style.paddingTop ?? appearance.paddingVertical, leading: 0,
                                  bottom: style.paddingBottom ?? appearance.paddingVertical, trailing: 0)
-        // Workspace buttons include vertical padding so their selection fills the tile.
-        let hasWorkspaceCells = widget.content == .workspaces && widget.layout == nil
+        // Workspace and menu buttons include vertical padding so their selection fills the tile.
+        let hasCells = switch widget.content {
+        case .workspaces, .appMenu, .appleMenu: widget.layout == nil
+        default: false
+        }
         let tile = content(resolution, open: isOpen, padding: padding)
             .padding(.leading, style.paddingLeading ?? appearance.paddingHorizontal)
             .padding(.trailing, style.paddingTrailing ?? appearance.paddingHorizontal)
-            .padding(.top, hasWorkspaceCells ? 0 : padding.top)
-            .padding(.bottom, hasWorkspaceCells ? 0 : padding.bottom)
+            .padding(.top, hasCells ? 0 : padding.top)
+            .padding(.bottom, hasCells ? 0 : padding.bottom)
             .frame(width: appearance.width, height: style.height.map { CGFloat($0) })
             .frame(minWidth: style.minWidth.map { CGFloat($0) }, maxWidth: style.maxWidth.map { CGFloat($0) })
             .contentShape(Rectangle())
@@ -418,6 +430,14 @@ struct WidgetView: View {
                           animationDuration: animationDuration, padding: padding,
                           configuration: widget.workspace, animation: widget.animation, defaults: resolution.base,
                           modeAliases: store.configuration?.modeAliases ?? [:], widgetID: widget.id)
+        case let .appMenu(expandOnHover) where widget.layout == nil:
+            AppMenuView(appMenu: store.appMenu, items: store.appMenu.items, expandOnHover: expandOnHover, hovering: hovered,
+                        appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
+                        padding: padding, requestAccess: store.windowClearance.requestAccess)
+        case .appleMenu where widget.layout == nil:
+            AppMenuView(appMenu: store.appMenu, items: [store.appMenu.appleMenu].compactMap { $0 }, isAppleMenu: true,
+                        appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
+                        padding: padding, requestAccess: store.windowClearance.requestAccess)
         case .spacer where widget.layout == nil:
             Spacer(minLength: resolution.base.minWidth ?? 0)
         default:
@@ -596,6 +616,82 @@ struct WorkspaceView: View {
         .fixedSize(horizontal: true, vertical: false)
         .animation(reduceMotion ? nil : (animation?.value ?? .smooth(duration: animationDuration)), value: workspaces)
     }
+}
+
+struct AppMenuView: View {
+    let appMenu: AppMenu
+    let items: [AppMenuItem]
+    var expandOnHover = false
+    var hovering = false
+    var isAppleMenu = false
+    let appearance: WidgetAppearance
+    let padding: EdgeInsets
+    let requestAccess: () -> Void
+    @State private var hoveredItem: AppMenuItem?
+    @State private var menuOpen = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if !appMenu.isTrusted {
+                Button(action: requestAccess) {
+                    Image(systemName: "exclamationmark.triangle").padding(padding).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Allow StableBar in Privacy & Security → Accessibility to show the app's menus. Click to open System Settings.")
+            }
+            ForEach(Array(items.prefix(expandOnHover && !hovering && !menuOpen ? 1 : items.count).enumerated()), id: \.offset) { index, item in
+                AppMenuTitle(appMenu: appMenu, item: item, index: index, isAppleMenu: isAppleMenu, appearance: appearance, padding: padding,
+                             hovered: hoveredItem == item, menuOpen: $menuOpen)
+                    .onHover { hoveredItem = $0 ? item : nil }
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .onHover { if $0 { appMenu.refresh() } }
+    }
+}
+
+private struct AppMenuTitle: View {
+    let appMenu: AppMenu
+    let item: AppMenuItem
+    let index: Int
+    let isAppleMenu: Bool
+    let appearance: WidgetAppearance
+    let padding: EdgeInsets
+    let hovered: Bool
+    @Binding var menuOpen: Bool
+    @State private var anchor = NSView()
+
+    var body: some View {
+        Button {
+            menuOpen = true
+            appMenu.open(item, at: .zero, in: anchor)
+            menuOpen = false
+        } label: {
+            Group {
+                if isAppleMenu {
+                    Image(systemName: "apple.logo").accessibilityLabel(item.title)
+                } else {
+                    Text(item.title).fontWeight(index == 0 ? .bold : nil)
+                }
+            }
+            .foregroundStyle(hovered ? appearance.accentText : appearance.foreground)
+            .padding(.horizontal, 7)
+            .padding(padding)
+            .background {
+                if hovered { RoundedRectangle(cornerRadius: max(appearance.cornerRadius - 4, 0)).fill(appearance.accent) }
+            }
+            .background(MenuAnchor(view: anchor))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct MenuAnchor: NSViewRepresentable {
+    let view: NSView
+
+    func makeNSView(context: Context) -> NSView { view }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 func appGlyph(for app: WorkspaceApp, in glyphs: [String: String]) -> String? {
