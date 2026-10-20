@@ -98,6 +98,8 @@ struct WorkspaceConfiguration: Decodable, Sendable {
     var appGlyphs: [String: String]?
     var showEmpty: Bool?
     var showApps: Bool?
+    var windows: Bool?
+    var titleLength: Int?
     var style = WidgetStyle()
     var appStyle = WidgetStyle()
     var indicatorStyle = WidgetStyle()
@@ -105,7 +107,7 @@ struct WorkspaceConfiguration: Decodable, Sendable {
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case indicator, indicatorStyle, style, focusedStyle, visibleStyle, emptyStyle, appStyle, focusedAppStyle, visibleAppStyle
-        case appGlyphs, showEmpty, showApps
+        case appGlyphs, showEmpty, showApps, windows, titleLength
     }
 
     init(from decoder: Decoder) throws {
@@ -115,6 +117,11 @@ struct WorkspaceConfiguration: Decodable, Sendable {
         appGlyphs = try values.decodeIfPresent([String: String].self, forKey: .appGlyphs)
         showEmpty = try values.decodeIfPresent(Bool.self, forKey: .showEmpty)
         showApps = try values.decodeIfPresent(Bool.self, forKey: .showApps)
+        windows = try values.decodeIfPresent(Bool.self, forKey: .windows)
+        titleLength = try values.decodeIfPresent(Int.self, forKey: .titleLength)
+        if let titleLength, titleLength < 0 {
+            throw DecodingError.dataCorruptedError(forKey: .titleLength, in: values, debugDescription: "Window title length must be nonnegative.")
+        }
         let focused = try values.decodeIfPresent(WidgetStyle.self, forKey: .focusedStyle)
         let visible = try values.decodeIfPresent(WidgetStyle.self, forKey: .visibleStyle)
         let empty = try values.decodeIfPresent(WidgetStyle.self, forKey: .emptyStyle)

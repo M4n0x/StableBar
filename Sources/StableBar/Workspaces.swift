@@ -8,6 +8,7 @@ struct Workspace: Decodable, Identifiable, Sendable, Equatable {
     let isVisible: Bool
     let monitor: Int
     var apps: [WorkspaceApp] = []
+    var windows: [WorkspaceWindow] = []
     var id: String { name }
 
     enum CodingKeys: String, CodingKey {
@@ -31,6 +32,30 @@ struct WorkspaceApp: Decodable, Identifiable, Sendable, Equatable {
     }
 }
 
+struct WorkspaceWindow: Decodable, Identifiable, Sendable, Equatable {
+    let id: Int
+    let title: String
+    let app: WorkspaceApp
+
+    enum CodingKeys: String, CodingKey {
+        case id = "window-id"
+        case title = "window-title"
+    }
+
+    init(id: Int, title: String, app: WorkspaceApp) {
+        self.id = id
+        self.title = title
+        self.app = app
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(Int.self, forKey: .id)
+        title = try values.decode(String.self, forKey: .title)
+        app = try WorkspaceApp(from: decoder)
+    }
+}
+
 struct AeroSpaceEvent: Decodable, Sendable {
     let event: String?
     let mode: String?
@@ -45,13 +70,14 @@ enum WorkspaceSource: String, Decodable, Sendable {
 }
 
 func workspaceSnapshot(workspaces: Data, windows: Data) throws -> [Workspace] {
-    let apps = try JSONDecoder().decode([WorkspaceApp].self, from: windows)
+    let windows = try JSONDecoder().decode([WorkspaceWindow].self, from: windows)
     return try JSONDecoder().decode([Workspace].self, from: workspaces)
         .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         .map { workspace in
             var workspace = workspace
             var bundleIDs = Set<String>()
-            workspace.apps = apps.filter { $0.workspace == workspace.name && bundleIDs.insert($0.bundleID).inserted }
+            workspace.windows = windows.filter { $0.app.workspace == workspace.name }
+            workspace.apps = workspace.windows.map(\.app).filter { bundleIDs.insert($0.bundleID).inserted }
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             return workspace
         }
@@ -207,7 +233,7 @@ final class WorkspaceStore {
                 "%{workspace} %{workspace-is-focused} %{workspace-is-visible} %{monitor-appkit-nsscreen-screens-id}", "--json"
             ])
             async let windows = runCommand(executable, arguments: [
-                "list-windows", "--all", "--format", "%{workspace} %{app-name} %{app-bundle-id}", "--json"
+                "list-windows", "--all", "--format", "%{workspace} %{app-name} %{app-bundle-id} %{window-id} %{window-title}", "--json"
             ])
             snapshot = try await workspaceSnapshot(workspaces: spaces, windows: windows)
         case .yabai:
@@ -232,6 +258,18 @@ final class WorkspaceStore {
         Task {
             do {
                 let arguments = source == .aerospace ? ["workspace", workspace.name] : ["-m", "space", "--focus", workspace.name]
+                _ = try await runCommand(executable(), arguments: arguments)
+                if source == .yabai { try await refresh() }
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
+    func focus(_ window: WorkspaceWindow) {
+        Task {
+            do {
+                let arguments = source == .aerospace ? ["focus", "--window-id", String(window.id)] : ["-m", "window", "--focus", String(window.id)]
                 _ = try await runCommand(executable(), arguments: arguments)
                 if source == .yabai { try await refresh() }
             } catch {

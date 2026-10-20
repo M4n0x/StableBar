@@ -543,71 +543,81 @@ struct WorkspaceView: View {
                 let hovered = hoveredWorkspace == workspace.name
                 let style = styles.label(hovered: hovered)
                 let glyph = styles.glyph(hovered: hovered)
-                Button { workspaceStore.select(workspace) } label: {
-                    HStack(spacing: style.spacing ?? 4) {
+                HStack(spacing: style.spacing ?? 4) {
+                    Button { workspaceStore.select(workspace) } label: {
                         Text(workspace.name)
-                        if configuration?.showApps != false {
-                            ForEach(workspace.apps) { app in
-                                if let glyphs = configuration?.appGlyphs, let text = appGlyph(for: app, in: glyphs) {
-                                    Text(text)
-                                        .font(WidgetAppearance(glyph, defaults: WidgetStyle()).font)
-                                        .foregroundStyle(glyph.foreground?.color ?? appearance.foreground)
-                                        .help(app.name)
-                                } else if let image = appIcons.image(for: app.bundleID,
-                                                                   size: NSSize(width: glyph.width ?? 14, height: glyph.height ?? 14),
-                                                                   scale: displayScale) {
-                                    Image(nsImage: image)
-                                        .renderingMode(.original)
-                                        .resizable()
-                                        .interpolation(.high)
-                                        .frame(width: glyph.width ?? 14, height: glyph.height ?? 14)
-                                        .help(app.name)
+                    }
+                    .help("Switch to workspace \(workspace.name)")
+                    .accessibilityLabel("Workspace \(workspace.name)\(workspace.isFocused ? ", focused" : workspace.isVisible ? ", visible" : "")")
+                    .accessibilityAddTraits(workspace.isFocused ? .isSelected : [])
+                    if configuration?.showApps != false {
+                        if configuration?.windows == true {
+                            ForEach(workspace.windows) { window in
+                                Button { workspaceStore.focus(window) } label: {
+                                    HStack(spacing: style.spacing ?? 4) {
+                                        appIcon(window.app, style: glyph)
+                                        if let length = configuration?.titleLength, length > 0 {
+                                            Text(String(window.title.prefix(length)))
+                                        }
+                                    }
+                                    .contentShape(Rectangle())
                                 }
+                                .help(window.title)
+                                .accessibilityLabel("\(window.app.name): \(window.title)")
+                            }
+                        } else {
+                            ForEach(workspace.apps) { app in
+                                Button { workspaceStore.select(workspace) } label: {
+                                    appIcon(app, style: glyph)
+                                }
+                                .help(app.name)
                             }
                         }
                     }
-                    .font(WidgetAppearance(style, defaults: defaults).font)
-                    .foregroundStyle(style.foreground?.color ?? (workspace.isFocused ? appearance.accentText : appearance.foreground))
-                    .padding(.leading, style.paddingLeading ?? style.paddingHorizontal ?? 7)
-                    .padding(.trailing, style.paddingTrailing ?? style.paddingHorizontal ?? 7)
-                    .frame(width: style.width.map { CGFloat($0) }, height: style.height.map { CGFloat($0) })
-                    .overlay(alignment: .bottom) {
-                        if indicator == .underline && workspace.isVisible && styles.underline.placement != .belowBar {
-                            RoundedRectangle(cornerRadius: styles.underline.cornerRadius ?? 0)
-                                .fill(styles.underline.background?.color ?? appearance.accent)
-                                .frame(width: styles.underline.width.map { CGFloat($0) }, height: styles.underline.height ?? 2)
-                                .matchedGeometryEffect(id: "workspace-underline", in: selection)
-                                .offset(x: styles.underline.offsetX ?? 0, y: styles.underline.offsetY ?? 0)
-                        }
+                }
+                .font(WidgetAppearance(style, defaults: defaults).font)
+                .foregroundStyle(style.foreground?.color ?? (workspace.isFocused ? appearance.accentText : appearance.foreground))
+                .padding(.leading, style.paddingLeading ?? style.paddingHorizontal ?? 7)
+                .padding(.trailing, style.paddingTrailing ?? style.paddingHorizontal ?? 7)
+                .frame(width: style.width.map { CGFloat($0) }, height: style.height.map { CGFloat($0) })
+                .overlay(alignment: .bottom) {
+                    if indicator == .underline && workspace.isVisible && styles.underline.placement != .belowBar {
+                        RoundedRectangle(cornerRadius: styles.underline.cornerRadius ?? 0)
+                            .fill(styles.underline.background?.color ?? appearance.accent)
+                            .frame(width: styles.underline.width.map { CGFloat($0) }, height: styles.underline.height ?? 2)
+                            .matchedGeometryEffect(id: "workspace-underline", in: selection)
+                            .offset(x: styles.underline.offsetX ?? 0, y: styles.underline.offsetY ?? 0)
                     }
-                    .padding(padding)
-                    .background {
-                        if indicator == .background && workspace.isFocused {
-                            RoundedRectangle(cornerRadius: styles.resting.cornerRadius ?? max(appearance.cornerRadius - 4, 0))
-                                .fill(styles.resting.background?.color ?? appearance.accent)
-                                .matchedGeometryEffect(id: "focused-workspace", in: selection)
-                        } else if indicator == .background && workspace.isVisible {
-                            RoundedRectangle(cornerRadius: styles.resting.cornerRadius ?? max(appearance.cornerRadius - 4, 0))
-                                .strokeBorder(styles.resting.borderColor?.color ?? appearance.accent, lineWidth: styles.resting.borderWidth ?? 1)
-                        }
+                }
+                .padding(padding)
+                .background {
+                    Button { workspaceStore.select(workspace) } label: {
+                        Color.clear.contentShape(Rectangle())
                     }
-                    .anchorPreference(key: BarAnchorPreference.self, value: .bounds) { anchor in
-                        guard !measuring, indicator == .underline, workspace.isVisible, styles.underline.placement == .belowBar else {
-                            return BarAnchors()
-                        }
-                        // One visible selection per widget/display keeps its identity as focus moves.
-                        return BarAnchors(underlines: [widgetID: WorkspaceUnderlineAnchor(widget: widgetID, cell: anchor,
-                            selection: workspace.name,
-                            style: styles.underline, color: styles.underline.background?.color ?? appearance.accent,
-                            animation: animation ?? WidgetAnimation(curve: .smooth, duration: animationDuration))])
+                    .accessibilityLabel("Switch to workspace \(workspace.name)")
+                }
+                .background {
+                    if indicator == .background && workspace.isFocused {
+                        RoundedRectangle(cornerRadius: styles.resting.cornerRadius ?? max(appearance.cornerRadius - 4, 0))
+                            .fill(styles.resting.background?.color ?? appearance.accent)
+                            .matchedGeometryEffect(id: "focused-workspace", in: selection)
+                    } else if indicator == .background && workspace.isVisible {
+                        RoundedRectangle(cornerRadius: styles.resting.cornerRadius ?? max(appearance.cornerRadius - 4, 0))
+                            .strokeBorder(styles.resting.borderColor?.color ?? appearance.accent, lineWidth: styles.resting.borderWidth ?? 1)
                     }
-                    .contentShape(Rectangle())
+                }
+                .anchorPreference(key: BarAnchorPreference.self, value: .bounds) { anchor in
+                    guard !measuring, indicator == .underline, workspace.isVisible, styles.underline.placement == .belowBar else {
+                        return BarAnchors()
+                    }
+                    // One visible selection per widget/display keeps its identity as focus moves.
+                    return BarAnchors(underlines: [widgetID: WorkspaceUnderlineAnchor(widget: widgetID, cell: anchor,
+                        selection: workspace.name,
+                        style: styles.underline, color: styles.underline.background?.color ?? appearance.accent,
+                        animation: animation ?? WidgetAnimation(curve: .smooth, duration: animationDuration))])
                 }
                 .buttonStyle(.plain)
                 .onHover { hoveredWorkspace = $0 ? workspace.name : nil }
-                .help("Switch to workspace \(workspace.name)")
-                .accessibilityLabel("Workspace \(workspace.name)\(workspace.isFocused ? ", focused" : workspace.isVisible ? ", visible" : "")")
-                .accessibilityAddTraits(workspace.isFocused ? .isSelected : [])
             }
             if let error = workspaceStore.error {
                 Image(systemName: "exclamationmark.triangle").padding(padding).help(error)
@@ -615,6 +625,22 @@ struct WorkspaceView: View {
         }
         .fixedSize(horizontal: true, vertical: false)
         .animation(reduceMotion ? nil : (animation?.value ?? .smooth(duration: animationDuration)), value: workspaces)
+    }
+
+    @ViewBuilder private func appIcon(_ app: WorkspaceApp, style: WidgetStyle) -> some View {
+        if let glyphs = configuration?.appGlyphs, let text = appGlyph(for: app, in: glyphs) {
+            Text(text)
+                .font(WidgetAppearance(style, defaults: WidgetStyle()).font)
+                .foregroundStyle(style.foreground?.color ?? appearance.foreground)
+        } else if let image = appIcons.image(for: app.bundleID,
+                                             size: NSSize(width: style.width ?? 14, height: style.height ?? 14),
+                                             scale: displayScale) {
+            Image(nsImage: image)
+                .renderingMode(.original)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: style.width ?? 14, height: style.height ?? 14)
+        }
     }
 }
 

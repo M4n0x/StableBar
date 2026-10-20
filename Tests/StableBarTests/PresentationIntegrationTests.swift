@@ -284,7 +284,7 @@ func popupResizesWithItsContentAndKeepsItsWidthAndTopEdge(fixedHeight: Bool, ani
     case "$1" in
       subscribe) printf '%s\n' '{"_event":"mode-changed","mode":"main"}'; exec /bin/sleep 60 ;;
       list-workspaces) printf '%s\n' '[{"workspace":"1","workspace-is-focused":true,"workspace-is-visible":true,"monitor-appkit-nsscreen-screens-id":1},{"workspace":"2","workspace-is-focused":false,"workspace-is-visible":false,"monitor-appkit-nsscreen-screens-id":1},{"workspace":"3","workspace-is-focused":false,"workspace-is-visible":true,"monitor-appkit-nsscreen-screens-id":2}]' ;;
-      list-windows) printf '%s\n' '[{"workspace":"1","app-name":"Finder","app-bundle-id":"com.apple.finder"},{"workspace":"1","app-name":"Terminal","app-bundle-id":"com.apple.Terminal"},{"workspace":"3","app-name":"Finder","app-bundle-id":"com.apple.finder"}]' ;;
+      list-windows) printf '%s\n' '[{"workspace":"1","app-name":"Finder","app-bundle-id":"com.apple.finder","window-id":1,"window-title":"Window 1"},{"workspace":"1","app-name":"Terminal","app-bundle-id":"com.apple.Terminal","window-id":2,"window-title":"Window 2"},{"workspace":"3","app-name":"Finder","app-bundle-id":"com.apple.finder","window-id":3,"window-title":"Window 3"}]' ;;
     esac
     """#
     try Data(script.utf8).write(to: executable)

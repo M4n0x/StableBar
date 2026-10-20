@@ -152,13 +152,17 @@ func popupFoldKeepsTheScrollViewportAndPosition(documentHeight: Double) {
 
 @Test func workspaceSnapshotKeepsMonitorFocusAndDeduplicatesAppWindows() throws {
     let spaces = Data(#"[{"workspace":"10","workspace-is-focused":false,"workspace-is-visible":false,"monitor-appkit-nsscreen-screens-id":2},{"workspace":"2","workspace-is-focused":false,"workspace-is-visible":true,"monitor-appkit-nsscreen-screens-id":2},{"workspace":"1","workspace-is-focused":true,"workspace-is-visible":true,"monitor-appkit-nsscreen-screens-id":1}]"#.utf8)
-    let windows = Data(#"[{"workspace":"1","app-name":"Finder","app-bundle-id":"com.apple.finder"},{"workspace":"1","app-name":"Finder","app-bundle-id":"com.apple.finder"},{"workspace":"2","app-name":"Finder","app-bundle-id":"com.apple.finder"}]"#.utf8)
+    let windows = Data(#"[{"workspace":"1","app-name":"Finder","app-bundle-id":"com.apple.finder","window-id":1,"window-title":"Window 1"},{"workspace":"1","app-name":"Finder","app-bundle-id":"com.apple.finder","window-id":2,"window-title":"Window 2"},{"workspace":"2","app-name":"Finder","app-bundle-id":"com.apple.finder","window-id":3,"window-title":"Window 3"}]"#.utf8)
     let snapshot = try workspaceSnapshot(workspaces: spaces, windows: windows)
     #expect(snapshot.map(\.name) == ["1", "2", "10"])
     #expect(snapshot[0].isFocused)
     #expect(!snapshot[1].isFocused)
     #expect(snapshot[1].isVisible)
     #expect(snapshot[1].monitor == 2)
+    #expect(snapshot[0].windows.map(\.id) == [1, 2])
+    #expect(snapshot[0].windows.map(\.title) == ["Window 1", "Window 2"])
+    #expect(snapshot[1].windows.map(\.id) == [3])
+    #expect(snapshot[2].windows.isEmpty)
     #expect(snapshot[0].apps.count == 1)
     #expect(snapshot[1].apps.count == 1)
     #expect(snapshot[2].apps.isEmpty)
@@ -166,7 +170,7 @@ func popupFoldKeepsTheScrollViewportAndPosition(documentHeight: Double) {
 
 @Test func yabaiSnapshotMapsDisplaysAndAppWindowsToWorkspaces() throws {
     let spaces = Data(#"[{"index":10,"display":1,"has-focus":false,"is-visible":false},{"index":2,"display":1,"has-focus":true,"is-visible":true},{"index":1,"display":2,"has-focus":false,"is-visible":true}]"#.utf8)
-    let windows = Data(#"[{"pid":41,"app":"Safari","space":1},{"pid":42,"app":"Finder","space":1},{"pid":43,"app":"Safari","space":1},{"pid":41,"app":"Safari","space":2}]"#.utf8)
+    let windows = Data(#"[{"pid":41,"app":"Safari","space":1,"id":1,"title":"Window 1"},{"pid":42,"app":"Finder","space":1,"id":2,"title":"Window 2"},{"pid":43,"app":"Safari","space":1,"id":3,"title":"Window 3"},{"pid":41,"app":"Safari","space":2,"id":4,"title":"Window 4"}]"#.utf8)
     let displays = Data(#"[{"id":80,"index":1},{"id":90,"index":2}]"#.utf8)
     let snapshot = try yabaiSnapshot(spaces: spaces, windows: windows, displays: displays, screenIDs: [90, 80],
                                      bundleIDs: [41: "com.apple.Safari", 42: "com.apple.finder", 43: "com.apple.Safari"])
@@ -174,12 +178,66 @@ func popupFoldKeepsTheScrollViewportAndPosition(documentHeight: Double) {
     #expect(snapshot.map(\.monitor) == [1, 2, 2])
     #expect(snapshot[1].isFocused)
     #expect(snapshot[0].isVisible)
+    #expect(snapshot[0].windows.map(\.id) == [1, 2, 3])
+    #expect(snapshot[0].windows.map(\.title) == ["Window 1", "Window 2", "Window 3"])
+    #expect(snapshot[0].windows.map(\.app.bundleID) == ["com.apple.Safari", "com.apple.finder", "com.apple.Safari"])
+    #expect(snapshot[1].windows.map(\.id) == [4])
+    #expect(snapshot[2].windows.isEmpty)
     #expect(snapshot[0].apps.map(\.bundleID) == ["com.apple.finder", "com.apple.Safari"])
     #expect(snapshot[1].apps.count == 1)
     #expect(snapshot[2].apps.isEmpty)
     let disconnected = try yabaiSnapshot(spaces: spaces, windows: windows, displays: displays, screenIDs: [90], bundleIDs: [:])
     #expect(disconnected.map(\.name) == ["1"])
     #expect(disconnected[0].apps.map(\.name) == ["Finder", "Safari"])
+}
+
+@Test(arguments: [WorkspaceSource.aerospace, .yabai]) @MainActor
+func workspaceWindowFocusUsesItsIDAndReportsFailure(source: WorkspaceSource) async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let executable = directory.appending(path: "window-manager")
+    let log = directory.appending(path: "calls")
+    try Data("""
+    #!/bin/sh
+    echo "$*" >> '\(log.path)'
+    echo "Window no longer exists" >&2
+    exit 1
+    """.utf8).write(to: executable)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let store = WorkspaceStore()
+    store.source = source
+    store.executablePath = { executable.path }
+    defer { store.stop() }
+    store.focus(WorkspaceWindow(id: 73, title: "Second document", app: WorkspaceApp(workspace: "2", name: "Finder", bundleID: "com.apple.finder")))
+    for _ in 0..<100 {
+        if store.error != nil { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(store.error == "Window no longer exists")
+    let calls = try String(contentsOf: log, encoding: .utf8).split(separator: "\n")
+    #expect(calls.first == (source == .aerospace ? "focus --window-id 73" : "-m window --focus 73"))
+}
+
+@Test @MainActor func workspaceWindowTitlesUseTheConfiguredCharacterLimit() throws {
+    let store = WorkspaceStore()
+    let app = WorkspaceApp(workspace: "1", name: "Finder", bundleID: "com.apple.finder")
+    store.workspaces = [Workspace(name: "1", isFocused: true, isVisible: true, monitor: 1,
+                                 apps: [app], windows: [WorkspaceWindow(id: 1, title: "👨‍👩‍👧‍👦Résumé document", app: app)])]
+    func width(_ title: String, length: Int) throws -> CGFloat {
+        store.workspaces[0].windows = [WorkspaceWindow(id: 1, title: title, app: app)]
+        let configuration = try JSONDecoder().decode(WorkspaceConfiguration.self, from: Data("""
+        {"windows":true,"titleLength":\(length),"appGlyphs":{"*":"F"}}
+        """.utf8))
+        let view = WorkspaceView(workspaceStore: store, monitor: 1,
+                                 appearance: WidgetAppearance(WidgetStyle(), defaults: WidgetStyle()), animationDuration: 0,
+                                 configuration: configuration)
+        return try #require(ImageRenderer(content: view).nsImage).size.width
+    }
+    let shortened = try width("👨‍👩‍👧‍👦Résumé document", length: 4)
+    #expect(shortened == (try width("👨‍👩‍👧‍👦Rés", length: 20)))
+    #expect(shortened < (try width("👨‍👩‍👧‍👦Résumé document", length: 20)))
+    #expect(try width("👨‍👩‍👧‍👦Résumé document", length: 0) < shortened)
 }
 
 @Test @MainActor func displayedWorkspacesKeepEmptyVisibleSpacesOnTheirMonitor() {
