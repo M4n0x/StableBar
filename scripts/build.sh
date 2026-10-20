@@ -20,7 +20,7 @@ if [[ -n "${SIGNING_IDENTITY:-}" ]]; then
     $sign "$sparkle/Versions/B/XPCServices/Installer.xpc"
     $sign --preserve-metadata=entitlements "$sparkle/Versions/B/XPCServices/Downloader.xpc"
     $sign "$sparkle/Versions/B/Autoupdate" "$sparkle/Versions/B/Updater.app" "$sparkle"
-    $sign "$app"
+    $sign --entitlements Resources/StableBar.entitlements "$app"
 else
     codesign --force --sign - "$app"
 fi
