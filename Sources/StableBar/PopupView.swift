@@ -339,10 +339,13 @@ struct PopupBlockView: View {
             Rectangle().fill(appearance.foreground.opacity(0.12)).frame(height: 1)
         case let .symbol(name, source):
             let symbol = source.flatMap { fields[$0] } ?? name
-            ResolvedBlockMotion(motion: context.motion, block: block) { transition, animation in
-                Image(systemName: symbol)
-                    .font(.system(size: appearance.iconSize))
-                    .modifier(TransitioningContent(value: symbol, transition: transition, animation: animation, numeric: false))
+            ZStack(alignment: .leading) {
+                if let widest = block.widestSymbol { Image(systemName: widest).font(.system(size: appearance.iconSize)).hidden() }
+                ResolvedBlockMotion(motion: context.motion, block: block) { transition, animation in
+                    Image(systemName: symbol)
+                        .font(.system(size: appearance.iconSize))
+                        .modifier(TransitioningContent(value: symbol, transition: transition, animation: animation, numeric: false))
+                }
             }
         case let .image(path, source, fit):
             WidgetImage(path: source.flatMap { fields[$0] } ?? path, fit: fit)

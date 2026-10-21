@@ -70,7 +70,8 @@ extension WidgetConfiguration {
             guard output != nil else { return nil }
             let field = AudioMonitor.changedVolumeField
             let volume = PopupBlock(content: .field(field), hideWhenEmpty: field, transition: transition == nil ? .numeric : nil)
-            return PopupBlock(content: .row([icon, volume].compactMap { $0 }), keepsLineHeight: true)
+            let speaker = label.icon.map { _ in PopupBlock(content: .symbol(name: "", source: "icon"), widestSymbol: AudioMonitor.widestIcon) }
+            return PopupBlock(content: .row([speaker, volume].compactMap { $0 }), keepsLineHeight: true)
         case .script, .provider:
             guard let output else { return nil }
             let type = providerType ?? providerName

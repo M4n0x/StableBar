@@ -85,6 +85,9 @@ struct PopupBlock: Decodable, Sendable {
     /// Whether the block is at least a line of its text tall, as built-in widgets that show only an
     /// icon are. Default layouts set it; configured blocks can't.
     let keepsLineHeight: Bool
+    /// A symbol a symbol block keeps the width of, its own drawn at its leading edge, so changing
+    /// between narrower symbols doesn't resize it. Default layouts set it; configured blocks can't.
+    let widestSymbol: String?
     /// How a text, field or symbol block shows changed content; nil uses its widget's.
     let transition: WidgetTransition?
 
@@ -95,7 +98,7 @@ struct PopupBlock: Decodable, Sendable {
     }
 
     init(content: PopupContent, role: PresentationRole? = nil, style: WidgetStyle = WidgetStyle(), hideWhenEmpty: String? = nil, monospacedDigits: Bool = true,
-         keepsLineHeight: Bool = false, transition: WidgetTransition? = nil) {
+         keepsLineHeight: Bool = false, widestSymbol: String? = nil, transition: WidgetTransition? = nil) {
         self.content = content
         self.role = role
         self.style = style
@@ -111,6 +114,7 @@ struct PopupBlock: Decodable, Sendable {
         scrollSpeed = nil
         self.monospacedDigits = monospacedDigits
         self.keepsLineHeight = keepsLineHeight
+        self.widestSymbol = widestSymbol
         self.transition = transition
     }
 
@@ -140,6 +144,7 @@ struct PopupBlock: Decodable, Sendable {
         }
         monospacedDigits = true
         keepsLineHeight = false
+        widestSymbol = nil
         transition = try values.decodeIfPresent(WidgetTransition.self, forKey: .transition)
         switch try values.decode(String.self, forKey: .type) {
         case "row": content = .row(try values.decode([PopupBlock].self, forKey: .children))

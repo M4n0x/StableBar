@@ -52,6 +52,22 @@ final class AudioMonitor: ChangeMonitor, @unchecked Sendable {
         return output
     }
 
+    /// The widest speaker `icon(volume:muted:)` gives, whose width the Sound widget keeps.
+    static let widestIcon = "speaker.wave.3"
+
+    /// The speaker for `volume`: crossed out while muted, else without waves at zero and with one,
+    /// two or three as it rises, a wave a third. Without a volume control, two waves.
+    static func icon(volume: Double?, muted: Bool) -> String {
+        if muted { return "speaker.slash" }
+        guard let volume else { return "speaker.wave.2" }
+        switch Int((volume * 100).rounded()) {
+        case ...0: return "speaker"
+        case ...33: return "speaker.wave.1"
+        case ...66: return "speaker.wave.2"
+        default: return "speaker.wave.3"
+        }
+    }
+
     private func readDevice() throws -> ScriptOutput {
         let device = try Self.defaultDevice()
         guard device != kAudioObjectUnknown else {
@@ -80,7 +96,7 @@ final class AudioMonitor: ChangeMonitor, @unchecked Sendable {
         let muteStatus = AudioObjectGetPropertyData(device, &muteAddress, 0, nil, &muteSize, &muted)
         var fields = ["device": name, "deviceID": String(device), "volumeAvailable": String(volume != nil)]
         if muteStatus == noErr { fields["muted"] = String(muted != 0) }
-        return ScriptOutput(text: volume.map { "\(Int(($0 * 100).rounded()))%" } ?? name, icon: muted != 0 ? "speaker.slash" : "speaker.wave.2",
+        return ScriptOutput(text: volume.map { "\(Int(($0 * 100).rounded()))%" } ?? name, icon: Self.icon(volume: volume, muted: muted != 0),
                             value: volume, fields: fields, lists: ["devices": try Self.outputDevices()], values: volume.map { ["volume": $0] })
     }
 
