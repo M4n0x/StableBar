@@ -147,8 +147,8 @@ private enum FrontmostApp {
             let layout = try #require(widget.defaultLayout(label, output: output, appIcon: false, providerType: named ? type : nil))
             // Sound shows its volume only after a change, so at rest it is the icon alone.
             let value = type == "audio" ? nil : PopupBlock(content: .field("text"), hideWhenEmpty: "text", monospacedDigits: false)
-            let expected = PopupBlock(content: .row([PopupBlock(content: .symbol(name: "", source: "icon")), value].compactMap { $0 }),
-                                      keepsLineHeight: true)
+            let speaker = PopupBlock(content: .symbol(name: "", source: "icon"), widestSymbol: type == "audio" ? AudioMonitor.widestIcon : nil)
+            let expected = PopupBlock(content: .row([speaker, value].compactMap { $0 }), keepsLineHeight: true)
             let context = BlockContext(samples: [0.85], values: [source: 0.85], fillsWidth: false, open: { _ in }, runAction: { _, _ in })
             let drawn = try draw(PopupBlockView(block: layout, inheritedStyle: WidgetStyle(), fields: label.fields, context: context))
             let plain = try draw(PopupBlockView(block: expected, inheritedStyle: WidgetStyle(), fields: label.fields, context: context))
@@ -298,13 +298,13 @@ private enum FrontmostApp {
     {"providers":{"speakers":{"type":"audio"}},
      "widgets":[{"id":"sound","type":"audio","position":"right"},
                 {"id":"named","type":"provider","provider":"speakers","position":"right"},
-                {"id":"icon","type":"text","text":"","icon":"speaker.wave.2","position":"right"}]}
+                {"id":"icon","type":"text","text":"","icon":"speaker.wave.3","position":"right"}]}
     """#)
     store.preparePresentations()
     for id in ["sound", "named"] {
         let script = ScriptWidget()
         script.output = try ScriptOutput.read(Data(#"""
-        {"text":"62%","icon":"speaker.wave.2","value":0.62,"values":{"volume":0.62},"fields":{"device":"Speakers","muted":"false"}}
+        {"text":"62%","icon":"speaker.wave.3","value":0.62,"values":{"volume":0.62},"fields":{"device":"Speakers","muted":"false"}}
         """#.utf8))
         script.samples = [0.1, 0.6, 0.35, 0.8, 0.62]
         store.scripts[id] = script
@@ -325,6 +325,13 @@ private enum FrontmostApp {
         #expect(changed.width > rest.width && changed.height == rest.height, "\(id) shows the volume beside its icon after a change")
         presentation.show(TemporaryOutput(fields: ["changedVolume": ""], duration: 30), output: 2)
         #expect(try drawing(id).difference(from: iconOnly) <= tolerance, "\(id) hides the volume when muted")
+        var levels: [Drawing] = []
+        for volume in [0, 0.2, 0.5, 0.9] {
+            store.scripts[id]?.output.icon = AudioMonitor.icon(volume: volume, muted: false)
+            levels.append(try drawing(id))
+        }
+        #expect(levels.allSatisfy { $0.width == rest.width && $0.height == rest.height }, "\(id) keeps its width at every level")
+        #expect(zip(levels, levels.dropFirst()).allSatisfy { $0.difference(from: $1) > tolerance }, "\(id) draws each level")
     }
 }
 

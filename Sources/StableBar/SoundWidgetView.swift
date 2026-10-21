@@ -19,7 +19,8 @@ struct SoundWidgetView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The icon alone, drawn like the default layout's, while the slider shows the volume.
-    private static let icon = PopupBlock(content: .row([PopupBlock(content: .symbol(name: "", source: "icon"))]), keepsLineHeight: true)
+    private static let icon = PopupBlock(content: .row([PopupBlock(content: .symbol(name: "", source: "icon"), widestSymbol: AudioMonitor.widestIcon)]),
+                                         keepsLineHeight: true)
 
     /// Whether the slider opens before the icon: on the right of the bar, which grows to the left.
     static func opensBeforeIcon(_ position: WidgetPosition) -> Bool { position == .right }

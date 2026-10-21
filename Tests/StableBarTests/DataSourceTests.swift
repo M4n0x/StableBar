@@ -839,6 +839,16 @@ private func audio(_ volume: Double?, muted: Bool = false, device: String = "Spe
     #expect(DataSourceType.audio.events == [.volumeChange, .outputDeviceChange])
 }
 
+@Test func theSpeakerShowsMoreWavesAsTheVolumeRises() {
+    let levels: [(Double, String)] = [(0, "speaker"), (0.004, "speaker"), (0.01, "speaker.wave.1"), (0.33, "speaker.wave.1"),
+                                      (0.34, "speaker.wave.2"), (0.66, "speaker.wave.2"), (0.67, "speaker.wave.3"), (1, "speaker.wave.3")]
+    for (volume, icon) in levels {
+        #expect(AudioMonitor.icon(volume: volume, muted: false) == icon, "\(volume)")
+        #expect(AudioMonitor.icon(volume: volume, muted: true) == "speaker.slash", "\(volume) muted")
+    }
+    #expect(AudioMonitor.icon(volume: nil, muted: false) == "speaker.wave.2", "Without a volume control")
+}
+
 @Test func audioShowsTheVolumeForAMomentAfterItChanges() {
     func shown(_ output: ScriptOutput, after previous: ScriptOutput?) -> [String: String]? {
         let next = AudioMonitor.showingChange(to: output, from: previous)
