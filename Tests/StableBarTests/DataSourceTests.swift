@@ -839,6 +839,22 @@ private func audio(_ volume: Double?, muted: Bool = false, device: String = "Spe
     #expect(DataSourceType.audio.events == [.volumeChange, .outputDeviceChange])
 }
 
+@Test func audioShowsTheVolumeForAMomentAfterItChanges() {
+    func shown(_ output: ScriptOutput, after previous: ScriptOutput?) -> [String: String]? {
+        let next = AudioMonitor.showingChange(to: output, from: previous)
+        if let temporary = next.temporary { #expect(temporary.duration == 1.5) }
+        #expect(next.text == output.text && next.values == output.values, "The output keeps its own text and volume")
+        return next.temporary?.fields
+    }
+    #expect(shown(audio(0.5), after: nil) == nil, "The first read shows nothing")
+    #expect(shown(audio(0.5), after: audio(0.5)) == nil)
+    #expect(shown(audio(0.62), after: audio(0.5)) == ["changedVolume": "62%"])
+    #expect(shown(audio(0.5, muted: true), after: audio(0.5)) == ["changedVolume": ""], "Muting hides the volume")
+    #expect(shown(audio(0.5), after: audio(0.5, muted: true)) == ["changedVolume": "50%"])
+    #expect(shown(audio(0.5, device: "AirPods", id: "77"), after: audio(0.5)) == nil, "A new device at the same volume shows nothing")
+    #expect(shown(audio(nil, device: "HDMI", id: "9"), after: audio(0.5)) == ["changedVolume": ""])
+}
+
 @Test func theDeviceListSkipsADeviceWhoseNameCannotBeRead() {
     let rows = AudioMonitor.deviceRows([42, 77, 9]) { device in
         guard device != 77 else { throw CommandFailure(message: "Could not read audio device name (560947818).") }

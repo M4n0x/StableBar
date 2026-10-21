@@ -369,7 +369,7 @@ struct BarInspector: View {
                     Picker("Show", selection: Binding(get: { current }, set: { choice in
                         if let layout = choice.layout(for: source) { editor.set(["layout": layout], for: widget.id) }
                     })) {
-                        ForEach(WidgetMetricDisplay.allCases.filter { $0 != .custom || current == .custom }, id: \.self) { choice in
+                        ForEach(WidgetMetricDisplay.choices(for: source).filter { $0 != .custom || current == .custom }, id: \.self) { choice in
                             Text(choice.title).tag(choice)
                         }
                     }

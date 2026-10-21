@@ -129,10 +129,9 @@ final class BarEditing {
             let visibility = visibility(of: widget, on: display)
             let label = store.label(for: widget).overlaid(by: store.presentations[widget.id]?.temporaryFields)
             let output = store.scripts[widget.id]?.output
-            let providerType = widget.providerName.flatMap { store.configuration?.providers[$0]?.type }
             let layout = widget.layout ?? widget.defaultLayout(label, output: output,
                                                                appIcon: widget.content == .activeApp && store.activeApp?.icon != nil,
-                                                               providerType: providerType)
+                                                               providerType: store.configuration?.providerType(of: widget))
             let drawsCells = switch widget.content {
             case .workspaces, .appMenu, .appleMenu: true
             default: false

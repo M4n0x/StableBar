@@ -4,8 +4,16 @@ import Foundation
 /// The default output device's volume, mute state and name from CoreAudio. Its listeners follow the
 /// default output device and the device list, and the default device's volume and mute state.
 final class AudioMonitor: ChangeMonitor, @unchecked Sendable {
+    /// The `temporary` field that holds the volume, such as `62%`, for a moment after it changes.
+    static let changedVolumeField = "changedVolume"
+    /// How long the volume shows after a change, in seconds.
+    static let changedVolumeDuration = 1.5
+
     private let relay = MainQueueRelay()
     private let queue = DispatchQueue(label: "StableBar.AudioMonitor")
+    /// The last output read, which the next read compares with. Only touched on the main actor, where
+    /// reads happen.
+    private var previous: ScriptOutput?
     // The listener state below is only touched on `queue`, where CoreAudio delivers the listeners.
     private var systemListener: AudioObjectPropertyListenerBlock?
     private var device = AudioObjectID(kAudioObjectUnknown)
@@ -26,6 +34,24 @@ final class AudioMonitor: ChangeMonitor, @unchecked Sendable {
     }
 
     func read() throws -> ScriptOutput {
+        let output = Self.showingChange(to: try readDevice(), from: previous)
+        previous = output
+        return output
+    }
+
+    /// `output` with a `temporary` that shows its volume for a moment when its volume or mute state
+    /// differs from `previous`'s, as `volumeChange` reports them. The volume is empty while muted or
+    /// without a volume control. The first read shows nothing.
+    static func showingChange(to output: ScriptOutput, from previous: ScriptOutput?) -> ScriptOutput {
+        guard let previous, let change = BuiltInEvent.volumeChange.variables(from: previous, to: output) else { return output }
+        var output = output
+        let info = change["INFO"] ?? ""
+        let volume = change["MUTED"] == "true" || info.isEmpty ? "" : "\(info)%"
+        output.temporary = TemporaryOutput(fields: [changedVolumeField: volume], duration: changedVolumeDuration)
+        return output
+    }
+
+    private func readDevice() throws -> ScriptOutput {
         let device = try Self.defaultDevice()
         guard device != kAudioObjectUnknown else {
             return ScriptOutput(text: "No output", icon: "speaker.slash", fields: ["volumeAvailable": "false"], lists: ["devices": []])

@@ -699,7 +699,8 @@ final class BarStore: NSObject {
                                              hidden: script?.output.hidden == true && script?.error == nil,
                                              display: script?.output.display,
                                              visibility: visibilityAnimation(widget.transition, animation: animation, reduceMotion: reduceMotion))
-            presentations[widget.id]?.show(script?.output.temporary, output: script?.outputNumber ?? 0)
+            presentations[widget.id]?.show(script?.output.temporary, output: script?.outputNumber ?? 0,
+                                           animation: reduceMotion ? nil : animation)
         }
         let bar = resolveStyle(barStyleLayers(configuration.bar.style, overrides: overrides), states: StyleStates(mode: mode))
         if barStyle != bar { barStyle = bar }
@@ -1060,19 +1061,23 @@ final class WidgetPresentation {
 
     /// Shows the `temporary` of a new output for its duration. `output` numbers the output, so the
     /// same output applied again changes nothing. An output without one, or with the same one while
-    /// it shows, lets the current one run out.
-    func show(_ next: TemporaryOutput?, output: Int) {
+    /// it shows, lets the current one run out. With an `animation`, the fields come and go with it.
+    func show(_ next: TemporaryOutput?, output: Int, animation: WidgetAnimation? = nil) {
         guard output != shownOutput else { return }
         shownOutput = output
         guard let next, next != temporary else { return }
         temporary = next
         expiry?.cancel()
-        if temporaryFields != next.fields { temporaryFields = next.fields }
+        if temporaryFields != next.fields { setTemporaryFields(next.fields, animation: animation) }
         expiry = Task { [weak self] in
             try? await Task.sleep(for: .seconds(next.duration))
             guard !Task.isCancelled, let self else { return }
             temporary = nil
-            temporaryFields = nil
+            setTemporaryFields(nil, animation: animation)
         }
+    }
+
+    private func setTemporaryFields(_ fields: [String: String]?, animation: WidgetAnimation?) {
+        if let animation { animation.animate { temporaryFields = fields } } else { temporaryFields = fields }
     }
 }

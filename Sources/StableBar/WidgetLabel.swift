@@ -47,6 +47,13 @@ extension BarStore {
 }
 
 extension WidgetConfiguration {
+    /// The blocks a widget without `layout` draws, matching the look built-in widgets had before
+    /// they were drawn through blocks: its icon and text in a row at least a line of text tall, after
+    /// a 40 × 16 graph for output with a `value`, or after the app's icon for the active app.
+    /// `providerType` is the type of the widget's provider, else its name is. Battery draws no graph,
+    /// and sound (`audio`) draws its icon, with the volume only while a change shows it. `appIcon`
+    /// says whether the frontmost app has one. Workspaces, spacers and scripts without output have
+    /// none.
     func defaultLayout(_ label: WidgetLabel, output: ScriptOutput?, appIcon: Bool, providerType: String? = nil) -> PopupBlock? {
         let icon = label.icon.map { _ in PopupBlock(content: .symbol(name: "", source: "icon")) }
         let text = PopupBlock(content: .field("text"), hideWhenEmpty: "text", monospacedDigits: false)
@@ -59,10 +66,15 @@ extension WidgetConfiguration {
         case .activeApp:
             let app = appIcon ? PopupBlock(content: .appIcon) : nil
             return PopupBlock(content: .row([app, PopupBlock(content: .field("text"), monospacedDigits: false)].compactMap { $0 }))
+        case .provider where (providerType ?? providerName) == DataSourceType.audio.name:
+            guard output != nil else { return nil }
+            let field = AudioMonitor.changedVolumeField
+            let volume = PopupBlock(content: .field(field), hideWhenEmpty: field, transition: transition == nil ? .numeric : nil)
+            return PopupBlock(content: .row([icon, volume].compactMap { $0 }), keepsLineHeight: true)
         case .script, .provider:
             guard let output else { return nil }
             let type = providerType ?? providerName
-            let graph = output.value == nil || type == "battery" || type == "audio" ? nil
+            let graph = output.value == nil || type == "battery" ? nil
                 : PopupBlock(content: .graph(height: 16, source: nil, lineWidth: 1.2), style: WidgetStyle(width: 40))
             let label = PopupBlock(content: .row([icon, text].compactMap { $0 }), keepsLineHeight: true)
             return PopupBlock(content: .row([graph, label].compactMap { $0 }))

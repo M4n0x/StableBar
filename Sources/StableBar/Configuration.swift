@@ -478,6 +478,13 @@ extension WidgetConfiguration {
     }
 }
 
+extension Configuration {
+    /// The type of the provider `widget` shows, such as `audio` for the Sound widget.
+    func providerType(of widget: WidgetConfiguration) -> String? {
+        widget.providerName.flatMap { providers[$0]?.type }
+    }
+}
+
 enum BarAppearance: String, Decodable, Sendable {
     case light, dark
 
