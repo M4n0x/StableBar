@@ -209,6 +209,13 @@ struct SetupPreferences: Equatable {
             configuration = try JSONDecoder().decode(Configuration.self, from: data)
         }
         if self == SetupPreferences() { return data }
+        var document = try JSONDecoder().decode([String: ConfigurationValue].self, from: data)
+        var ids = configuration.widgets.map(\.id)
+        for edit in try edits(in: configuration, menuBarHeight: menuBarHeight) { document = try edit.applying(to: document, widgetIDs: &ids) }
+        return try configurationData(document, editing: data)
+    }
+
+    func edits(in configuration: Configuration, menuBarHeight: Double) throws -> [ConfigurationEdit] {
         var edits: [ConfigurationEdit] = []
         switch theme {
         case .current: break
@@ -275,13 +282,10 @@ struct SetupPreferences: Equatable {
             }
         }
         if order != appended { edits.append(ConfigurationEdit(action: .reorder, ids: order)) }
-        var document = try JSONDecoder().decode([String: ConfigurationValue].self, from: data)
-        var ids = configuration.widgets.map(\.id)
-        for edit in edits { document = try edit.applying(to: document, widgetIDs: &ids) }
         for case let .workspaces(source) in widgetSets
         where source != configuration.workspaceSource && WidgetSet.workspaces(source).state(in: configuration) != .conflict {
-            document["workspaceSource"] = .string(source.rawValue)
+            edits.append(ConfigurationEdit(action: .workspaceSource, name: source.rawValue))
         }
-        return try configurationData(document, editing: data)
+        return edits
     }
 }
