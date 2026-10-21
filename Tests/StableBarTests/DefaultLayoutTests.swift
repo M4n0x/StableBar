@@ -328,6 +328,42 @@ private enum FrontmostApp {
     }
 }
 
+@Test @MainActor func hoveringTheSoundWidgetOpensAVolumeSliderOnTheDisplayItIsOn() throws {
+    let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).json"))
+    store.configuration = try decode(Configuration.self, #"""
+    {"widgets":[{"id":"sound","type":"audio","position":"right"},{"id":"fixed","type":"audio","position":"left"}]}
+    """#)
+    store.preparePresentations()
+    for (id, json) in [("sound", #"{"text":"62%","icon":"speaker.wave.2","value":0.62,"values":{"volume":0.62}}"#),
+                       ("fixed", #"{"text":"HDMI","icon":"speaker.wave.2","fields":{"volumeAvailable":"false"}}"#)] {
+        let script = ScriptWidget()
+        script.output = try ScriptOutput.read(Data(json.utf8))
+        store.scripts[id] = script
+    }
+    let widgets = try #require(store.configuration?.widgets)
+    let style = ResolvedWidgetStyle(base: WidgetStyle()).layoutStyle(configured: false, hovered: false, open: false)
+    // The measuring copy, as the bar sizes the widget: it follows the presentation, not the pointer.
+    func drawing(_ id: String, on display: Int) throws -> Drawing {
+        let widget = try #require(widgets.first { $0.id == id })
+        return try draw(SoundWidgetView(widget: widget, store: store, monitor: display, style: style, hovered: false, motion: BlockMotion(),
+                                        runAction: { _, _ in })
+            .environment(\.measuringBarWidths, true))
+    }
+    let rest = try drawing("sound", on: 1)
+    try #require(store.presentations["sound"]).setExpanded(true, on: 1)
+    let open = try drawing("sound", on: 1)
+    #expect(open.width > rest.width + 2 * 72, "The slider and the volume open beside the icon")
+    #expect(open.height == rest.height)
+    #expect(try drawing("sound", on: 2).width == rest.width, "Other displays stay closed")
+    try #require(store.presentations["sound"]).setExpanded(false, on: 1)
+    #expect(try drawing("sound", on: 1).width == rest.width)
+    let fixed = try drawing("fixed", on: 1)
+    try #require(store.presentations["fixed"]).setExpanded(true, on: 1)
+    #expect(try drawing("fixed", on: 1).width == fixed.width, "A device without a volume control has no slider")
+    #expect(SoundWidgetView.opensBeforeIcon(.right))
+    #expect(WidgetPosition.allCases.filter(SoundWidgetView.opensBeforeIcon) == [.right], "Only the right of the bar grows to the left")
+}
+
 @Test @MainActor func onlyActiveAppBlocksRedrawWhenTheFrontmostAppChanges() async throws {
     let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).json"))
     let note = try decode(WidgetConfiguration.self, #"{"id":"note","type":"text","text":"Ready","position":"left"}"#)

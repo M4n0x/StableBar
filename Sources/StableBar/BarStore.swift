@@ -1024,7 +1024,9 @@ private func withoutShellVariables(_ environment: [String: String]) -> [String: 
 final class WidgetPresentation {
     private(set) var style = ResolvedWidgetStyle(base: WidgetStyle())
     private(set) var screenStyles: [String: ResolvedWidgetStyle] = [:]
-    var expandedAppMenuDisplays: Set<Int> = []
+    /// Displays where hovering expands the widget: an app menu with `expandOnHover`, or the Sound
+    /// widget with its volume slider. The bar's measuring copy, which no pointer reaches, reads it.
+    var expandedDisplays: Set<Int> = []
     /// Output `hidden`, unless the widget has an error to show.
     private(set) var hidden = false
     /// Output `display`, which replaces the configured one.
@@ -1053,6 +1055,14 @@ final class WidgetPresentation {
 
     func style(on kind: ScreenKind) -> ResolvedWidgetStyle {
         screenStyles[kind.rawValue] ?? style
+    }
+
+    /// Expands or collapses the widget on `display`, with `animation` when given.
+    func setExpanded(_ expanded: Bool, on display: Int, animation: WidgetAnimation? = nil) {
+        guard expandedDisplays.contains(display) != expanded else { return }
+        var displays = expandedDisplays
+        if expanded { displays.insert(display) } else { displays.remove(display) }
+        if let animation { animation.animate { expandedDisplays = displays } } else { expandedDisplays = displays }
     }
 
     func setPopupAnchor(_ anchor: ObjectIdentifier?) {

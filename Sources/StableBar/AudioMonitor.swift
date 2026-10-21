@@ -1,3 +1,4 @@
+import AudioToolbox
 import CoreAudio
 import Foundation
 
@@ -162,6 +163,26 @@ final class AudioMonitor: ChangeMonitor, @unchecked Sendable {
             }
         }
         systemListener = nil
+    }
+
+    /// Sets the default output device's volume to `volume`, 0–1, keeping its balance, and unmutes it
+    /// for a volume above zero, as the Sound menu's slider does.
+    static func setVolume(_ volume: Double) throws {
+        let device = try defaultDevice()
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
+                                                 mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+        guard device != kAudioObjectUnknown, AudioObjectHasProperty(device, &address) else {
+            throw CommandFailure(message: "The audio output has no volume control.")
+        }
+        var value = Float32(min(max(volume, 0), 1))
+        let status = AudioObjectSetPropertyData(device, &address, 0, nil, UInt32(MemoryLayout<Float32>.size), &value)
+        guard status == noErr else { throw CommandFailure(message: "Could not set the volume (\(status)).") }
+        var mute = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioDevicePropertyScopeOutput,
+                                              mElement: kAudioObjectPropertyElementMain)
+        if value > 0, AudioObjectHasProperty(device, &mute) {
+            var unmuted: UInt32 = 0
+            AudioObjectSetPropertyData(device, &mute, 0, nil, UInt32(MemoryLayout<UInt32>.size), &unmuted)
+        }
     }
 
     private static func defaultDevice() throws -> AudioDeviceID {
