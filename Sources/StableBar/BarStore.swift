@@ -60,7 +60,7 @@ final class BarStore: NSObject {
     private var triedTheme: ThemeChoice?
     private var managesConnections = false
     private let configurationWatcher = ConfigurationWatcher()
-    private var reloadTask: Task<Void, Never>?
+    private(set) var reloadTask: Task<Void, Never>?
     private var eventObservers: [NSObjectProtocol] = []
     private var reloadObserver: NSObjectProtocol?
     private var actions: [UUID: Task<Void, Never>] = [:]
@@ -160,7 +160,7 @@ final class BarStore: NSObject {
         if reload { readConfiguration(leavingEditMode: false) }
     }
 
-    private func scheduleReload() {
+    func scheduleReload() {
         reloadTask?.cancel()
         let generation = configurationWatcher.generation
         reloadTask = Task {
