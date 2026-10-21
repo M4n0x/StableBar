@@ -53,7 +53,7 @@ private func output(_ json: String) throws -> ScriptOutput {
             try a.accept(output(##"{"text":"3","style":{"foreground":"#ff0000"},"widgetStyles":{"c":{"background":"#00ff00"}}}"##))
         }
     }
-    #expect(third.style.base.background == HexColor(0x00ff00ff))
+    #expect(third.style.base.background == .color(HexColor(0x00ff00ff)))
     try await confirmation("barStyle restyles the bar", expectedCount: 1) { restyled in
         try await confirmation("widgets stay valid", expectedCount: 0) { invalidated in
             withObservationTracking { _ = store.barStyle } onChange: { restyled() }
@@ -61,7 +61,7 @@ private func output(_ json: String) throws -> ScriptOutput {
             try a.accept(output(##"{"text":"4","style":{"foreground":"#ff0000"},"widgetStyles":{"c":{"background":"#00ff00"}},"barStyle":{"background":"#0000ff"}}"##))
         }
     }
-    #expect(store.barStyle.background == HexColor(0x0000ffff))
+    #expect(store.barStyle.background == .color(HexColor(0x0000ffff)))
 }
 
 @Test @MainActor func hiddenAndDisplayOutputChangeOnlyTheirWidgetsPresence() async throws {
@@ -106,10 +106,10 @@ private func output(_ json: String) throws -> ScriptOutput {
     defer { store.stop() }
     store.reloadConfiguration()
     for _ in 0..<100 {
-        if store.barStyle.background == HexColor(0x00ff00ff) { break }
+        if store.barStyle.background == .color(HexColor(0x00ff00ff)) { break }
         try await Task.sleep(for: .milliseconds(20))
     }
-    #expect(store.barStyle.background == HexColor(0x00ff00ff))
+    #expect(store.barStyle.background == .color(HexColor(0x00ff00ff)))
     #expect(store.presentations["status"]?.style.base.foreground == HexColor(0xff0000ff))
 }
 

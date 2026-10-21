@@ -1,46 +1,50 @@
 import Foundation
 
 enum SettingsSearchResult: String, CaseIterable, Identifiable {
-    case widgetContent, widgetAppearance, widgetBehavior, widgetTechnical
-    case theme, glass, colors, defaults, popups, roles, workspaceStyle, modeAliases, barStyle
-    case login, screenSetups, placement, access, connections, configuration, help, updates
-    case profiles, library, status
+    case login, windows, workspaces, access, configuration, updates, help
+    case barSize, barLook, barPlacement, screenSetups, everyWidget, widgetContent, widgetStyle, widgetBehavior, addWidget
+    case theme, colors, glass, popups, roles, workspaceStyle, modeAliases
+    case profiles, library, store, status
 
     var id: String { rawValue }
     var title: String { details.0 }
     var section: CustomizationSection { details.1 }
+    var path: String { details.2 }
 
-    private var details: (String, CustomizationSection, String) {
+    private var details: (String, CustomizationSection, String, String) {
         switch self {
-        case .widgetContent: ("Widget content", .widgets, "text icon clock date format package settings location units")
-        case .widgetAppearance: ("Widget appearance", .widgets, "color font size padding corners border")
-        case .widgetBehavior: ("Widget behavior and placement", .widgets, "click popup hover screens display position tooltip")
-        case .widgetTechnical: ("Widget technical details", .widgets, "script command json id role transition")
-        case .theme: ("Theme", .appearance, "light dark automatic browse")
-        case .glass: ("Liquid Glass", .appearance, "transparency see-through")
-        case .colors: ("Theme colors", .appearance, "tokens light dark accent text surface")
-        case .defaults: ("Default widget appearance", .appearance, "all font size color padding corners shadow")
-        case .popups: ("Popup appearance", .appearance, "background border shadow weight")
-        case .roles: ("Presentation roles", .appearance, "advanced time status style")
-        case .workspaceStyle: ("Workspace appearance", .appearance, "defaults indicator empty focused")
-        case .modeAliases: ("AeroSpace mode aliases", .appearance, "advanced mapping")
-        case .barStyle: ("Bar appearance", .appearance, "background border corners height spacing inset")
-        case .login: ("Open at login", .general, "startup launch")
-        case .screenSetups: ("Screen setups", .general, "laptop monitor vertical external connected own shared bar")
-        case .placement: ("Displays and placement", .general, "offset margin scale monitor windows notifications clear accessibility")
-        case .access: ("Access", .general, "permission calendar accessibility automation denied")
-        case .connections: ("Workspace connection", .general, "aerospace yabai source reconnect")
-        case .configuration: ("Configuration files", .general, "json path reload finder temporary command line")
-        case .help: ("Getting started", .general, "onboarding setup guide help")
-        case .updates: ("About and updates", .general, "version release beta stable automatic download")
-        case .profiles: ("Profiles", .profiles, "automatic conditions app battery power external display overrides")
-        case .library: ("Widget library", .packages, "store package install version update uninstall shared settings")
-        case .status: ("Status and troubleshooting", .diagnostics, "diagnostics error failed refresh snapshot event")
+        case .login: ("Open at login", .general, "General", "startup launch")
+        case .windows: ("Keep windows clear of the bar", .general, "General", "windows notifications overlap clearance accessibility")
+        case .workspaces: ("Workspace manager", .general, "General", "aerospace yabai source reconnect connection")
+        case .access: ("Permissions", .general, "General", "access accessibility calendar location automation denied")
+        case .configuration: ("Configuration file", .general, "General", "json path reload finder temporary command line")
+        case .updates: ("Updates", .general, "General", "version release beta stable automatic download about")
+        case .help: ("Set up StableBar again", .general, "General", "onboarding setup guide help")
+        case .barSize: ("Bar height and corners", .widgets, "Bar › Bar › Size", "tall size px pt radius rounded inset spacing")
+        case .barLook: ("Bar background and border", .widgets, "Bar › Bar › Look", "color fill gradient edges line")
+        case .barPlacement: ("Offset, margin and size on each screen", .widgets, "Bar › Bar › Placement", "position floating scale laptop monitor display")
+        case .screenSetups: ("Own bar for these screens", .widgets, "Bar › Screens", "screen setup monitor laptop vertical shared external")
+        case .everyWidget: ("Look of every widget", .widgets, "Bar › Every widget", "defaults font size color padding corners shadow px pt")
+        case .widgetContent: ("Widget content", .widgets, "Bar › Widget › Content", "text icon clock date format package settings location units")
+        case .widgetStyle: ("Widget style", .widgets, "Bar › Widget › Style", "color gradient font size padding corners border px pt")
+        case .widgetBehavior: ("Widget clicks, screens and position", .widgets, "Bar › Widget › Behavior", "click popup hover screens display position tooltip hide")
+        case .addWidget: ("Add a widget", .widgets, "Bar › Add widget", "new widget clock battery calendar store package")
+        case .theme: ("Theme", .appearance, "Theme", "light dark automatic appearance browse look save copy duplicate")
+        case .colors: ("Theme colors", .appearance, "Theme › Theme colors", "tokens accent text surface palette")
+        case .glass: ("Liquid Glass", .appearance, "Theme › Liquid Glass", "transparency see-through blur")
+        case .popups: ("Popup colors", .appearance, "Theme › Popups", "popover background border shadow weight")
+        case .roles: ("Presentation roles", .appearance, "Theme › Advanced", "role time status style")
+        case .workspaceStyle: ("Workspace look", .appearance, "Theme › Advanced", "defaults indicator empty focused")
+        case .modeAliases: ("AeroSpace mode names", .appearance, "Theme › Advanced", "mode aliases mapping")
+        case .profiles: ("Profiles", .profiles, "Profiles", "automatic conditions app battery power dark external display pinned")
+        case .library: ("Installed packages", .packages, "Packages › Installed", "package version update uninstall settings credentials local folder built-in")
+        case .store: ("Get widgets and themes from the Store", .packages, "Packages › Store", "store install download")
+        case .status: ("Status and troubleshooting", .diagnostics, "Status", "diagnostics error failed refresh snapshot event")
         }
     }
 
     func matches(_ query: String) -> Bool {
-        let text = "\(title) \(section.rawValue) \(details.2)"
+        let text = "\(title) \(path) \(details.3)"
         return query.split(whereSeparator: \.isWhitespace).allSatisfy { text.localizedStandardContains($0) }
     }
 }

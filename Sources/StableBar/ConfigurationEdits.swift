@@ -1,13 +1,16 @@
 import Foundation
 
 struct ConfigurationEdit: Codable, Sendable {
-    enum Action: String, Codable { case set, add, remove, reorder, bar, defaults, popupDefaults, roles, workspaceDefaults, tokens, modeAliases, workspaceSource, unset, profile, profiles, package, theme }
+    enum Action: String, Codable { case set, add, remove, reorder, screens, bar, defaults, popupDefaults, roles, workspaceDefaults, tokens, modeAliases, workspaceSource, unset, profile, profiles, package, theme }
     let action: Action
     var id: String?
     var properties: [String: ConfigurationValue]?
     var ids: [String]?
     var name: String?
     var profiles: [[String: ConfigurationValue]]?
+    var profile: String?
+
+    enum CodingKeys: String, CodingKey { case action, id, properties, ids, name, profiles }
 
     func validateTargets(in widgetIDs: [String]) throws {
         switch action {
@@ -28,6 +31,17 @@ struct ConfigurationEdit: Codable, Sendable {
 
     func applying(to document: [String: ConfigurationValue], widgetIDs: inout [String]) throws -> [String: ConfigurationValue] {
         var root = document
+        if let profile {
+            var edit = self
+            edit.profile = nil
+            var profiles = try root["profiles"]?.decoded([[String: ConfigurationValue]].self) ?? []
+            if !profiles.contains(where: { $0["name"] == .string(profile) }) { profiles.append(["name": .string(profile)]) }
+            let index = profiles.firstIndex { $0["name"] == .string(profile) }!
+            let configuration = try (profiles[index]["configuration"] ?? .object([:])).decoded([String: ConfigurationValue].self)
+            profiles[index]["configuration"] = .object(try edit.applying(to: configuration, widgetIDs: &widgetIDs))
+            root["profiles"] = .array(profiles.map(ConfigurationValue.object))
+            return root
+        }
         var overrides = try root["widgetOverrides"]?.decoded([String: ConfigurationValue].self) ?? [:]
         switch action {
         case .set:
@@ -63,7 +77,7 @@ struct ConfigurationEdit: Codable, Sendable {
                 root["widgetOrder"] = .array(ids!.map(ConfigurationValue.string))
             }
             widgetIDs = order
-        case .bar, .defaults, .popupDefaults, .roles, .workspaceDefaults, .tokens, .modeAliases:
+        case .screens, .bar, .defaults, .popupDefaults, .roles, .workspaceDefaults, .tokens, .modeAliases:
             let key = action.rawValue
             root[key] = .object(try requiredProperties()).overriding(root[key] ?? .object([:]))
         case .unset:
@@ -193,13 +207,21 @@ enum HoverBackgroundRow {
     }
 }
 
-private func removingReferences(to id: String, in document: [String: ConfigurationValue]) throws -> [String: ConfigurationValue] {
+func removingReferences(to id: String, in document: [String: ConfigurationValue]) throws -> [String: ConfigurationValue] {
     var document = document
     var overrides = try document["widgetOverrides"]?.decoded([String: ConfigurationValue].self) ?? [:]
     overrides.removeValue(forKey: id)
     document["widgetOverrides"] = overrides.isEmpty ? nil : .object(overrides)
     if let order = try document["widgetOrder"]?.decoded([String].self) {
         document["widgetOrder"] = .array(order.filter { $0 != id }.map(ConfigurationValue.string))
+    }
+    if var screens = try document["screens"]?.decoded([String: [String: ConfigurationValue]].self) {
+        for (kind, screen) in screens {
+            if let layout = try screen["layout"]?.decoded([String: [String]].self) {
+                screens[kind]?["layout"] = .object(layout.mapValues { .array($0.filter { $0 != id }.map(ConfigurationValue.string)) })
+            }
+        }
+        document["screens"] = .object(screens.mapValues(ConfigurationValue.object))
     }
     if let profiles = try document["profiles"]?.decoded([[String: ConfigurationValue]].self) {
         document["profiles"] = .array(try profiles.map { profile in

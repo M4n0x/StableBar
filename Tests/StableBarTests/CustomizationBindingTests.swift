@@ -2,6 +2,37 @@ import Foundation
 import Testing
 @testable import StableBar
 
+@Test @MainActor func inheritedGradientEditsKeepTokenStopsInsideTheProfile() throws {
+    try withCustomizationEditor(##"""
+    {"tokens":{"accent":"#112233","surface":"#445566"},
+     "bar":{"style":{"background":{"gradient":{"colors":["@token.accent","@token.surface"],"angle":90}}}},
+     "widgets":[],"profiles":[{"name":"work","when":{"app":"com.example.inactive"},"configuration":{}}]}
+    """##) { editor, url in
+        editor.editBar(for: "work")
+        let store = editor.store
+        let values = try #require(store.effectiveDocument["bar"]).decoded([String: ConfigurationValue].self)
+        let style = try #require(values["style"]).decoded([String: ConfigurationValue].self)
+        let property = store.propertySources(path: "bar.style", key: "background", values: style)
+        #expect(property.saved == nil)
+        var fill = try #require(property.editingFill).decoded([String: ConfigurationValue].self)
+        var gradient = try #require(fill["gradient"]).decoded([String: ConfigurationValue].self)
+        let stops = ConfigurationValue.array([.string("@token.accent"), .string("@token.surface")])
+        #expect(gradient["colors"] == stops)
+        gradient["angle"] = .number(120)
+        fill["gradient"] = .object(gradient)
+        editor.change(ConfigurationEdit(action: .bar, properties: ["style": .object(["background": .object(fill)])]))
+        try editor.history.flush()
+        let document = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: url))
+        let profile = try #require(document["profiles"]).decoded([ConfigurationProfile].self)[0]
+        #expect(profile.configuration["bar"] == .object(["style": .object(["background": .object(fill)])]))
+        #expect(store.configuration?.bar.style.background == .gradient(BackgroundGradient(
+            colors: [HexColor(0x112233ff), HexColor(0x445566ff)], angle: 120)))
+        editor.endProfileEditing()
+        #expect(store.configuration?.bar.style.background == .gradient(BackgroundGradient(
+            colors: [HexColor(0x112233ff), HexColor(0x445566ff)], angle: 90)))
+    }
+}
+
 @Test @MainActor func unchangedInheritedStyleChoicesKeepTheirSourceAndDoNotCreateEdits() throws {
     try withCustomizationEditor(#"{"includes":["settings.json"],"widgets":[]}"#, included: #"""
     {"defaults":{"fontName":"Helvetica","fontWeight":"regular"},

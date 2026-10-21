@@ -8,62 +8,84 @@ struct ThemeCard: View {
     var progress: String?
     var error: String?
     var isStore = false
+    var source: PackageSource? = .included
     let select: () -> Void
+    @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        Group {
             if isStore {
-                preview
-                HStack {
-                    Text(title).font(.callout).lineLimit(1)
-                    Spacer()
-                    if let progress {
-                        ProgressView().controlSize(.small)
-                        Text(progress).font(.caption).lineLimit(1)
-                    } else {
-                        Button("Get", action: select).accessibilityLabel("Get \(title)")
-                    }
-                }
+                card
             } else {
-                Button(action: select) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        preview
-                        HStack {
-                            Text(title).lineLimit(1)
-                            if isSelected { Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor) }
-                        }.font(.callout)
-                    }.contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(title) theme")
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-            if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+                Button(action: select) { card }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(title) theme")
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
+        .onHover { hovering = $0 }
+    }
+
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            preview
+            HStack(spacing: 6) {
+                Text(title).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                Spacer(minLength: 0)
+                Group {
+                    if let progress {
+                        ProgressView().controlSize(.mini).accessibilityLabel(progress)
+                    } else if isStore {
+                        Button("Get", action: select)
+                            .buttonStyle(.borderedProminent)
+                            .buttonBorderShape(.capsule)
+                            .controlSize(.small)
+                            .accessibilityLabel("Get \(title)")
+                    } else if let source {
+                        PackageSourceBadge(source: source)
+                    } else {
+                        Text("Installed").font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(minWidth: 72, minHeight: 20, maxHeight: 20)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.accentColor)
+                    .opacity(isSelected ? 1 : 0)
+            }
+            .frame(height: 20)
+            .padding(.horizontal, 2)
+        }
+        .padding(EdgeInsets(top: 6, leading: 6, bottom: 8, trailing: 6))
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-        .clipped()
+        .background(SettingsPalette.group, in: RoundedRectangle(cornerRadius: 11))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11)
+                .strokeBorder(isSelected ? Color.accentColor : hovering ? Color(nsColor: .tertiaryLabelColor) : SettingsPalette.groupBorder,
+                              lineWidth: isSelected ? 2 : 1)
+        }
+        .animation(.snappy(duration: 0.2), value: isSelected)
+        .contentShape(RoundedRectangle(cornerRadius: 11))
     }
 
     private var preview: some View {
         Group {
             if let look {
-                ThemeSampleBar(look: look)
+                GeometryReader { proxy in
+                    ThemeSampleBar(look: look)
+                        .frame(width: proxy.size.width * 2)
+                        .scaleEffect(0.5)
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                }
             } else {
-                RoundedRectangle(cornerRadius: 8).fill(.quaternary)
-                    .overlay { Text(isStore && error == nil ? "Loading preview…" : "Preview unavailable").font(.caption).foregroundStyle(.secondary) }
+                Text(isStore && error == nil ? "Loading preview…" : "Preview unavailable")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(height: 76)
-        .background(Color(nsColor: .underPageBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(isSelected ? Color.accentColor : Color.primary.opacity(0.15), lineWidth: isSelected ? 2 : 1)
-        }
+        .frame(height: 46)
+        .background(SampleWallpaper())
+        .clipShape(RoundedRectangle(cornerRadius: 7))
         .environment(\.colorScheme, appearance.colorScheme)
         .accessibilityHidden(true)
     }
@@ -98,7 +120,7 @@ struct ThemeSampleBar: View {
         .padding(.horizontal, look.bar.inset)
         .frame(minWidth: 0, maxWidth: .infinity)
         .frame(height: stripHeight)
-        .background((barStyle.background ?? look.bar.background).color,
+        .background((barStyle.background ?? look.bar.background).shapeStyle,
                     in: RoundedRectangle(cornerRadius: barStyle.cornerRadius ?? 0))
         .overlay { BarBorder(style: barStyle) }
         .padding(look.bar.margin)
@@ -123,7 +145,7 @@ struct ThemeSampleBar: View {
         .overlay(alignment: .bottomLeading) {
             if workspace?.indicator == .underline && underline.placement == .belowBar {
                 RoundedRectangle(cornerRadius: underline.cornerRadius ?? 0)
-                    .fill(underline.background?.color ?? appearance.accent)
+                    .fill(underline.background?.firstColor.color ?? appearance.accent)
                     .frame(width: underline.width ?? 24, height: max(0, underline.height ?? 2))
                     .offset(x: (style.paddingLeading ?? appearance.paddingHorizontal) + (underline.offsetX ?? 0),
                             y: max(0, underline.height ?? 2) + (underline.offsetY ?? 0))
@@ -145,7 +167,7 @@ struct ThemeSampleBar: View {
             .overlay(alignment: .bottom) {
                 if focused && workspace?.indicator == .underline && underline.placement != .belowBar {
                     RoundedRectangle(cornerRadius: underline.cornerRadius ?? 0)
-                        .fill(underline.background?.color ?? appearance.accent)
+                        .fill(underline.background?.shapeStyle ?? AnyShapeStyle(appearance.accent))
                         .frame(width: underline.width.map { CGFloat($0) }, height: max(0, underline.height ?? 2))
                         .offset(x: underline.offsetX ?? 0, y: underline.offsetY ?? 0)
                 }
@@ -156,7 +178,7 @@ struct ThemeSampleBar: View {
             .background {
                 if focused && workspace?.indicator != .underline {
                     RoundedRectangle(cornerRadius: style.cornerRadius ?? max(appearance.cornerRadius - 4, 0))
-                        .fill(style.background?.color ?? appearance.accent)
+                        .fill(style.background?.shapeStyle ?? AnyShapeStyle(appearance.accent))
                 }
             }
     }

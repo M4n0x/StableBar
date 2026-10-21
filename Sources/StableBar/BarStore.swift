@@ -28,6 +28,7 @@ final class BarStore: NSObject {
     var onTryThemes: ((Int) -> Void)?
     var onEndThemeTrial: (() -> Void)?
     var effectiveDocument: [String: ConfigurationValue] = [:]
+    var screenDocuments: [String: [String: ConfigurationValue]] = [:]
     var origins: [String: ConfigurationOrigin] = [:]
     var contributions: [String: [ConfigurationContribution]] = [:]
     var widgetPackageNames: [String: String] = [:]
@@ -48,6 +49,7 @@ final class BarStore: NSObject {
     var context = ConfigurationContext()
     private(set) var presentations: [String: WidgetPresentation] = [:]
     private(set) var barStyle = WidgetStyle()
+    private(set) var screenBarStyles: [String: WidgetStyle] = [:]
     private(set) var providers: [String: ScriptWidget] = [:]
     private var visibleWidgets: [Int: Set<String>] = [:]
     private var sleeping = false
@@ -176,6 +178,11 @@ final class BarStore: NSObject {
         readConfiguration(leavingEditMode: true)
     }
 
+    func previewProfile(_ name: String?) {
+        configurationLoader.previewProfile = name
+        readConfiguration(leavingEditMode: false)
+    }
+
     private func readConfiguration(leavingEditMode: Bool) {
         if leavingEditMode { barEditing.end() }
         defer { configurationWatcher.watch(configurationLoader.dependencies) }
@@ -207,12 +214,23 @@ final class BarStore: NSObject {
         var ids = try loader.load(configurationURL, data: configurationData(root), context: context).widgets.map(\.id)
         for edit in edits {
             try edit.validateTargets(in: ids)
-            root = try edit.applying(to: root, widgetIDs: &ids)
+            root = try applying(edit, to: root, widgetIDs: &ids, widgetPackageIDs: loader.widgetPackageIDs)
             if edit.action == .profile || edit.action == .profiles || edit.action == .package {
                 ids = try loader.load(configurationURL, data: configurationData(root), context: context).widgets.map(\.id)
             }
         }
         return root
+    }
+
+    private func applying(_ edit: ConfigurationEdit, to root: [String: ConfigurationValue], widgetIDs: inout [String],
+                          widgetPackageIDs: [String: String]) throws -> [String: ConfigurationValue] {
+        var root = root
+        if edit.action == .package, edit.properties?["enabled"] == .bool(false) {
+            for (widget, package) in widgetPackageIDs where edit.properties?["id"] == .string(package) {
+                root = try removingReferences(to: widget, in: root)
+            }
+        }
+        return try edit.applying(to: root, widgetIDs: &widgetIDs)
     }
 
     func editedMainDocument(data: Data? = nil, replaying: [ConfigurationEdit]? = nil) throws -> [String: ConfigurationValue] {
@@ -258,17 +276,27 @@ final class BarStore: NSObject {
         FileManager.default.fileExists(atPath: ownBarURL(for: setup).path) ? ownBarURL(for: setup) : sharedConfigurationURL
     }
 
-    /// Shows the bar of the screens now connected: their setup's own bar, or the shared one.
+    /// The setups Customize can edit: the connected one, each connected kind of screen on its own, and those with their own bar.
+    func screenSetupsToEdit(connected displays: [BarDisplay]) -> [ScreenSetup] {
+        let alone = ScreenKind.allCases.map { kind in ScreenSetup(displays.filter { ScreenKind($0) == kind }) }
+        var setups: [ScreenSetup] = []
+        for setup in [ScreenSetup(displays)] + alone + screenSetupsWithOwnBars where !setup.kinds.isEmpty && !setups.contains(setup) {
+            setups.append(setup)
+        }
+        return setups
+    }
+
+    /// Shows the bar of a setup: the connected one, or one Customize previews. It uses its own bar, or the shared one.
     func showScreenSetup(_ setup: ScreenSetup) {
         screenSetup = setup
         showBar(at: barURL(for: setup))
     }
 
-    /// Copies the shared bar into the current setup's own file, which the bar then shows and Customize edits.
-    func giveScreenSetupItsOwnBar() throws {
+    /// Copies a bar, the shared one unless given, into the current setup's own file, which the bar then shows and Customize edits.
+    func giveScreenSetupItsOwnBar(copying source: URL? = nil) throws {
         guard let screenSetup else { return }
         flushCustomization()
-        try FileManager.default.copyItem(at: sharedConfigurationURL, to: ownBarURL(for: screenSetup))
+        try FileManager.default.copyItem(at: source ?? sharedConfigurationURL, to: ownBarURL(for: screenSetup))
         showBar(at: ownBarURL(for: screenSetup))
     }
 
@@ -283,6 +311,7 @@ final class BarStore: NSObject {
         flushCustomization()
         sessionEdits = []
         customizationHistory.reset()
+        configurationLoader.previewProfile = nil
         configurationURL = url
         readConfiguration(leavingEditMode: false)
     }
@@ -358,9 +387,10 @@ final class BarStore: NSObject {
     }
 
     private func configurationReplayingSession(over data: Data) throws -> (Configuration, ConfigurationLoader) {
-        try validateCustomization(data)
-        let root = try editedDocument([], data: data, replaying: sessionEdits)
         var loader = configurationLoader
+        let saved = try loader.load(configurationURL, data: data, context: context)
+        if sessionEdits.isEmpty { return (saved, loader) }
+        let root = try editedMainDocument(data: data, replaying: sessionEdits)
         let next = try loader.load(configurationURL, data: configurationData(root), context: context)
         return (next, loader)
     }
@@ -376,33 +406,49 @@ final class BarStore: NSObject {
         }
     }
 
+    private func removingPackage(_ manifest: WidgetPackageManifest, from document: [String: ConfigurationValue]) throws -> [ConfigurationEdit] {
+        let key = "\(manifest.id)/\(manifest.version)"
+        var selections = try document["packages"]?.decoded([WidgetPackageSelection].self) ?? []
+        if let theme = document["theme"] { selections.append(try theme.decoded(WidgetPackageSelection.self)) }
+        var edits: [ConfigurationEdit] = []
+        if let selection = selections.first(where: { $0.key == key }) {
+            edits.append(ConfigurationEdit(action: manifest.kind == .theme ? .theme : .package, properties: [
+                "id": .string(manifest.id), "version": .string(manifest.version), "enabled": .bool(false), "settings": .object(selection.settings)
+            ]))
+        }
+        let screens = try document["screens"]?.decoded([String: [String: ConfigurationValue]].self) ?? [:]
+        let screenThemes = try screens.filter { try $0.value["theme"]?.decoded(WidgetPackageSelection.self).key == key }
+        if !screenThemes.isEmpty {
+            edits.append(ConfigurationEdit(action: .unset, properties: [
+                "screens": .object(screenThemes.mapValues { _ in .object(["theme": .null]) })
+            ]))
+        }
+        return edits
+    }
+
     func uninstallPackage(id: String, version: String, fromCustomization: Bool = false) throws {
         let packages = WidgetPackageStore(directory: configurationURL.deletingLastPathComponent().appending(path: "packages"))
         let directory = try packages.directory(id: id, version: version)
         let manifest = try packages.manifest(at: directory)
-        let bars = [(sharedConfigurationURL, "The shared bar")] + screenSetupsWithOwnBars.map { (ownBarURL(for: $0), "The bar for \($0.title.lowercased())") }
-        for (url, name) in bars where url != configurationURL {
+        var otherBars: [(url: URL, data: Data)] = []
+        let urls = [sharedConfigurationURL] + screenSetupsWithOwnBars.map(ownBarURL(for:))
+        for url in urls where url != configurationURL {
             var other = ConfigurationLoader()
             other.themesDirectory = themesDirectory
-            guard let document = try? other.compose(url, context: context) else { continue }
-            var used = (try? document["packages"]?.decoded([WidgetPackageSelection].self)) ?? []
-            if let theme = try? document["theme"]?.decoded(WidgetPackageSelection.self) { used.append(theme) }
-            if used.contains(where: { $0.id == id && $0.version == version && $0.enabled }) {
-                throw CommandFailure(message: "\(name) uses \(manifest.name) \(version). Remove it from that bar first.")
-            }
+            let edits = try removingPackage(manifest, from: other.compose(url, context: context))
+            if edits.isEmpty { continue }
+            let original = try Data(contentsOf: url)
+            var root = try JSONDecoder().decode([String: ConfigurationValue].self, from: original)
+            var ids: [String] = []
+            for edit in edits { root = try applying(edit, to: root, widgetIDs: &ids, widgetPackageIDs: other.widgetPackageIDs) }
+            _ = try other.load(url, data: configurationData(root), context: context)
+            otherBars.append((url, try configurationData(root, editing: original)))
         }
         var loader = ConfigurationLoader()
         flushCustomization()
         let document = try loader.compose(configurationURL, data: configurationData(
             editedDocument([], replaying: fromCustomization ? [] : sessionEdits)), context: context)
-        var selections = try document["packages"]?.decoded([WidgetPackageSelection].self) ?? []
-        if let theme = document["theme"] { selections.append(try theme.decoded(WidgetPackageSelection.self)) }
-        var edits: [ConfigurationEdit] = []
-        if let selection = selections.first(where: { $0.id == id && $0.version == version }) {
-            edits.append(ConfigurationEdit(action: manifest.kind == .theme ? .theme : .package, properties: [
-                "id": .string(id), "version": .string(version), "enabled": .bool(false), "settings": .object(selection.settings)
-            ]))
-        }
+        let edits = try removingPackage(manifest, from: document)
         if fromCustomization {
             let data = try customizationData(edits, editing: Data(contentsOf: configurationURL))
             let (_, preview) = try configurationReplayingSession(over: data)
@@ -415,6 +461,7 @@ final class BarStore: NSObject {
         } else {
             try applyEdits(edits, persist: true)
         }
+        for (url, data) in otherBars { try writeConfiguration(data, to: url) }
         try FileManager.default.removeItem(at: directory)
         if fromCustomization { customizationHistory.dropUnavailableHistory() }
     }
@@ -561,6 +608,7 @@ final class BarStore: NSObject {
         readAppMenu()
         preparePresentations()
         effectiveDocument = loader.document
+        screenDocuments = loader.screenDocuments
         origins = loader.origins
         activeProfiles = loader.activeProfiles
         configurationError = nil
@@ -610,6 +658,7 @@ final class BarStore: NSObject {
         }
         let mode = modePresentation
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let screenOverrides = configuration.screenLooks.mapValues { OrderedStyleOverrides(widgets: $0.widgets, output: output) }
         for widget in configuration.widgets {
             let script = scripts[widget.id]
             let base = resolveStyle(widgetStyleLayers(widget, defaults: configuration.defaults, overrides: overrides, own: script?.output,
@@ -618,8 +667,17 @@ final class BarStore: NSObject {
                 || widget.overlay?.usesModeStates(roles: configuration.roles) == true
                 || script?.output.styles?.values.contains(where: \.usesModeStates) == true
             let animation = script?.output.animation ?? widget.animation ?? WidgetAnimation(duration: configuration.bar.animationDuration)
-            presentations[widget.id]?.update(style: ResolvedWidgetStyle(base: base, state: dataState(script?.output, rules: widget.rules),
-                                                                       mode: usesMode ? mode : ModePresentation()),
+            let state = dataState(script?.output, rules: widget.rules)
+            var screenStyles: [String: ResolvedWidgetStyle] = [:]
+            for (kind, look) in configuration.screenLooks {
+                guard let own = look.widgets.first(where: { $0.id == widget.id }) else { continue }
+                let base = resolveStyle(widgetStyleLayers(own, defaults: look.defaults, overrides: screenOverrides[kind]!, own: script?.output,
+                                                          role: look.roleStyle(own.role)))
+                screenStyles[kind] = ResolvedWidgetStyle(base: base, state: state,
+                                                         mode: usesMode ? modePresentation(on: ScreenKind(rawValue: kind)!) : ModePresentation())
+            }
+            presentations[widget.id]?.update(style: ResolvedWidgetStyle(base: base, state: state, mode: usesMode ? mode : ModePresentation()),
+                                             screenStyles: screenStyles,
                                              hidden: script?.output.hidden == true && script?.error == nil,
                                              display: script?.output.display,
                                              visibility: visibilityAnimation(widget.transition, animation: animation, reduceMotion: reduceMotion))
@@ -627,11 +685,26 @@ final class BarStore: NSObject {
         }
         let bar = resolveStyle(barStyleLayers(configuration.bar.style, overrides: overrides), states: StyleStates(mode: mode))
         if barStyle != bar { barStyle = bar }
+        let kinds = ScreenKind.allCases.filter { configuration.screenLooks[$0.rawValue] != nil }
+        let screenBars = Dictionary(uniqueKeysWithValues: kinds.map { kind in
+            (kind.rawValue, resolveStyle(barStyleLayers(configuration.bar(on: kind).style, overrides: overrides),
+                                         states: StyleStates(mode: modePresentation(on: kind))))
+        })
+        if screenBarStyles != screenBars { screenBarStyles = screenBars }
+    }
+
+    func barStyle(on kind: ScreenKind) -> WidgetStyle {
+        screenBarStyles[kind.rawValue] ?? barStyle
     }
 
     var modePresentation: ModePresentation {
         ModePresentation(mode: configuration?.workspaceSource == .aerospace ? workspaceStore.mode : nil,
                          aliases: configuration?.modeAliases ?? [:])
+    }
+
+    func modePresentation(on kind: ScreenKind) -> ModePresentation {
+        ModePresentation(mode: configuration?.workspaceSource == .aerospace ? workspaceStore.mode : nil,
+                         aliases: configuration?.look(on: kind).modeAliases ?? [:])
     }
 
     func setVisibleWidgets(ids: Set<String>, displayID: Int) {
@@ -930,6 +1003,7 @@ private func withoutShellVariables(_ environment: [String: String]) -> [String: 
 @MainActor @Observable
 final class WidgetPresentation {
     private(set) var style = ResolvedWidgetStyle(base: WidgetStyle())
+    private(set) var screenStyles: [String: ResolvedWidgetStyle] = [:]
     var expandedAppMenuDisplays: Set<Int> = []
     /// Output `hidden`, unless the widget has an error to show.
     private(set) var hidden = false
@@ -947,12 +1021,18 @@ final class WidgetPresentation {
 
     /// Assigns only what changed: equal assignments must not invalidate the widget's views. With a
     /// `visibility` animation, a change of `hidden` animates the widget in or out.
-    func update(style: ResolvedWidgetStyle, hidden: Bool, display: DisplaySelection?, visibility: WidgetAnimation? = nil) {
+    func update(style: ResolvedWidgetStyle, screenStyles: [String: ResolvedWidgetStyle] = [:], hidden: Bool, display: DisplaySelection?,
+                visibility: WidgetAnimation? = nil) {
         if self.style != style { self.style = style }
+        if self.screenStyles != screenStyles { self.screenStyles = screenStyles }
         if self.hidden != hidden {
             if let visibility { visibility.animate { self.hidden = hidden } } else { self.hidden = hidden }
         }
         if self.display != display { self.display = display }
+    }
+
+    func style(on kind: ScreenKind) -> ResolvedWidgetStyle {
+        screenStyles[kind.rawValue] ?? style
     }
 
     func setPopupAnchor(_ anchor: ObjectIdentifier?) {

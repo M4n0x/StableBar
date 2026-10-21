@@ -117,6 +117,34 @@ import Testing
     #expect(!editor.history.canUndo)
 }
 
+@Test @MainActor func aPreviewedScreenSetupCopiesAnotherBarAndListsEachSetupOnce() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let shared = directory.appending(path: "config.json")
+    try Data(#"{"bar":{"height":36},"widgets":[]}"#.utf8).write(to: shared)
+    try Data(#"{"bar":{"height":30},"widgets":[]}"#.utf8).write(to: directory.appending(path: "setup-laptop+monitor.json"))
+    let displays = [BarDisplay(id: 1, isBuiltIn: true, isMain: false, notch: nil), BarDisplay(id: 2, isBuiltIn: false, isMain: true, notch: nil)]
+    let docked = ScreenSetup(displays)
+    let laptop = ScreenSetup([displays[0]])
+    let monitor = ScreenSetup([displays[1]])
+    let store = BarStore(configurationURL: shared)
+    defer { store.stop() }
+    store.start(on: docked)
+    #expect(store.screenSetupsToEdit(connected: displays) == [docked, laptop, monitor])
+
+    store.showScreenSetup(laptop)
+    #expect(store.configuration?.bar.height == 36)
+    try store.giveScreenSetupItsOwnBar(copying: store.ownBarURL(for: docked))
+    #expect(store.configurationURL == store.ownBarURL(for: laptop))
+    #expect(store.configuration?.bar.height == 30)
+    #expect(store.screenSetupsToEdit(connected: displays) == [docked, laptop, monitor])
+
+    store.showScreenSetup(docked)
+    #expect(store.screenSetup == docked)
+    #expect(store.configuration?.bar.height == 30)
+}
+
 @Test @MainActor func profilesUpdateEvenWhenEffectiveSettingsStayTheSame() throws {
     let url = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString + ".json")
     defer { try? FileManager.default.removeItem(at: url) }
@@ -416,7 +444,7 @@ import Testing
     let widgets = try #require(store.configuration?.widgets)
     #expect(widgets.first(where: { $0.id == "local" })?.style.foreground == nil)
     #expect(widgets.first(where: { $0.id == "local" })?.style.fontSize == 14)
-    #expect(widgets.first(where: { $0.id == "imported" })?.style.background == HexColor(0x222222ff))
+    #expect(widgets.first(where: { $0.id == "imported" })?.style.background == .color(HexColor(0x222222ff)))
     #expect(store.configuration?.defaults.foreground == HexColor(0x111111ff))
     #expect(store.sourceText(store.origins["widgets.imported.style.background"]!) == "module.json")
     let saved = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: root))
@@ -449,15 +477,15 @@ import Testing
         ConfigurationEdit(action: .defaults, properties: ["states": .object(["warning": .object(["background": .string("#333333")])])]),
         ConfigurationEdit(action: .set, id: "a", properties: ["style": .object(["states": .object(["hover": .object(["foreground": .string("#444444")])])])])
     ], persist: true)
-    #expect(store.configuration?.defaults.states?["warning"] == WidgetStyle(foreground: HexColor(0x111111ff), background: HexColor(0x333333ff)))
-    #expect(store.configuration?.widgets[0].style.states?["hover"] == WidgetStyle(foreground: HexColor(0x444444ff), background: HexColor(0x222222ff)))
+    #expect(store.configuration?.defaults.states?["warning"] == WidgetStyle(foreground: HexColor(0x111111ff), background: .color(HexColor(0x333333ff))))
+    #expect(store.configuration?.widgets[0].style.states?["hover"] == WidgetStyle(foreground: HexColor(0x444444ff), background: .color(HexColor(0x222222ff))))
     let saved = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: root))
     #expect(saved["defaults"] == .object(["states": .object(["warning": .object(["foreground": .string("#111111"), "background": .string("#333333")])])]))
     let editor = ConfigurationEditor(store: store)
     editor.set(["style": .object(["foreground": .string("#555555")])])
     #expect(editor.error == nil)
     #expect(store.configuration?.widgets[0].style.foreground == HexColor(0x555555ff))
-    #expect(store.configuration?.widgets[0].style.states?["hover"]?.background == HexColor(0x222222ff))
+    #expect(store.configuration?.widgets[0].style.states?["hover"]?.background == .color(HexColor(0x222222ff)))
 }
 
 @Test @MainActor func customizesHoverBackgroundBeatsALowerHoverStateWhileAnActiveProfileStillWins() throws {
@@ -480,7 +508,7 @@ import Testing
             store.reloadConfiguration()
             ConfigurationEditor(store: store).change(ConfigurationEdit(action: .defaults, properties: HoverBackgroundRow.properties(.string("#445566"))))
             let message = "include \(include), profile \(profile.defaults ?? "none")"
-            #expect(store.configuration?.defaults.hoverBackground == profile.hover, "\(message)")
+            #expect(store.configuration?.defaults.hoverBackground == .color(profile.hover), "\(message)")
             #expect(store.configuration?.defaults.hoverForeground == (include == "{}" ? nil : HexColor(0xabcdefff)), "\(message)")
         }
     }
@@ -509,31 +537,31 @@ import Testing
             ($0.path, store.sourceText(store.origins[$0.path]!), try? $0.value.decoded(HexColor.self))
         }
     }
-    func drawn(_ id: String) throws -> HexColor? {
+    func drawn(_ id: String) throws -> BackgroundFill? {
         let configuration = try #require(store.configuration)
         return try resolveStyle([configuration.defaults, #require(configuration.widgets.first { $0.id == id }).style]).hoverBackground
     }
     #expect(row()! == ("defaults.states.hover.background", "theme.json", HexColor(0x123456ff)))
     #expect(row("a")! == ("widgets.a.style.states.hover.background", "theme.json (template label)", HexColor(0x222222ff)))
     #expect(row("b")! == ("defaults.states.hover.background", "theme.json", HexColor(0x123456ff)))
-    #expect(try drawn("a") == HexColor(0x222222ff))
+    #expect(try drawn("a") == .color(HexColor(0x222222ff)))
     editor.change(ConfigurationEdit(action: .defaults, properties: HoverBackgroundRow.properties(.string("#445566"))))
     editor.selectedID = "a"
     editor.set(["style": .object(HoverBackgroundRow.properties(.string("#556677")))])
     #expect(editor.error == nil)
-    #expect(try drawn("a") == HexColor(0x556677ff))
-    #expect(try drawn("b") == HexColor(0x445566ff))
+    #expect(try drawn("a") == .color(HexColor(0x556677ff)))
+    #expect(try drawn("b") == .color(HexColor(0x445566ff)))
     #expect(row()! == ("defaults.hoverBackground", "your configuration", HexColor(0x445566ff)))
     #expect(row("a")! == ("widgets.a.style.hoverBackground", "your configuration", HexColor(0x556677ff)))
     #expect(row("b")! == ("defaults.hoverBackground", "your configuration", HexColor(0x445566ff)))
     #expect(store.setsInMainFile(store.origins["widgets.a.style.hoverBackground"]!))
     editor.change(ConfigurationEdit(action: .defaults, properties: HoverBackgroundRow.properties(.string("#667788"))))
-    #expect(try drawn("b") == HexColor(0x667788ff))
+    #expect(try drawn("b") == .color(HexColor(0x667788ff)))
     editor.change(ConfigurationEdit(action: .unset, properties: ["defaults": .object(HoverBackgroundRow.reset)]))
     editor.change(ConfigurationEdit(action: .unset, id: "a", properties: ["style": .object(HoverBackgroundRow.reset)]))
     #expect(editor.error == nil)
-    #expect(try drawn("a") == HexColor(0x222222ff))
-    #expect(try drawn("b") == HexColor(0x123456ff))
+    #expect(try drawn("a") == .color(HexColor(0x222222ff)))
+    #expect(try drawn("b") == .color(HexColor(0x123456ff)))
     #expect(row("a")! == ("widgets.a.style.states.hover.background", "theme.json (template label)", HexColor(0x222222ff)))
     try editor.history.flush()
     #expect(try JSONDecoder().decode(ConfigurationValue.self, from: Data(contentsOf: root))

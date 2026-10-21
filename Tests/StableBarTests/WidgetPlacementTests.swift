@@ -130,6 +130,65 @@ final class WidgetPlacementTests: XCTestCase {
         XCTAssertEqual(store.customizationHistory.undoSteps.count, 2)
     }
 
+    @MainActor func testMovesOnAScreenWithItsOwnLayoutChangeOnlyThatLayout() throws {
+        let fixture = try ThemeGalleryFixture(#"{"screens":{"monitor":{"layout":{"right":["c","a","missing"]}}},"widgets":[{"id":"a","type":"clock","position":"left"},{"id":"b","type":"clock","position":"left"},{"id":"c","type":"clock","position":"right"}]}"#)
+        defer { fixture.close() }
+        let store = try fixture.store()
+        defer { store.stop() }
+        let monitor = try XCTUnwrap(store.configuration?.onScreen(.monitor).widgets)
+        XCTAssertEqual(monitor.map(\.id), ["c", "a", "b"])
+        XCTAssertEqual(monitor.map(\.position), [.right, .right, .left])
+        XCTAssertEqual(store.configuration?.onScreen(.laptop).widgets.map(\.id), ["a", "b", "c"])
+        let setup = WidgetSetup(store: store)
+        try setup.move("b", to: .right, before: "a", on: .monitor)
+        XCTAssertEqual(try layout(fixture, .monitor)["right"], ["c", "b", "a"])
+        XCTAssertEqual(try layout(fixture, .monitor)["left"], [])
+        XCTAssertEqual(store.configuration?.widgets.map(\.position), [.left, .left, .right])
+        try setup.remove("b")
+        XCTAssertEqual(try layout(fixture, .monitor)["right"], ["c", "a"])
+    }
+
+    @MainActor func testScreenBarSettingsOverrideTheSharedBarAndCopyAndJoinBetweenScreens() throws {
+        let fixture = try ThemeGalleryFixture(#"{"bar":{"height":40,"inset":12,"style":{"cornerRadius":8,"borderWidth":1}},"screens":{"laptop":{"bar":{"height":30,"style":{"cornerRadius":2}},"layout":{"right":["b","a"]}}},"widgets":[{"id":"a","type":"clock","position":"left"},{"id":"b","type":"clock","position":"left","display":"builtIn"}]}"#)
+        defer { fixture.close() }
+        let store = try fixture.store()
+        defer { store.stop() }
+        let laptop = try XCTUnwrap(store.configuration?.onScreen(.laptop).bar)
+        XCTAssertEqual([laptop.height, laptop.inset, laptop.style.cornerRadius, laptop.style.borderWidth], [30, 12, 2, 1])
+        XCTAssertEqual(store.configuration?.onScreen(.monitor).bar.height, 40)
+        let setup = WidgetSetup(store: store)
+        try setup.copyScreen(.laptop, to: .monitor)
+        XCTAssertEqual(store.configuration?.onScreen(.monitor).widgets.map(\.id), ["b", "a"])
+        XCTAssertEqual(store.configuration?.onScreen(.monitor).bar.height, 30)
+        XCTAssertEqual(try layout(fixture, .monitor)["right"], ["b", "a"])
+        XCTAssertEqual(store.customizationHistory.undoSteps.count, 1)
+        try setup.joinScreen(.monitor)
+        XCTAssertEqual(store.configuration?.onScreen(.monitor).bar.height, 40)
+        XCTAssertEqual(store.configuration?.onScreen(.monitor).widgets.map(\.position), [.left, .left])
+        XCTAssertNotNil(store.configuration?.screenLooks["laptop"])
+    }
+
+    @MainActor func testAScreenWithItsOwnLookResolvesItsThemeTokensAndStyles() throws {
+        let fixture = try ThemeGalleryFixture(##"{"tokens":{"text":"#111111ff"},"defaults":{"fontSize":12,"foreground":"@token.text"},"screens":{"laptop":{"tokens":{"text":"#222222ff"},"defaults":{"fontSize":16},"roles":{"time":{"fontSize":20}},"modeAliases":{"tailing":"command"}},"monitor":{"theme":{"id":"everforest"}},"vertical":{"bar":{"appearance":"dark","height":30}}},"widgets":[{"id":"clock","type":"clock","position":"right"}]}"##)
+        defer { fixture.close() }
+        let store = try fixture.store()
+        defer { store.stop() }
+        let configuration = try XCTUnwrap(store.configuration)
+        XCTAssertEqual(configuration.defaults.fontSize, 12)
+        XCTAssertEqual(configuration.defaults.foreground, HexColor(0x111111ff))
+        XCTAssertEqual(configuration.onScreen(.laptop).defaults.fontSize, 16)
+        XCTAssertEqual(configuration.onScreen(.laptop).defaults.foreground, HexColor(0x222222ff))
+        XCTAssertEqual(configuration.look(on: .laptop).roles["time"]?.fontSize, 20)
+        XCTAssertEqual(configuration.look(on: .laptop).modeAliases, ["tailing": "command"])
+        XCTAssertEqual(configuration.bar(on: .vertical).appearance, .dark)
+        XCTAssertEqual(configuration.bar(on: .vertical).height, 30)
+        XCTAssertEqual(configuration.onScreen(.vertical).defaults.fontSize, 12)
+        XCTAssertNotEqual(store.screenDocuments["monitor"]?["tokens"], store.effectiveDocument["tokens"])
+        let clock = try XCTUnwrap(store.presentations["clock"])
+        XCTAssertEqual(clock.style(on: .laptop).base.fontSize, 16)
+        XCTAssertEqual(clock.style(on: .vertical).base.fontSize, 12)
+    }
+
     @MainActor func testPendingCommandLineWidgetCannotBeMovedEvenWhenOnlyReordering() throws {
         let fixture = try ThemeGalleryFixture(#"{"widgets":[{"id":"root","type":"clock","position":"right"}]}"#)
         defer { fixture.close() }
@@ -140,6 +199,11 @@ final class WidgetPlacementTests: XCTestCase {
         XCTAssertThrowsError(try WidgetSetup(store: store).move("temporary", to: .right, before: "root"))
         XCTAssertEqual(try Data(contentsOf: fixture.url), before)
         XCTAssertTrue(store.customizationHistory.undoSteps.isEmpty)
+    }
+
+    private func layout(_ fixture: ThemeGalleryFixture, _ kind: ScreenKind) throws -> [String: [String]] {
+        let screens = try XCTUnwrap(fixture.document()["screens"]?.decoded([String: ScreenConfiguration].self))
+        return try XCTUnwrap(screens[kind.rawValue]?.layout)
     }
 
     private func decode(_ json: String) throws -> [WidgetConfiguration] {

@@ -25,9 +25,11 @@ struct BarGeometry: Equatable {
 
 extension Configuration {
     func barGeometry(for display: BarDisplay) -> BarGeometry {
+        let configuration = onScreen(ScreenKind(display))
+        let bar = configuration.bar
         let scale = bar.scale(for: display)
         let bottom = bar.height * scale - bar.margin
-        let candidates = widgets.filter {
+        let candidates = configuration.widgets.filter {
             $0.enabled && $0.content == .workspaces && $0.layout == nil
                 && $0.display.includes(display, activeID: display.id)
                 && $0.workspace?.indicator == .underline
@@ -122,8 +124,14 @@ struct BarAnchorPreference: PreferenceKey {
 }
 
 private struct BarUnitIDKey: EnvironmentKey { static let defaultValue = "" }
+private struct ScreenKindKey: EnvironmentKey { static let defaultValue = ScreenKind.laptop }
 
 extension EnvironmentValues {
+    var screenKind: ScreenKind {
+        get { self[ScreenKindKey.self] }
+        set { self[ScreenKindKey.self] = newValue }
+    }
+
     var barUnitID: String {
         get { self[BarUnitIDKey.self] }
         set { self[BarUnitIDKey.self] = newValue }

@@ -100,7 +100,8 @@ final class WidgetPopup {
         let screen = window.screen!
         let frame = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
         let top = popupAttachmentTop(anchor: frame, window: window.frame, geometry: (window as? BarPanel)?.barGeometry)
-        let style = resolveStyle([defaults, widget.style], states: StyleStates(mode: store.modePresentation))
+        let kind = ScreenKind(BarDisplay(screen: screen))
+        let style = resolveStyle([defaults, widget.style], states: StyleStates(mode: store.modePresentation(on: kind)))
         let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let shadowInset = CGFloat(appearance.shadowRadius * 2 + 2)
         let host = NSHostingView(rootView: Text(text)
@@ -110,7 +111,7 @@ final class WidgetPopup {
             .padding(.vertical, appearance.paddingVertical)
             .frame(maxWidth: 320 - shadowInset * 2, alignment: .leading)
             .fixedSize()
-            .modifier(GlassBackground(color: style.background, glass: store.configuration?.bar.glass ?? GlassSettings(), surface: \.popups,
+            .modifier(GlassBackground(fill: style.background, glass: store.configuration?.bar(on: kind).glass ?? GlassSettings(), surface: \.popups,
                                       shape: RoundedRectangle(cornerRadius: appearance.cornerRadius)))
             .overlay {
                 RoundedRectangle(cornerRadius: appearance.cornerRadius)
@@ -163,6 +164,7 @@ final class WidgetPopup {
                                                   width: width + shadowInset * 2, height: 0),
                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: PopupView(popup: popup, style: style, store: store, widget: widget)
+            .environment(\.screenKind, ScreenKind(BarDisplay(screen: screen)))
             .frame(width: width)
             .onPreferenceChange(PopupHeightPreference.self) { [weak self, weak panel] contentHeight in
                 guard popup.height == nil, let panel, panel === self?.panel else { return }
@@ -198,7 +200,8 @@ final class WidgetPopup {
         panel.autorecalculatesKeyViewLoop = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
-        panel.appearance = store.configuration?.bar.appearance.flatMap { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) }
+        panel.appearance = store.configuration?.bar(on: ScreenKind(BarDisplay(screen: screen))).appearance
+            .flatMap { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) }
         panel.contentView = PopupRevealView(content: host, size: panel.frame.size)
         self.panel = panel
         widgetID = widget.id

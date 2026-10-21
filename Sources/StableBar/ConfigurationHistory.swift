@@ -6,6 +6,7 @@ final class ConfigurationHistory {
     struct Step {
         let before: Data
         let after: Data
+        let profile: String?
     }
 
     private unowned let store: BarStore
@@ -13,6 +14,7 @@ final class ConfigurationHistory {
     private(set) var undoSteps: [Step] = []
     private(set) var redoSteps: [Step] = []
     var error: String?
+    var editingProfile: String?
     private(set) var notice: String?
     private var lastFile: Data?
     private var pendingControl: Control?
@@ -32,14 +34,22 @@ final class ConfigurationHistory {
     }
 
     var hasPendingChanges: Bool { !store.customizationEdits.isEmpty }
-    var canUndo: Bool { hasPendingChanges || !undoSteps.isEmpty }
-    var canRedo: Bool { !hasPendingChanges && !redoSteps.isEmpty }
+    var canUndo: Bool {
+        hasPendingChanges || (!undoSteps.isEmpty && (editingProfile == nil || undoSteps.last?.profile == editingProfile))
+    }
+    var canRedo: Bool {
+        !hasPendingChanges && !redoSteps.isEmpty && (editingProfile == nil || redoSteps.last?.profile == editingProfile)
+    }
 
     func change(_ edit: ConfigurationEdit) throws {
+        let edit = try inEditingProfile(edit)
         try change(control: control(for: edit)) { [edit] }
     }
 
     func changePackageSettings(_ edit: ConfigurationEdit) throws {
+        if editingProfile != nil {
+            throw CommandFailure(message: "Package settings apply to your whole bar. Click Done to change them.")
+        }
         let properties = edit.properties!
         let id = try properties["id"]!.decoded(String.self)
         let settings = try properties["settings"]!.decoded([String: ConfigurationValue].self)
@@ -49,7 +59,28 @@ final class ConfigurationHistory {
     /// Related edits are validated and saved together, with one Undo step.
     func change(_ edits: [ConfigurationEdit]) throws {
         guard !edits.isEmpty else { return }
+        let edits = try edits.map(inEditingProfile)
         try change(control: nil) { edits }
+    }
+
+    private func inEditingProfile(_ edit: ConfigurationEdit) throws -> ConfigurationEdit {
+        guard let editingProfile, ![.profile, .profiles].contains(edit.action) else { return edit }
+        switch edit.action {
+        case .reorder: throw CommandFailure(message: "A profile keeps your bar’s order. Click Done to reorder widgets.")
+        case .theme: throw CommandFailure(message: "A profile can’t change the theme. Click Done to choose a theme for your bar.")
+        case .package: throw CommandFailure(message: "Packages belong to your bar, not a profile. Click Done to add one.")
+        default: break
+        }
+        var edit = edit
+        if edit.action == .unset, edit.id == nil, var properties = edit.properties,
+           case let .object(profiles) = properties.removeValue(forKey: "profiles"),
+           case let .object(profile) = profiles[editingProfile],
+           case let .object(configuration) = profile["configuration"] {
+            properties.merge(configuration) { $1.overriding($0) }
+            edit.properties = properties
+        }
+        edit.profile = editingProfile
+        return edit
     }
 
     func setProfileCondition<Value: Equatable>(_ name: String, _ key: WritableKeyPath<ProfileConditions, Value?>,
@@ -80,13 +111,12 @@ final class ConfigurationHistory {
         error = nil
         if hasPendingChanges && (control == nil || control != pendingControl) { store.flushCustomization() }
         checkForExternalChanges()
-        try store.setCustomizationEdits(edit())
-        pendingEdit = edit
-        pendingControl = control
-        redoSteps.removeAll()
-        notice = nil
-        if control == nil { try flush() }
-        else {
+        if control == nil {
+            try save(edit())
+        } else {
+            try store.setCustomizationEdits(edit())
+            pendingEdit = edit
+            pendingControl = control
             writeTask?.cancel()
             writeTask = Task { [weak self, saveDelay] in
                 do { try await Task.sleep(for: saveDelay) }
@@ -96,6 +126,8 @@ final class ConfigurationHistory {
                 catch { self.error = errorMessage(error) }
             }
         }
+        redoSteps.removeAll()
+        notice = nil
     }
 
     func flush() throws {
@@ -104,14 +136,7 @@ final class ConfigurationHistory {
         guard hasPendingChanges else { return }
         do {
             checkForExternalChanges()
-            let before = try Data(contentsOf: store.configurationURL)
-            let after = try store.customizationData(pendingEdits(), editing: before)
-            try store.writeCustomization(after, replacing: before)
-            if before != after { undoSteps.append(Step(before: before, after: after)) }
-            lastFile = after
-            pendingControl = nil
-            pendingEdit = nil
-            notice = nil
+            try save(pendingEdits())
         } catch {
             let message = "The pending change in Settings could not be saved and was discarded. \(errorMessage(error))"
             discardPendingChange()
@@ -121,6 +146,17 @@ final class ConfigurationHistory {
         }
     }
 
+    private func save(_ edits: [ConfigurationEdit]) throws {
+        let before = try Data(contentsOf: store.configurationURL)
+        let after = try store.customizationData(edits, editing: before)
+        try store.writeCustomization(after, replacing: before)
+        if before != after { undoSteps.append(Step(before: before, after: after, profile: editingProfile)) }
+        lastFile = after
+        pendingControl = nil
+        pendingEdit = nil
+        notice = nil
+    }
+
     func undo() throws {
         error = nil
         let changedOutside = checkForExternalChanges()
@@ -128,7 +164,7 @@ final class ConfigurationHistory {
             let step: Step?
             if !changedOutside, let before = try? Data(contentsOf: store.configurationURL),
                let after = try? store.customizationData(pendingEdits(), editing: before), before != after {
-                step = Step(before: before, after: after)
+                step = Step(before: before, after: after, profile: editingProfile)
             } else { step = nil }
             discardPendingChange()
             if let step { redoSteps.append(step) }
@@ -137,7 +173,7 @@ final class ConfigurationHistory {
             return
         }
         if changedOutside { return }
-        guard let step = undoSteps.last else { return }
+        guard canUndo, let step = undoSteps.last else { return }
         guard try restore(step.before) else { return }
         undoSteps.removeLast()
         redoSteps.append(step)
@@ -147,7 +183,7 @@ final class ConfigurationHistory {
         error = nil
         if checkForExternalChanges() { return }
         try flush()
-        guard let step = redoSteps.last else { return }
+        guard canRedo, let step = redoSteps.last else { return }
         guard try restore(step.after) else { return }
         redoSteps.removeLast()
         undoSteps.append(step)
@@ -177,7 +213,7 @@ final class ConfigurationHistory {
         let current = try? Data(contentsOf: store.configurationURL)
         defer { lastFile = current }
         guard let lastFile, current != lastFile else { return false }
-        let hadHistory = canUndo || !redoSteps.isEmpty
+        let hadHistory = hasPendingChanges || !undoSteps.isEmpty || !redoSteps.isEmpty
         undoSteps.removeAll()
         redoSteps.removeAll()
         if hadHistory { notice = "Undo history was cleared because the configuration file changed outside Settings." }
@@ -189,6 +225,7 @@ final class ConfigurationHistory {
 
     /// Starts over when the bar switches to another file, after its pending change is saved.
     func reset() {
+        editingProfile = nil
         undoSteps.removeAll()
         redoSteps.removeAll()
         lastFile = nil
@@ -223,7 +260,7 @@ final class ConfigurationHistory {
     }
 
     private func control(for edit: ConfigurationEdit) -> Control? {
-        guard [.set, .bar, .defaults, .popupDefaults, .roles, .workspaceDefaults, .tokens, .modeAliases].contains(edit.action),
+        guard [.set, .screens, .bar, .defaults, .popupDefaults, .roles, .workspaceDefaults, .tokens, .modeAliases].contains(edit.action),
               let properties = edit.properties else { return nil }
         return Control(action: edit.action, id: edit.id, paths: propertyPaths(properties), name: nil)
     }

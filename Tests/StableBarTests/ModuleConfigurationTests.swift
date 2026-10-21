@@ -40,7 +40,7 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     #expect(configuration.bar.style.fontSize == 15)
     #expect(configuration.bar.style.foreground == HexColor(0xeeeeeeff))
     #expect(configuration.defaults.fontSize == 13)
-    #expect(configuration.defaults.background == HexColor(0x111111ff))
+    #expect(configuration.defaults.background == .color(HexColor(0x111111ff)))
     #expect(configuration.defaults.foreground == HexColor(0xabcdefff))
     #expect(configuration.environment == ["SHARED": "root", "THEME": "dark"])
     #expect(configuration.popups["details"]?.height == 180)
@@ -119,7 +119,7 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     #expect(widget.environment == ["BASE": "yes", "SHARED": "widget"])
     #expect(widget.style.fontSize == 14)
     #expect(widget.style.foreground == HexColor(0xabcdefff))
-    #expect(widget.style.background == HexColor(0x111111ff))
+    #expect(widget.style.background == .color(HexColor(0x111111ff)))
     #expect(widget.layout?.style.spacing == 6)
     #expect(widget.layout?.style.paddingHorizontal == 8)
     guard case let .row(children) = widget.layout?.content,
@@ -250,7 +250,7 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     #expect(cpu.events == ["refresh"])
     #expect(cpu.style.fontSize == 16)
     #expect(cpu.style.foreground == HexColor(0xeeeeeeff))
-    #expect(cpu.style.background == HexColor(0x111111ff))
+    #expect(cpu.style.background == .color(HexColor(0x111111ff)))
     #expect(cpu.tooltip == "System load")
     #expect(cpu.popup?.openOnHover == true)
     guard case .text("Details") = cpu.popup?.layout.content else {
@@ -405,7 +405,7 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
         "profile": ConfigurationProfile.CodingKeys.allCases, "conditions": ProfileConditions.CodingKeys.allCases,
         "packageSelection": WidgetPackageSelection.CodingKeys.allCases, "rule": StyleRule.CodingKeys.allCases,
         "ruleCondition": RuleCondition.CodingKeys.allCases, "workspaceDefaults": WorkspaceDefaults.CodingKeys.allCases,
-        "glass": GlassSettings.CodingKeys.allCases
+        "glass": GlassSettings.CodingKeys.allCases, "screen": ScreenConfiguration.CodingKeys.allCases
     ]
     for (name, keys) in decoders {
         #expect(try properties(definitions[name]) == Set(keys.map(\.stringValue) + (name == "widget" ? ["template"] : [])), "\(name)")
@@ -419,7 +419,7 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     var loader = ConfigurationLoader()
     loader.themesDirectory = repository.appending(path: "Resources/themes")
     let modular = try loader.load(repository.appending(path: "examples/modular/config.json"))
-    #expect(modular.defaults.hoverBackground == HexColor(0x29384bff))
+    #expect(modular.defaults.hoverBackground == .color(HexColor(0x29384bff)))
     #expect(modular.defaults.states?["warning"]?.foreground == HexColor(0xf5c26bff))
     let cpu = try #require(modular.widgets.first { $0.id == "cpu" })
     #expect(cpu.rules.map(\.state) == ["critical", "warning"])
@@ -428,8 +428,8 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     #expect(modular.widgets.first { $0.id == "volume" }?.content == .script(command: #"/bin/sh "$CONFIG_DIR/volume.sh""#, interval: 30))
     #expect(FileManager.default.fileExists(atPath: repository.appending(path: "examples/modular/volume.sh").path))
     let critical = ResolvedWidgetStyle(base: resolveStyle([modular.defaults, cpu.style]), state: "critical")
-    #expect(critical.style(hovered: false).background == HexColor(0xf28b82ff))
-    #expect(critical.style(hovered: true).background == HexColor(0xf5a59eff))
+    #expect(critical.style(hovered: false).background == .color(HexColor(0xf28b82ff)))
+    #expect(critical.style(hovered: true).background == .color(HexColor(0xf5a59eff)))
     #expect(critical.style(hovered: true).foreground == HexColor(0x18212dff))
     for (name, state) in modular.defaults.states ?? [:] where state.background != nil && !StyleStates.reservedNames.contains(name) {
         #expect(state.states?["hover"]?.background != nil, "\(name) needs its own hover background")

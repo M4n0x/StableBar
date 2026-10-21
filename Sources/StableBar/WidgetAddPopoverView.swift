@@ -6,18 +6,30 @@ final class WidgetAddPopoverModel {
     let setup: WidgetSetup
     let position: WidgetPosition
     let before: String?
+    let kinds: [ScreenKind]
+    var checked: Set<ScreenKind>
     var search = "" { didSet { selected = choices.first?.id; pointerLocation = NSEvent.mouseLocation } }
     var selected: String?
     @ObservationIgnored private var request: Task<Void, Never>?
     @ObservationIgnored private let added: (String) -> Void
     @ObservationIgnored private var pointerLocation = NSEvent.mouseLocation
 
-    init(setup: WidgetSetup, position: WidgetPosition, before: String?, added: @escaping (String) -> Void) {
+    init(setup: WidgetSetup, position: WidgetPosition, before: String?, kinds: [ScreenKind] = [], added: @escaping (String) -> Void) {
         self.setup = setup
         self.position = position
         self.before = before
+        self.kinds = kinds
+        checked = Set(kinds)
         self.added = added
         selected = setup.choices.first?.id
+    }
+
+    var display: ConfigurationValue {
+        checked.count == kinds.count ? .string("all") : .array(kinds.filter(checked.contains).map { .string($0.selection) })
+    }
+
+    func setChecked(_ kind: ScreenKind, _ isOn: Bool) {
+        if isOn { checked.insert(kind) } else if checked.count > 1 { checked.remove(kind) }
     }
 
     var choices: [WidgetAddChoice] { setup.choices.filter { $0.matches(search) } }
@@ -71,13 +83,14 @@ struct WidgetAddPopoverView: View {
     var availableSize = CGSize(width: 540, height: 620)
     var changed: () -> Void = {}
     var measuredChoices: (([String: CGRect]) -> Void)?
+    var showsTitle = true
     let title = "ADD HERE"
     @FocusState private var searchFocused: Bool
     @State private var addedID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+            if showsTitle { Text(title).font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary) }
             if let review = model.setup.review {
                 PackagesView(store: store, reviewing: review.inspection, onEnable: { inspection, settings in
                     addedID = try model.setup.enable(inspection, settings: settings, position: review.position, before: review.before)
@@ -90,6 +103,22 @@ struct WidgetAddPopoverView: View {
                 TextField("Search widgets", text: $model.search)
                     .textFieldStyle(.roundedBorder).focused($searchFocused)
                     .accessibilityLabel("Search widgets")
+                    .onSubmit { model.addSelected() }
+                    .onKeyPress(.upArrow) { model.move(by: -1); return .handled }
+                    .onKeyPress(.downArrow) { model.move(by: 1); return .handled }
+                    .onKeyPress(.leftArrow) { model.moveColumn(by: -1) ? .handled : .ignored }
+                    .onKeyPress(.rightArrow) { model.moveColumn(by: 1) ? .handled : .ignored }
+                if model.kinds.count > 1 {
+                    HStack(spacing: 12) {
+                        Text("Add to").font(.system(size: 12))
+                        Spacer()
+                        ForEach(model.kinds, id: \.self) { kind in
+                            Toggle(kind.name, isOn: Binding(get: { model.checked.contains(kind) }, set: { model.setChecked(kind, $0) }))
+                                .toggleStyle(.checkbox)
+                                .font(.system(size: 12))
+                        }
+                    }
+                }
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: model.columns), spacing: 6) {

@@ -2,6 +2,16 @@ import XCTest
 @testable import StableBar
 
 final class ConfigurationEditsTests: XCTestCase {
+    func testAGradientEditReplacesASavedColorPairInsteadOfMergingWithIt() throws {
+        let gradient: ConfigurationValue = .object(["gradient": .object(["colors": .array([.string("#111111"), .string("#222222")])])])
+        let main: [String: ConfigurationValue] = [
+            "defaults": .object(["background": .object(["light": .string("#444444"), "dark": .string("#555555")]), "fontSize": .number(12)])
+        ]
+        var ids: [String] = []
+        let result = try ConfigurationEdit(action: .defaults, properties: ["background": gradient]).applying(to: main, widgetIDs: &ids)
+        XCTAssertEqual(result["defaults"], .object(["background": gradient, "fontSize": .number(12)]))
+    }
+
     func testRootUnsetAddressesWidgetsAndProfilesByNameAndKeepsRequiredProfileConfiguration() throws {
         let main: [String: ConfigurationValue] = [
             "widgets": .array([.object(["id": .string("clock"), "style": .object(["foreground": .string("#ffffff")])])]),

@@ -334,6 +334,7 @@ struct PackageIndex: Decodable, Sendable {
         let version: String
         let kind: WidgetPackageManifest.Kind?
         let description: String?
+        let author: String?
         let minimumVersion: String?
         let archive: String
         let sha256: String

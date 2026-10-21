@@ -4,13 +4,14 @@ import SwiftUI
 struct BarSurface: ViewModifier {
     let store: BarStore
     let settings: BarSettings
+    let kind: ScreenKind
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
-        let style = store.barStyle
+        let style = store.barStyle(on: kind)
         content
             .clipShape(RoundedRectangle(cornerRadius: max(0, style.cornerRadius ?? 0)))
-            .modifier(GlassBackground(color: style.background ?? settings.background, glass: settings.glass, surface: \.bar,
+            .modifier(GlassBackground(fill: style.background ?? settings.background, glass: settings.glass, surface: \.bar,
                                       shape: RoundedRectangle(cornerRadius: max(0, style.cornerRadius ?? 0))))
             .overlay { BarBorder(style: style) }
             .animation(reduceMotion ? nil : .easeOut(duration: settings.animationDuration), value: style)
@@ -18,7 +19,7 @@ struct BarSurface: ViewModifier {
 }
 
 struct GlassBackground<S: Shape>: ViewModifier {
-    let color: HexColor?
+    let fill: BackgroundFill?
     let glass: GlassSettings
     let surface: KeyPath<GlassSettings, Bool>
     let shape: S
@@ -28,15 +29,15 @@ struct GlassBackground<S: Shape>: ViewModifier {
         if #available(macOS 26, *), glass.enabled, glass[keyPath: surface] {
             // Keep one view structure while the color comes and goes (hover, open, data states): switching
             // branches rebuilds the content, which dismantles a widget's popup anchor and closes its popup.
-            let visible = color.map { (colorScheme == .dark ? $0.dark : $0.light) & 0xff > 0 } ?? false
+            let visible = fill.map { (colorScheme == .dark ? $0.firstColor.dark : $0.firstColor.light) & 0xff > 0 } ?? false
             content.background {
                 ZStack {
                     Color.clear.glassEffect(visible ? .clear : .identity, in: shape)
-                    shape.fill((color?.color ?? .clear).opacity(1 - glass.transparency))
+                    shape.fill((fill?.shapeStyle ?? AnyShapeStyle(Color.clear)).opacity(1 - glass.transparency))
                 }
             }
         } else {
-            content.background(color?.color ?? .clear, in: shape)
+            content.background(fill?.shapeStyle ?? AnyShapeStyle(Color.clear), in: shape)
         }
     }
 }

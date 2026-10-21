@@ -13,7 +13,7 @@ final class BarEditViewTests: XCTestCase {
         let display = BarDisplay(id: 1, isBuiltIn: true, isMain: true, notch: 661...851)
         let entry = try XCTUnwrap(store.barEditing.entries(on: display).first)
         XCTAssertFalse(entry.usesPlaceholder)
-        let tile = NSHostingView(rootView: BarEditTile(store: store, display: display.id, entry: entry,
+        let tile = NSHostingView(rootView: BarEditTile(store: store, display: display.id, kind: ScreenKind(display), entry: entry,
                                                      config: try XCTUnwrap(store.configuration)))
         XCTAssertGreaterThanOrEqual(tile.fittingSize.width, 40)
         XCTAssertLessThanOrEqual(tile.fittingSize.width, 44, "The outline and overlapping remove badge must not turn a widget into a wider card")
@@ -26,7 +26,7 @@ final class BarEditViewTests: XCTestCase {
         defer { store.stop() }
         store.barEditing.begin()
         let display = BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil)
-        let tile = NSHostingView(rootView: BarEditTile(store: store, display: display.id,
+        let tile = NSHostingView(rootView: BarEditTile(store: store, display: display.id, kind: ScreenKind(display),
             entry: try XCTUnwrap(store.barEditing.entries(on: display).first), config: try XCTUnwrap(store.configuration)))
         XCTAssertEqual(tile.fittingSize.width, 220, accuracy: 0.01)
         XCTAssertEqual(tile.fittingSize.height, 20, accuracy: 0.01)
@@ -44,7 +44,7 @@ final class BarEditViewTests: XCTestCase {
         XCTAssertEqual(entries.map { $0.visibility.isHidden }, [false, true])
         for entry in entries {
             XCTAssertTrue(entry.usesPlaceholder)
-            let tile = NSHostingView(rootView: BarEditTile(store: store, display: display.id, entry: entry,
+            let tile = NSHostingView(rootView: BarEditTile(store: store, display: display.id, kind: ScreenKind(display), entry: entry,
                                                          config: try XCTUnwrap(store.configuration)))
             XCTAssertGreaterThan(tile.fittingSize.width, 20)
             XCTAssertLessThan(tile.fittingSize.width, 100)

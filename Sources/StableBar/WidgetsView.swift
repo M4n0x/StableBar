@@ -1,17 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
-
-private extension WidgetTransition {
-    var title: String {
-        switch self {
-        case .none: "None"
-        case .fade: "Fade"
-        case .roll: "Roll"
-        case .numeric: "Numeric"
-        }
-    }
-}
 
 extension WidgetConfiguration {
     /// Whether `transition` changes anything: workspaces and spacers draw their own views, which
@@ -46,448 +34,251 @@ extension WidgetContent {
 
 struct WidgetsView: View {
     @Bindable var editor: ConfigurationEditor
-    @State private var advanced = "{}"
     @State private var setup: WidgetSetup
-    @State private var adding = false
     @State private var dragSession = WidgetDragSession()
-    @State private var expanded = false
-    @State private var customClockFormat = false
-    @State private var editingWebPage = false
-    @State private var webPage = ""
-    @State private var clickError: String?
-    @State private var fontFamilies = NSFontManager.shared.availableFontFamilies
+    @State private var adding: WidgetAddPopoverModel?
+    @State private var sharing: ScreenSetup?
+    @State private var scrollPositions: [String: String] = [:]
 
     init(editor: ConfigurationEditor) {
         self.editor = editor
         _setup = State(initialValue: WidgetSetup(store: editor.store))
     }
 
-    private var positions: [WidgetPosition] {
-        WidgetPlacement.positions(widgets: widgets, hasNotchedDisplay: NSScreen.screens.contains { $0.auxiliaryTopLeftArea != nil })
-    }
-
     private var store: BarStore { editor.store }
-    private var widgets: [WidgetConfiguration] { store.configuration?.widgets ?? [] }
-    private var displayNames: [String: String] {
-        WidgetDisplayName.names(for: widgets, packageNames: store.widgetPackageNames, providers: store.configuration?.providers ?? [:])
-    }
+    private var widgets: [WidgetConfiguration] { store.configuration?.onScreen(screen).widgets ?? [] }
+    private var kinds: [ScreenKind] { ScreenKind.allCases.filter { store.screenSetup?.kinds.contains($0) == true } }
+    private var screen: ScreenKind { kinds.contains(editor.barScreen) ? editor.barScreen : kinds.first ?? editor.barScreen }
+    private var selectedWidget: String? { editor.barItem == .widget ? editor.selectedID : nil }
 
     var body: some View {
-        HSplitView {
-            sidebar.frame(minWidth: 210, maxWidth: 280)
-            Group {
-                if let widget = widgets.first(where: { $0.id == editor.selectedID }) {
-                    inspector(widget)
-                        .id(widget.id)
-                } else {
-                    ContentUnavailableView("Select a widget", systemImage: "sidebar.left",
-                                           description: Text("Choose a widget to change how it looks and where it sits."))
-                }
+        let names = WidgetDisplayName.names(for: widgets, packageNames: store.widgetPackageNames, providers: store.configuration?.providers ?? [:])
+        VStack(spacing: 0) {
+            ScreenBand(editor: editor, kinds: kinds, screen: screen) { sharing = $0 }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 8)
+            BarPreview(store: store, kind: screen, names: names, selected: selectedWidget, select: { id in
+                if let id { select(id) } else { select(.bar) }
+            }, session: dragSession, move: { move($0, to: $1, before: $2) })
+            .padding(.horizontal, 16)
+            HStack(spacing: 0) {
+                list(names)
+                    .frame(width: 230)
+                    .background(SettingsPalette.sidebar)
+                Divider()
+                BarInspector(editor: editor, screen: screen, kinds: kinds, names: names, source: source, useSharedBar: { sharing = $0 },
+                             scrollPositions: $scrollPositions)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .top) { Divider() }
+            .padding(.top, 10)
         }
-        .onChange(of: editor.selected, initial: true) {
-            var properties = editor.selected
-            properties["id"] = nil
-            advanced = (try? String(decoding: configurationData(properties), as: UTF8.self)) ?? "{}"
-        }
-        .onChange(of: editor.selectedID) {
-            customClockFormat = false
-            clickError = nil
-            expanded = false
-        }
-        .sheet(isPresented: $adding) {
-            WidgetAddView(setup: setup, store: store,
-                          position: WidgetPlacement.destination(selectedID: editor.selectedID, widgets: widgets)) { id in
-                editor.selectedID = id
-                adding = false
+        .task { await setup.load() }
+        .onChange(of: editor.searchTarget, initial: true) { showSearchTarget() }
+        .confirmationDialog("Use the shared bar for \(sharing?.title.lowercased() ?? "")?", isPresented: Binding(
+            get: { sharing != nil }, set: { if !$0 { sharing = nil } }), presenting: sharing) { setup in
+            Button("Use Shared Bar") {
+                do { try store.useSharedBar(for: setup) }
+                catch { editor.error = errorMessage(error) }
             }
+        } message: { _ in
+            Text("Its own bar moves to the Trash.")
         }
     }
 
-    private var sidebar: some View {
-        let names = displayNames
+
+    private func list(_ names: [String: String]) -> some View {
+        let displays = NSScreen.screens.map(BarDisplay.init)
+        let shown = widgets.filter { $0.enabled && screen.shows($0.display, among: displays, activeID: store.activeDisplayID) }
+        let hidden = widgets.filter { widget in !shown.contains { $0.id == widget.id } }
+        let positions = WidgetPlacement.positions(widgets: widgets, hasNotchedDisplay: NSScreen.screens.contains { $0.auxiliaryTopLeftArea != nil })
+        let changed = profileWidgets
         return VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ListRow(selected: editor.barItem == .bar) { _ in
+                            WidgetRowLabel(symbol: "menubar.rectangle", name: "Bar", subtitle: "Size, background, placement", selected: editor.barItem == .bar)
+                        }
+                        .onTapGesture { select(.bar) }
+                        .accessibilityAddTraits(.isButton)
+                        ListRow(selected: editor.barItem == .everyWidget) { _ in
+                            WidgetRowLabel(text: "Aa", name: "Every widget", subtitle: "The shared look", selected: editor.barItem == .everyWidget)
+                        }
+                        .onTapGesture { select(.everyWidget) }
+                        .accessibilityAddTraits(.isButton)
+                        ForEach(positions, id: \.self) { position in
+                            let section = shown.filter { $0.position == position }
+                            groupTitle(position.title)
+                            ForEach(section) { widget in
+                                widgetRow(widget, name: names[widget.id] ?? widget.id, position: position, listed: shown, changed: changed.contains(widget.id))
+                            }
+                            WidgetDragRow(session: dragSession, widgetID: nil, name: "", insertionKey: dropKey(position),
+                                          select: {}, move: { move($0, to: position) }) {
+                                Text(section.isEmpty ? "Drop widgets here" : "")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.horizontal, 8)
+                                    .frame(maxWidth: .infinity, minHeight: section.isEmpty ? 26 : 6, alignment: .leading)
+                                    .overlay {
+                                        if section.isEmpty {
+                                            RoundedRectangle(cornerRadius: 7).strokeBorder(SettingsPalette.groupBorder, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                                        }
+                                    }
+                                    .padding(.vertical, section.isEmpty ? 2 : 0)
+                            }
+                            .overlay(alignment: .top) { insertionLine(dropKey(position)) }
+                            .accessibilityHidden(!section.isEmpty)
+                        }
+                        if !hidden.isEmpty {
+                            groupTitle("Not on this screen · \(hidden.count)")
+                            ForEach(hidden) { widget in
+                                let selected = selectedWidget == widget.id
+                                ListRow(selected: selected, dimmed: true,
+                                        eye: ("eye.slash", "Show on this screen", { editor.setWidget(widget, shown: true, on: screen) })) { _ in
+                                    WidgetRowLabel(symbol: widget.content.symbol, name: names[widget.id] ?? widget.id, subtitle: hiddenSubtitle(widget, displays: displays),
+                                                   selected: selected, dimmed: true, changed: changed.contains(widget.id))
+                                }
+                                .onTapGesture { select(widget.id) }
+                                .accessibilityElement(children: .combine)
+                                .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.top, 6)
+                    .padding(.bottom, 10)
+                }
+                .onChange(of: selectedWidget, initial: true) {
+                    if let selectedWidget { proxy.scrollTo(selectedWidget) }
+                }
+            }
+            Divider()
             HStack {
-                Button(store.barEditing.menuTitle, action: store.barEditing.toggle)
-                    .accessibilityLabel(store.barEditing.menuTitle)
-                    .disabled(!store.barEditing.isAvailable)
+                Button { openAdd() } label: { Label("Add widget", systemImage: "plus") }
+                    .popover(isPresented: Binding(get: { adding != nil }, set: { if !$0 { adding?.cancel(); adding = nil } }), arrowEdge: .top) {
+                        if let adding {
+                            WidgetAddPopoverView(model: adding, store: store, showsTitle: false)
+                        }
+                    }
                 Spacer()
             }
             .padding(8)
+            .background {
+                Button("Move up") { if let selectedWidget { moveBy(-1, id: selectedWidget, listed: shown) } }
+                    .keyboardShortcut(.upArrow, modifiers: [.option, .command])
+                    .hidden()
+                Button("Move down") { if let selectedWidget { moveBy(1, id: selectedWidget, listed: shown) } }
+                    .keyboardShortcut(.downArrow, modifiers: [.option, .command])
+                    .hidden()
+            }
+        }
+    }
+
+    private func groupTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 6)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
+    }
+
+    private func widgetRow(_ widget: WidgetConfiguration, name: String, position: WidgetPosition, listed: [WidgetConfiguration], changed: Bool) -> some View {
+        let selected = selectedWidget == widget.id
+        let subtitle = rowSubtitle(widget)
+        return ListRow(selected: selected, eye: ("eye", "Hide on this screen", { editor.setWidget(widget, shown: false, on: screen) })) { hovering in
+            WidgetDragRow(session: dragSession, widgetID: widget.id, name: name, insertionKey: dropKey(position, before: widget.id),
+                          select: { select(widget.id) }, move: { move($0, to: position, before: widget.id) }) {
+                WidgetRowLabel(symbol: widget.content.symbol, name: name, subtitle: subtitle, selected: selected,
+                               showsGrip: hovering, changed: changed)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(name)
+            .accessibilityValue(subtitle)
+            .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction { select(widget.id) }
+            .accessibilityAction(named: Text("Move up")) { moveBy(-1, id: widget.id, listed: listed) }
+            .accessibilityAction(named: Text("Move down")) { moveBy(1, id: widget.id, listed: listed) }
+        }
+        .overlay(alignment: .top) { insertionLine(position.rawValue + "/" + widget.id) }
+        .contextMenu {
+            Button("Move up") { moveBy(-1, id: widget.id, listed: listed) }
+            Button("Move down") { moveBy(1, id: widget.id, listed: listed) }
+            Menu("Move to") {
+                ForEach(WidgetPlacement.destinations, id: \.self) { target in
+                    Button(target.title) { move(widget.id, to: target) }
+                }
+            }
             Divider()
-            List(selection: $editor.selectedID) {
-                ForEach(positions, id: \.self) { position in
-                    let section = widgets.filter { $0.position == position }
-                    Section(position.title) {
-                        ForEach(section) { widget in
-                            let name = names[widget.id] ?? typeName(widget)
-                            WidgetDragRow(session: dragSession, widgetID: widget.id, name: name,
-                                          insertionKey: dropKey(position, before: widget.id),
-                                          select: { editor.selectedID = widget.id },
-                                          move: { move($0, to: position, before: widget.id) }) {
-                                Label {
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(name).lineLimit(1)
-                                        Text(typeName(widget)).font(.caption).foregroundStyle(.secondary)
-                                    }
-                                } icon: {
-                                    Image(systemName: widget.content.symbol)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .opacity(widget.enabled ? 1 : 0.45)
-                                .padding(.vertical, 2)
-                            }
-                            .tag(widget.id)
-                            .overlay(alignment: .top) {
-                                if dragSession.insertion == position.rawValue + "/" + widget.id {
-                                    Rectangle().fill(Color.accentColor).frame(height: 2).allowsHitTesting(false)
-                                }
-                            }
-                            .accessibilityElement(children: .combine)
-                            .accessibilityLabel(name)
-                            .accessibilityAction(named: Text("Move up")) { moveBy(-1, id: widget.id) }
-                            .accessibilityAction(named: Text("Move down")) { moveBy(1, id: widget.id) }
-                            .contextMenu {
-                                Button("Move Up") { moveBy(-1, id: widget.id) }
-                                Button("Move Down") { moveBy(1, id: widget.id) }
-                                Menu("Move To") {
-                                    ForEach(WidgetPlacement.destinations, id: \.self) { target in
-                                        Button(target.menuTitle) { move(widget.id, to: target) }
-                                    }
-                                }
-                            }
-                        }
-                        WidgetDragRow(session: dragSession, widgetID: nil, name: "", insertionKey: dropKey(position),
-                                      select: {}, move: { move($0, to: position) }) {
-                            Text(section.isEmpty ? "Drop a widget here" : " ")
-                                .font(.caption).foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, minHeight: 16, alignment: .leading)
-                        }
-                        .selectionDisabled()
-                        .accessibilityHidden(!section.isEmpty)
-                        .overlay(alignment: .top) {
-                            if dragSession.insertion == dropKey(position) {
-                                Rectangle().fill(Color.accentColor).frame(height: 2).allowsHitTesting(false)
-                            }
-                        }
-                    }
-                }
-            }
-            .listStyle(.sidebar)
-            Divider()
-            HStack(spacing: 0) {
-                Button { adding = true } label: {
-                    Label("Add widget", systemImage: "plus").frame(height: 24)
-                }
-                .help("Add a widget")
-                .accessibilityLabel("Add widget")
-                Divider().frame(height: 16)
-                Button {
-                    editor.change(ConfigurationEdit(action: .remove, id: editor.selectedID!))
-                } label: {
-                    Image(systemName: "minus").frame(width: 28, height: 24)
-                }
-                .help("Remove the selected widget")
-                .accessibilityLabel("Remove the selected widget")
-                .disabled(editor.selectedID == nil)
-                Spacer()
-                Button {
-                    if let id = editor.selectedID { moveBy(-1, id: id) }
-                } label: { Image(systemName: "arrow.up").frame(width: 24, height: 24) }
-                .keyboardShortcut(.upArrow, modifiers: [.option, .command])
-                .help("Move the selected widget up")
-                .accessibilityLabel("Move up")
-                .disabled(editor.selectedID == nil)
-                Button {
-                    if let id = editor.selectedID { moveBy(1, id: id) }
-                } label: { Image(systemName: "arrow.down").frame(width: 24, height: 24) }
-                .keyboardShortcut(.downArrow, modifiers: [.option, .command])
-                .help("Move the selected widget down")
-                .accessibilityLabel("Move down")
-                .disabled(editor.selectedID == nil)
-            }
-            .buttonStyle(.borderless)
-            .padding(4)
+            Button("Hide on \(screen.phrase)") { editor.setWidget(widget, shown: false, on: screen) }
         }
     }
 
-    private func inspector(_ widget: WidgetConfiguration) -> some View {
-        let style = StyleFields(store: store, path: "widgets.\(widget.id).style", defaultsPath: "defaults", widgetID: widget.id,
-                                values: editor.style(for: widget.id), set: { editor.set(["style": .object($0)], for: widget.id) },
-                                unset: { editor.change(ConfigurationEdit(action: .unset, id: widget.id, properties: ["style": .object($0)])) })
-        return ScrollViewReader { scroll in
-            Form {
-                Section {
-                    HStack(spacing: 12) {
-                        Image(systemName: widget.content.symbol)
-                            .font(.title2)
-                            .foregroundStyle(Color.accentColor)
-                            .frame(width: 40, height: 40)
-                            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(displayNames[widget.id] ?? typeName(widget)).font(.title3.weight(.semibold))
-                            Text(WidgetDisplayName.subtitle(for: widget.content, providers: store.configuration?.providers ?? [:]))
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Toggle("Show on bar", isOn: Binding(get: {
-                            widget.enabled
-                        }, set: { editor.set(["enabled": .bool($0)], for: widget.id) }))
-                        .toggleStyle(.switch)
-                        .help("Show this widget in the bar")
-                        .accessibilityLabel("Show this widget in the bar")
-                    }
-                    HStack(alignment: .top) {
-                        let status = store.widgetStatus(for: widget)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Label(status.title, systemImage: status.symbol).foregroundStyle(status.color)
-                            Text(status.detail).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button("Troubleshoot") { editor.troubleshoot(widget.id) }
-                    }
-                }
-                Section("Content") {
-                    if let packageID = store.widgetPackageIDs[widget.id] {
-                        WidgetPackageSettings(store: store, packageID: packageID) { editor.showPackage(packageID) }
-                    } else {
-                        if !widget.content.drawsOwnView { iconField(widget) }
-                        if case let .appMenu(expandOnHover) = widget.content {
-                            Toggle("Expand on hover", isOn: Binding(get: { expandOnHover }, set: {
-                                editor.set(["expandOnHover": .bool($0)], for: widget.id)
-                            }))
-                            .help("Show only the app's name until the pointer is over the widget")
-                        }
-                        if widget.content == .workspaces {
-                            Toggle("Show each window", isOn: Binding(get: { widget.workspace?.windows == true }, set: {
-                                editor.set(["workspace": .object(["windows": .bool($0)])], for: widget.id)
-                            }))
-                            if widget.workspace?.windows == true {
-                                TextField("Window title length", value: Binding(get: { widget.workspace?.titleLength ?? 0 }, set: {
-                                    editor.set(["workspace": .object(["titleLength": .number(Double($0))])], for: widget.id)
-                                }), format: .number)
-                                .help("Maximum characters per window title; zero shows only the app icon or glyph")
-                            }
-                        }
-                        if case .text = widget.content { TextField("Text", text: string("text", for: widget)) }
-                        if case let .clock(format) = widget.content {
-                            Picker("Date format", selection: Binding(get: {
-                                !customClockFormat && WidgetClockFormat.common.contains { $0.value == format } ? format : "custom"
-                            }, set: { value in
-                                customClockFormat = value == "custom"
-                                if !customClockFormat { editor.set(["format": .string(value)], for: widget.id) }
-                            })) {
-                                ForEach(WidgetClockFormat.common, id: \.value) { Text($0.title).tag($0.value) }
-                                Text("Custom format").tag("custom")
-                            }
-                            if customClockFormat || !WidgetClockFormat.common.contains(where: { $0.value == format }) {
-                                TextField("Custom format", text: string("format", for: widget, fallback: format))
-                            }
-                        }
-                    }
-                }
-                .id(SettingsSearchResult.widgetContent.id)
-                Section("Behavior and placement") {
-                    clickFields(widget)
-                    TextField("Tooltip", text: Binding(get: { widget.tooltip ?? "" }, set: {
-                        editor.set(["tooltip": $0.isEmpty ? .null : .string($0)], for: widget.id)
-                    }), prompt: Text("Use the script's tooltip"))
-                    if let popup = widget.popup {
-                        Toggle("Open popup on hover", isOn: Binding(get: { popup.openOnHover }, set: {
-                            editor.set(["popup": .object(["openOnHover": .bool($0)])], for: widget.id)
-                        }))
-                    }
-                    Picker("Screens", selection: Binding(get: { WidgetScreenChoice(widget.display) }, set: {
-                        if $0 != WidgetScreenChoice(widget.display), let properties = $0.properties { editor.set(properties, for: widget.id) }
-                    })) {
-                        ForEach(WidgetScreenChoice.allCases.filter { $0 != .specific || WidgetScreenChoice(widget.display) == .specific }, id: \.self) {
-                            Text($0.title).tag($0)
-                        }
-                    }
-                    if case let .ids(ids) = widget.display {
-                        Text("Specific screens: \(ids.map(String.init).joined(separator: ", ")). Edit the list under Technical details.")
-                            .font(.callout).foregroundStyle(.secondary)
-                    }
-                    if case .any = widget.display {
-                        ForEach(ScreenKind.allCases, id: \.self) { kind in
-                            Toggle(kind.title, isOn: Binding(get: { kind.shows(widget.display, among: [], activeID: 0) }, set: { shown in
-                                let kinds = ScreenKind.allCases.filter { $0 == kind ? shown : $0.shows(widget.display, among: [], activeID: 0) }
-                                editor.set(["display": .array(kinds.map { .string($0.selection) })], for: widget.id)
-                            }))
-                        }
-                    }
-                    Picker("Position", selection: Binding(get: { widget.position }, set: { if $0 != widget.position { move(widget.id, to: $0) } })) {
-                        ForEach(WidgetPlacement.destinations, id: \.self) { Text($0.title).tag($0) }
-                    }
-                }
-                .id(SettingsSearchResult.widgetBehavior.id)
-                Section("Appearance") {
-                    style.color("Text", "foreground")
-                    style.color("Background", "background")
-                    style.hoverBackground("Hover background")
-                    style.color("Border", "borderColor")
-                    style.color("Accent", "accent")
-                    style.font(fontFamilies)
-                    style.weight()
-                    style.number("Font size", "fontSize", default: 12)
-                    style.number("Horizontal padding", "paddingHorizontal", default: 10)
-                    style.number("Vertical padding", "paddingVertical", default: 6)
-                    style.number("Corner radius", "cornerRadius", default: 14)
-                    style.number("Border width", "borderWidth", default: 1)
-                }
-                .id(SettingsSearchResult.widgetAppearance.id)
-                Section {
-                    DisclosureGroup("Technical details", isExpanded: $expanded) {
-                        LabeledContent("ID", value: widget.id).textSelection(.enabled)
-                        let origin = store.origins["widgets.\(widget.id).role"]
-                        OverrideRow(title: "Presentation role", source: origin.map { "From \(store.sourceText($0))" },
-                                    reset: origin.map(store.setsInMainFile) == true ? {
-                            editor.change(ConfigurationEdit(action: .unset, id: widget.id, properties: ["role": .null]))
-                        } : nil) {
-                            Picker("Presentation role", selection: Binding(get: { widget.role?.rawValue ?? "" }, set: {
-                                if $0 != (widget.role?.rawValue ?? "") {
-                                    editor.set(["role": $0.isEmpty ? .null : .string($0)], for: widget.id)
-                                }
-                            })) {
-                                Text("None").tag("")
-                                ForEach(PresentationRole.allCases, id: \.rawValue) { Text($0.rawValue.capitalized).tag($0.rawValue) }
-                            }
-                            .labelsHidden()
-                        }
-                        if widget.content.drawsOwnView || store.widgetPackageIDs[widget.id] != nil { iconField(widget) }
-                        if widget.drawsTransitions {
-                            Picker("Transition", selection: string("transition", for: widget, fallback: WidgetTransition.none.rawValue)) {
-                                ForEach(WidgetTransition.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
-                            }
-                            .help("How the widget's text and symbols change")
-                        }
-                        if widget.content == .workspaces {
-                            Divider()
-                            Text("Workspace presentation").font(.headline)
-                            WorkspacePresentationFields(store: store, path: "widgets.\(widget.id).workspace", defaultsPath: "workspaceDefaults", widgetID: widget.id,
-                                values: (try? store.configuration?.workspaceDefaults.mergedProperties(editor.properties(for: widget.id)["workspace"])) ?? [:],
-                                set: { editor.set(["workspace": .object($0)], for: widget.id) },
-                                unset: { editor.change(ConfigurationEdit(action: .unset, id: widget.id, properties: ["workspace": .object($0)])) })
-                        }
-                        DisclosureGroup("JSON editor") {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Edit this widget's properties as JSON. Removing a property clears it. Templates and included files stay intact.")
-                                    .font(.caption).foregroundStyle(.secondary)
-                                TextEditor(text: $advanced)
-                                    .font(.system(.body, design: .monospaced))
-                                    .scrollContentBackground(.hidden)
-                                    .padding(6)
-                                    .frame(height: 160)
-                                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
-                                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
-                                HStack {
-                                    Spacer()
-                                    Button("Apply properties") {
-                                        do {
-                                            editor.replaceProperties(try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(advanced.utf8)))
-                                        } catch { editor.error = errorMessage(error) }
-                                    }
-                                }
-                            }
-                            .padding(.top, 6)
-                        }
-                    }
-                }
-                .id(SettingsSearchResult.widgetTechnical.id)
-            }
-            .formStyle(.grouped)
-            .task(id: editor.searchTarget) {
-                if let target = editor.searchTarget {
-                    if target == SettingsSearchResult.widgetTechnical.id { expanded = true }
-                    await Task.yield()
-                    if Task.isCancelled { return }
-                    scroll.scrollTo(target, anchor: .top)
-                    editor.searchTarget = nil
-                }
-            }
-            .sheet(isPresented: $editingWebPage) {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Open a web page").font(.headline)
-                    TextField("Web address", text: $webPage).frame(width: 360)
-                    if let clickError { Text(clickError).foregroundStyle(.red) }
-                    HStack {
-                        Spacer()
-                        Button("Cancel") { editingWebPage = false }.keyboardShortcut(.cancelAction)
-                        Button("Done") {
-                            setClick(.webPage, widget: widget, value: webPage)
-                            if clickError == nil { editingWebPage = false }
-                        }.keyboardShortcut(.defaultAction)
-                    }
-                }.padding(24)
-            }
+    private func insertionLine(_ key: String) -> some View {
+        Rectangle().fill(Color.accentColor).frame(height: 2).opacity(dragSession.insertion == key ? 1 : 0).allowsHitTesting(false)
+    }
+
+    private func rowSubtitle(_ widget: WidgetConfiguration) -> String {
+        let displays = NSScreen.screens.map(BarDisplay.init)
+        let kind = switch source(widget) {
+        case .builtIn, .included: "Built-in"
+        case .store: "Store package"
+        case .listed: "Listed in Store"
+        case .installed: "Installed package"
+        case .local: "Local package"
         }
+        let elsewhere = ScreenKind.allCases.contains { $0 != screen && $0.shows(widget.display, among: displays, activeID: store.activeDisplayID) }
+        return elsewhere ? kind : kind + " · this screen only"
     }
 
-    private func iconField(_ widget: WidgetConfiguration) -> some View {
-        LabeledContent("Icon") {
-            HStack {
-                TextField("Icon", text: string("icon", for: widget), prompt: Text("SF Symbol name")).labelsHidden()
-                Image(systemName: string("icon", for: widget).wrappedValue).foregroundStyle(.secondary).frame(width: 20)
+    private func hiddenSubtitle(_ widget: WidgetConfiguration, displays: [BarDisplay]) -> String {
+        if !widget.enabled { return "Turned off" }
+        let kinds = ScreenKind.allCases.filter { $0.shows(widget.display, among: displays, activeID: store.activeDisplayID) }
+        return kinds.isEmpty ? "Hidden everywhere" : kinds.map(\.name).joined(separator: " and ") + " only"
+    }
+
+    private var profileWidgets: Set<String> {
+        guard let name = editor.editingProfile, let profile = store.profiles.first(where: { $0.name == name }),
+              case let .object(overrides)? = profile.configuration["widgetOverrides"] else { return [] }
+        return Set(overrides.keys)
+    }
+
+    private func source(_ widget: WidgetConfiguration) -> PackageSource {
+        guard let id = store.widgetPackageIDs[widget.id] else { return .builtIn }
+        return setup.choices.contains { $0.package?.id == id } ? .listed : .installed
+    }
+
+
+    private func select(_ item: BarItem) {
+        editor.finishEditing()
+        editor.barItem = item
+    }
+
+    private func select(_ id: String) {
+        editor.showWidget(id)
+    }
+
+    private func openAdd() {
+        let position = WidgetPlacement.destination(selectedID: selectedWidget, widgets: widgets)
+        let existingIDs = Set(widgets.map(\.id))
+        adding = WidgetAddPopoverModel(setup: setup, position: position, before: nil, kinds: kinds) { id in
+            for widget in widgets where !existingIDs.contains(widget.id) {
+                editor.set(["display": adding!.display], for: widget.id)
             }
-        }
-    }
-
-    @ViewBuilder private func clickFields(_ widget: WidgetConfiguration) -> some View {
-        switch WidgetClickChoice.control(for: widget, output: store.scripts[widget.id]?.output) {
-        case .hidden: EmptyView()
-        case .explanation(let explanation):
-            LabeledContent("When clicked") { Text(explanation).foregroundStyle(.secondary) }
-        case .choices:
-            Picker("When clicked", selection: Binding(get: { WidgetClickChoice.current(for: widget, output: store.scripts[widget.id]?.output) }, set: { choice in
-                guard choice != WidgetClickChoice.current(for: widget, output: store.scripts[widget.id]?.output) else { return }
-                switch choice {
-                case .nothing: setClick(.nothing, widget: widget)
-                case .application: chooseApplication(widget)
-                case .webPage:
-                    webPage = WidgetClickChoice.current(for: widget, output: store.scripts[widget.id]?.output) == .webPage ? widget.open ?? "" : "https://"
-                    editingWebPage = true
-                case .advanced: break
-                }
-            })) {
-                ForEach(WidgetClickChoice.allCases.filter { $0 != .advanced }, id: \.self) { Text($0.title).tag($0) }
-            }
-            if let open = widget.open {
-                Text(open).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
-                Button(WidgetClickChoice.current(for: widget, output: store.scripts[widget.id]?.output) == .application ? "Choose another app…" : "Edit web page…") {
-                    if WidgetClickChoice.current(for: widget, output: store.scripts[widget.id]?.output) == .application { chooseApplication(widget) }
-                    else { webPage = open; editingWebPage = true }
-                }
-            }
-            if let clickError { Text(clickError).foregroundStyle(.red) }
-        }
-    }
-
-    private func setClick(_ choice: WidgetClickChoice, widget: WidgetConfiguration, value: String? = nil) {
-        do {
-            editor.set(try choice.properties(for: widget, value: value, output: store.scripts[widget.id]?.output), for: widget.id)
-            clickError = nil
-        } catch { clickError = errorMessage(error) }
-    }
-
-    private func chooseApplication(_ widget: WidgetConfiguration) {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.applicationBundle]
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Choose app"
-        if panel.runModal() == .OK, let url = panel.url {
-            setClick(.application, widget: widget, value: Bundle(url: url)?.bundleIdentifier)
+            select(id)
+            adding = nil
         }
     }
 
     private func move(_ id: String, to position: WidgetPosition, before anchor: String? = nil) {
-        do { try setup.move(id, to: position, before: anchor) }
+        do { try setup.move(id, to: position, before: anchor, on: screen) }
         catch { editor.error = errorMessage(error) }
     }
 
-    private func moveBy(_ offset: Int, id: String) {
-        do { try setup.move(id, by: offset) }
+    private func moveBy(_ offset: Int, id: String, listed: [WidgetConfiguration]) {
+        do { try setup.move(id, by: offset, on: screen) { widget in listed.contains { $0.id == widget.id } } }
         catch { editor.error = errorMessage(error) }
     }
 
@@ -499,12 +290,106 @@ struct WidgetsView: View {
         return position.rawValue + "/" + (first ?? "")
     }
 
-    private func typeName(_ widget: WidgetConfiguration) -> String {
-        WidgetDisplayName.title(for: widget.content, providers: store.configuration?.providers ?? [:])
+    private func showSearchTarget() {
+        guard let target = editor.searchTarget.flatMap(SettingsSearchResult.init(rawValue:)) else { return }
+        var scroll = "top"
+        switch target {
+        case .barSize: editor.barTab = .size; select(.bar)
+        case .barLook: editor.barTab = .look; select(.bar)
+        case .barPlacement: editor.barTab = .placement; select(.bar)
+        case .screenSetups:
+            editor.barTab = .placement
+            select(.bar)
+            scroll = "These screens"
+        case .everyWidget: select(.everyWidget)
+        case .widgetContent, .widgetStyle, .widgetBehavior:
+            editor.widgetTab = target == .widgetContent ? .content : target == .widgetStyle ? .style : .behavior
+            if let id = editor.selectedID ?? widgets.first?.id { select(id) }
+        case .addWidget: openAdd()
+        default: return
+        }
+        switch editor.barItem {
+        case .bar: scrollPositions["bar/\(editor.barTab)"] = scroll
+        case .everyWidget: scrollPositions["everyWidget"] = scroll
+        case .widget:
+            if let id = editor.selectedID { scrollPositions["widget/\(id)/\(editor.widgetTab)"] = scroll }
+        }
+        editor.searchTarget = nil
     }
+}
 
-    private func string(_ key: String, for widget: WidgetConfiguration, fallback: String = "") -> Binding<String> {
-        let value = if case let .string(value) = editor.properties(for: widget.id)[key] { value } else { fallback }
-        return Binding(get: { value }, set: { if $0 != value { editor.set([key: .string($0)], for: widget.id) } })
+private struct ListRow<Content: View>: View {
+    let selected: Bool
+    var dimmed = false
+    var eye: (symbol: String, help: String, action: () -> Void)?
+    @ViewBuilder let content: (Bool) -> Content
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            content(hovering)
+            if let eye {
+                Button(action: eye.action) {
+                    Image(systemName: eye.symbol)
+                        .font(.system(size: 13))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(selected ? .white : .primary)
+                .opacity(hovering || dimmed ? 0.8 : 0)
+                .help(eye.help)
+                .accessibilityLabel(eye.help)
+            }
+        }
+        .padding(.trailing, 6)
+        .background(selected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(hovering ? SettingsPalette.control : .clear),
+                    in: RoundedRectangle(cornerRadius: 7))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: selected)
+    }
+}
+
+private struct WidgetRowLabel: View {
+    var symbol: String?
+    var text: String?
+    let name: String
+    let subtitle: String
+    let selected: Bool
+    var dimmed = false
+    var showsGrip = false
+    var changed = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(selected ? AnyShapeStyle(.white.opacity(0.7)) : AnyShapeStyle(.tertiary))
+                .frame(width: 8)
+                .opacity(showsGrip ? 1 : 0)
+            Group {
+                if let symbol { Image(systemName: symbol).font(.system(size: 12)) } else { Text(text ?? "").font(.system(size: 11.5, weight: .semibold)) }
+            }
+            .frame(width: 24, height: 24)
+            .background(selected ? AnyShapeStyle(.white.opacity(0.2)) : AnyShapeStyle(SettingsPalette.control), in: RoundedRectangle(cornerRadius: 6))
+            .opacity(dimmed ? 0.5 : 1)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(name).fontWeight(.medium).lineLimit(1).opacity(dimmed ? 0.5 : 1)
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(selected ? AnyShapeStyle(.white.opacity(0.88)) : AnyShapeStyle(.secondary))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if changed {
+                Circle().fill(SettingsPalette.profile).frame(width: 6, height: 6).help("Changed by this profile")
+            }
+        }
+        .foregroundStyle(selected ? .white : .primary)
+        .padding(.leading, 6)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }

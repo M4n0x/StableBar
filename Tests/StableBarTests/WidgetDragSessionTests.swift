@@ -4,6 +4,66 @@ import XCTest
 @testable import StableBar
 
 final class WidgetDragSessionTests: XCTestCase {
+    @MainActor func testPreviewSelectsOnMouseDownAndMovesGroupsWithoutActivatingTheLiveEditor() throws {
+        let fixture = try ThemeGalleryFixture(#"{"groups":{"pair":{}},"widgets":[{"id":"a","type":"clock","position":"left","group":"pair","display":"builtIn"},{"id":"b","type":"clock","position":"left","group":"pair","display":"builtIn"},{"id":"c","type":"clock","position":"right","display":"monitor"}]}"#)
+        defer { fixture.close() }
+        let store = try fixture.store()
+        defer { store.stop() }
+        let session = WidgetDragSession()
+        let layout = BarPreviewLayout(configuration: try XCTUnwrap(store.configuration),
+                                      display: BarDisplay(id: 1, isBuiltIn: true, isMain: true, notch: nil),
+                                      frames: ["a": CGRect(x: 0, y: 0, width: 40, height: 28),
+                                               "b": CGRect(x: 42, y: 0, width: 40, height: 28)],
+                                      size: CGSize(width: 600, height: 82))
+        let view = BarPreviewInteractionView(rootView: AnyView(Color.clear.frame(width: 600, height: 82)))
+        view.session = session
+        view.layout = layout
+        view.frame = CGRect(origin: .zero, size: layout.size)
+        let location = view.convert(CGPoint(x: 20, y: 10), to: nil)
+        var selected: String?
+        view.select = { selected = $0 }
+        view.mouseDown(with: try mouse(.leftMouseDown, x: location.x, y: location.y))
+        XCTAssertEqual(selected, "a")
+        XCTAssertEqual(view.dragWidgetID, "a")
+        view.mouseUp(with: try mouse(.leftMouseUp, x: location.x, y: location.y))
+        XCTAssertFalse(store.barEditing.isActive)
+        let payload = session.begin("b")
+        let target = try XCTUnwrap(layout.target("b", at: CGPoint(x: 500, y: 72)))
+        XCTAssertEqual(target.position, .right)
+        XCTAssertNil(target.before)
+        let setup = WidgetSetup(store: store)
+        XCTAssertTrue(session.drop(payload) { id in
+            do { try setup.move(id, to: target.position, before: target.before) }
+            catch { XCTFail("Preview drop failed: \(error)") }
+        })
+        XCTAssertEqual(store.configuration?.widgets.map(\.id), ["c", "a", "b"])
+        XCTAssertEqual(store.configuration?.widgets.filter { $0.group == "pair" }.map(\.position), [.right, .right])
+        XCTAssertEqual(store.configuration?.widgets.filter { $0.group == "pair" }.map(\.display), [.builtIn, .builtIn])
+        XCTAssertFalse(store.barEditing.isActive)
+        XCTAssertEqual(store.customizationHistory.undoSteps.count, 1)
+        try store.customizationHistory.undo()
+        XCTAssertEqual(store.configuration?.widgets.map(\.id), ["a", "b", "c"])
+    }
+
+    @MainActor func testPreviewTargetsVisibleGroupsAndEmptySectionsWithoutTargetingItsOwnGroup() throws {
+        let fixture = try ThemeGalleryFixture(#"{"groups":{"pair":{}},"widgets":[{"id":"a","type":"clock","position":"left","group":"pair"},{"id":"b","type":"clock","position":"left","group":"pair"},{"id":"c","type":"clock","position":"left"},{"id":"hidden","type":"clock","position":"left","display":"monitor"},{"id":"d","type":"clock","position":"right"}]}"#)
+        defer { fixture.close() }
+        let store = try fixture.store()
+        defer { store.stop() }
+        let layout = BarPreviewLayout(configuration: try XCTUnwrap(store.configuration),
+                                      display: BarDisplay(id: 1, isBuiltIn: true, isMain: true, notch: nil),
+                                      frames: ["a": CGRect(x: 0, y: 0, width: 40, height: 28),
+                                               "b": CGRect(x: 44, y: 0, width: 40, height: 28),
+                                               "c": CGRect(x: 100, y: 0, width: 40, height: 28),
+                                               "d": CGRect(x: 560, y: 0, width: 40, height: 28)],
+                                      size: CGSize(width: 600, height: 82))
+        XCTAssertEqual(layout.target("d", at: CGPoint(x: 20, y: 10))?.before, "a")
+        XCTAssertEqual(layout.target("d", at: CGPoint(x: 60, y: 10))?.before, "c")
+        XCTAssertEqual(layout.target("a", at: CGPoint(x: 20, y: 10))?.before, "c")
+        XCTAssertEqual(layout.target("a", at: CGPoint(x: 300, y: 72))?.position, .center)
+        XCTAssertNil(layout.target("a", at: CGPoint(x: 300, y: 72))?.before)
+    }
+
     @MainActor func testSharedDragSourceAuthenticatesOneNativeGestureAndCreatesOneUndoStep() throws {
         let fixture = try ThemeGalleryFixture(#"{"groups":{"pair":{}},"widgets":[{"id":"a","type":"clock","position":"left","group":"pair"},{"id":"b","type":"clock","position":"left","group":"pair"},{"id":"c","type":"clock","position":"left"}]}"#)
         defer { fixture.close() }
@@ -179,8 +239,8 @@ final class WidgetDragSessionTests: XCTestCase {
         XCTAssertNil(session.insertion)
     }
 
-    @MainActor private func mouse(_ type: NSEvent.EventType, x: CGFloat) throws -> NSEvent {
-        try XCTUnwrap(NSEvent.mouseEvent(with: type, location: CGPoint(x: x, y: 10), modifierFlags: [], timestamp: 0,
+    @MainActor private func mouse(_ type: NSEvent.EventType, x: CGFloat, y: CGFloat = 10) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(with: type, location: CGPoint(x: x, y: y), modifierFlags: [], timestamp: 0,
                                         windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
     }
 }

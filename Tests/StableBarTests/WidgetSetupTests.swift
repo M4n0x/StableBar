@@ -2,6 +2,27 @@ import XCTest
 @testable import StableBar
 
 final class WidgetSetupTests: XCTestCase {
+    @MainActor func testProfilePositionChangeKeepsBasePositionsAndWidgetOrder() throws {
+        let fixture = try ThemeGalleryFixture(#"{"widgets":[{"id":"a","type":"clock","position":"left"},{"id":"b","type":"clock","position":"right"}],"profiles":[{"name":"work","configuration":{}}]}"#)
+        defer { fixture.close() }
+        let store = try fixture.store()
+        defer { store.stop() }
+        store.reloadConfiguration()
+        let original = try fixture.document()["widgets"]
+        let editor = ConfigurationEditor(store: store)
+        editor.editBar(for: "work")
+        let setup = WidgetSetup(store: store)
+        try setup.move("a", to: .right)
+        try editor.history.flush()
+        XCTAssertEqual(store.configuration?.widgets.map(\.id), ["a", "b"])
+        XCTAssertEqual(store.configuration?.widgets.map(\.position), [.right, .right])
+        XCTAssertEqual(try fixture.document()["widgets"], original)
+        XCTAssertThrowsError(try setup.move("a", by: 1))
+        editor.undo()
+        XCTAssertEqual(store.configuration?.widgets.map(\.position), [.left, .right])
+        XCTAssertEqual(try fixture.document()["widgets"], original)
+    }
+
     @MainActor func testUnanchoredAddDoesNotLoadWidgetsForInsertion() async throws {
         let fixture = try ThemeGalleryFixture()
         defer { fixture.close() }

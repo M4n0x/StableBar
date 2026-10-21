@@ -79,9 +79,12 @@ final class BarEditAddPopover: NSObject {
         let panel = BarEditAddPanel()
         panel.level = bar.level
         panel.collectionBehavior = bar.collectionBehavior
-        panel.appearance = store.configuration?.bar.appearance.flatMap { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) }
-        let model = WidgetAddPopoverModel(setup: setup, position: position, before: before) { [weak self, weak store, weak panel] id in
+        panel.appearance = (bar.screen.map { store.configuration?.bar(on: ScreenKind(BarDisplay(screen: $0))) } ?? store.configuration?.bar)?
+            .appearance.flatMap { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) }
+        let model = WidgetAddPopoverModel(setup: setup, position: position, before: before,
+                                         kinds: ScreenKind.allCases.filter { store.screenSetup?.kinds.contains($0) == true }) { [weak self, weak store, weak panel] id in
             guard let self, let panel, self.panel === panel else { return }
+            if let display = self.model?.display, display != .string("all") { store?.barEditing.setDisplay(id, to: display, on: displayID) }
             self.close()
             if store?.customizationHistory.notice != nil { store?.barEditing.select(id) }
         }

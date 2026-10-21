@@ -299,7 +299,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if panel.isEditingBar { panel.setDecorations(nil) }
             panel.barGeometry = geometry
             let height = geometry.inputHeight
-            panel.setFrame(NSRect(x: screen.frame.minX, y: top - config.bar.offset - height,
+            panel.setFrame(NSRect(x: screen.frame.minX, y: top - config.onScreen(ScreenKind(BarDisplay(screen: screen))).bar.offset - height,
                                   width: screen.frame.width, height: height), display: true)
             panel.orderFrontRegardless()
             visibleFrames[id] = screen.visibleFrame

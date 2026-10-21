@@ -6,12 +6,7 @@ struct AboutView: View {
     private let version = AppVersion()
 
     var body: some View {
-        Form { sections }
-            .formStyle(.grouped)
-    }
-
-    var sections: some View {
-        Group {
+        Form {
             Section {
                 HStack(spacing: 16) {
                     Image(nsImage: NSApplication.shared.applicationIconImage)
@@ -25,20 +20,25 @@ struct AboutView: View {
                 }
                 .padding(.vertical, 8)
             }
-            Section("Release") {
-                LabeledContent("Channel", value: version.channel.rawValue)
-                LabeledContent("Version", value: version.version ?? "Unavailable")
-                if let build = version.build {
-                    LabeledContent("Build", value: build)
+            Section { rows }
+        }
+        .formStyle(.grouped)
+    }
+
+    var rows: some View {
+        Group {
+            SettingRow(title: "StableBar \(version.version ?? "version unavailable")",
+                       hint: version.build.map { "\(version.channel.rawValue) · build \($0)" } ?? version.channel.rawValue) {
+                if let update, update.version == nil {
+                    Button("Check now", action: update.checkForUpdates)
                 }
             }
             .textSelection(.enabled)
-            Section("Updates") {
-                if let update {
-                    UpdateSettings(update: update)
-                } else {
-                    Text("This build doesn't install updates. Download new versions from the [releases page](https://github.com/Seb-GRAF/StableBar/releases).")
-                        .foregroundStyle(.secondary)
+            if let update {
+                UpdateSettings(update: update)
+            } else {
+                SettingRow(title: "Releases page", hint: "This build doesn't install updates. Download new versions there.") {
+                    Button("Open") { NSWorkspace.shared.open(URL(string: "https://github.com/Seb-GRAF/StableBar/releases")!) }
                 }
             }
         }
@@ -58,31 +58,28 @@ private struct UpdateSettings: View {
     }
 
     var body: some View {
-        LabeledContent {
-            Picker("Update track", selection: $track) {
-                Text("Stable").tag("stable")
-                Text("Beta").tag("beta")
-            }
-            .labelsHidden()
-            .fixedSize()
-        } label: {
-            Text("Update track")
-            Text("Beta also gets stable releases, whichever is newer. Switching back to Stable keeps your beta until a newer stable release is out.")
-        }
-        Toggle("Check for updates automatically", isOn: $checksAutomatically)
-            .onChange(of: checksAutomatically) { update.updater.automaticallyChecksForUpdates = checksAutomatically }
-        Toggle("Download and install updates automatically", isOn: $installsAutomatically)
-            .disabled(!checksAutomatically)
-            .onChange(of: installsAutomatically) { update.updater.automaticallyDownloadsUpdates = installsAutomatically }
-        HStack {
-            if let version = update.version {
-                Text("StableBar \(version) is available.")
-                Spacer()
+        if let version = update.version {
+            SettingRow(title: "StableBar \(version) is available") {
                 Button(update.action, action: update.proceed).disabled(!update.canProceed)
-            } else {
-                Spacer()
-                Button("Check for Updates…", action: update.checkForUpdates)
             }
+        }
+        SettingRow(title: "Track", hint: "Beta also gets stable releases, whichever is newer. Switching back to Stable keeps your beta until a newer stable release is out.") {
+            SettingsSegments(selection: $track, options: [("stable", "Stable"), ("beta", "Beta")], stretches: false)
+        }
+        SettingRow(title: "Check for updates automatically") {
+            Toggle("Check for updates automatically", isOn: $checksAutomatically)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .onChange(of: checksAutomatically) { update.updater.automaticallyChecksForUpdates = checksAutomatically }
+        }
+        SettingRow(title: "Install updates automatically") {
+            Toggle("Install updates automatically", isOn: $installsAutomatically)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .disabled(!checksAutomatically)
+                .onChange(of: installsAutomatically) { update.updater.automaticallyDownloadsUpdates = installsAutomatically }
         }
     }
 }

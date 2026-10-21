@@ -83,7 +83,7 @@ private func canonicalWorkspaceHover(_ value: ConfigurationValue) -> Configurati
 /// just like WidgetStyle.addingStates. Keep other explicit nulls so they can clear defaults.
 private func workspaceAliasFallback(_ explicit: ConfigurationValue?, _ alias: ConfigurationValue) -> ConfigurationValue {
     guard let explicit, explicit != .null else { return alias }
-    if case let .object(own) = explicit, case let .object(base) = alias {
+    if case let .object(own) = explicit, case let .object(base) = alias, !explicit.isGradient, !alias.isGradient {
         return .object(base.merging(own) { workspaceAliasFallback($1, $0) })
     }
     return explicit
@@ -99,10 +99,11 @@ extension WidgetStyle {
     /// Query/Diagnostics use the same names as authoring, including resolved values and states.
     var configurationValue: ConfigurationValue {
         var value: [String: ConfigurationValue] = [:]
-        for (key, color) in [("foreground", foreground), ("background", background), ("borderColor", borderColor),
+        for (key, color) in [("foreground", foreground), ("borderColor", borderColor),
                              ("accent", accent), ("accentText", accentText), ("shadowColor", shadowColor)] {
             if let color { value[key] = color.configurationValue }
         }
+        if let background { value["background"] = background.configurationValue }
         for (key, number) in [("borderWidth", borderWidth), ("cornerRadius", cornerRadius), ("fontSize", fontSize),
                               ("iconSize", iconSize), ("paddingHorizontal", paddingHorizontal), ("paddingVertical", paddingVertical),
                               ("spacing", spacing), ("width", width), ("minWidth", minWidth), ("maxWidth", maxWidth),

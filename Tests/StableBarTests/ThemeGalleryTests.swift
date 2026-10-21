@@ -76,6 +76,27 @@ final class ThemeGalleryTests: XCTestCase {
         }
     }
 
+    @MainActor func testInstalledThemesShowCatalogMembershipWithoutClaimingOrigin() async throws {
+        let fixture = try ThemeGalleryFixture()
+        defer { fixture.close() }
+        let listed = try fixture.theme(#"{}"#, id: "listed")
+        let unlisted = try fixture.theme(#"{}"#)
+        let index = LocalPackageIndex(fixture: fixture)
+        _ = try await index.add(id: "listed", version: "1")
+        let store = try fixture.store()
+        defer { store.stop() }
+        let gallery = ThemeGallery(store: store, client: PackageStoreClient(packages: fixture.packages, indexURL: index.url))
+        await gallery.refresh()
+        XCTAssertEqual(gallery.source(of: listed), .installed)
+        XCTAssertEqual(gallery.source(of: unlisted), .installed)
+        let included = try XCTUnwrap(gallery.choices.first { $0.isBundled })
+        XCTAssertEqual(gallery.source(of: included), .included)
+        await gallery.loadStore()
+        XCTAssertEqual(gallery.source(of: listed), .listed)
+        XCTAssertEqual(gallery.source(of: unlisted), .installed)
+        XCTAssertEqual(gallery.source(of: included), .included)
+    }
+
     @MainActor func testStorePreviewsUseDownloadedThemesAndGetInstallsSelectsAndSavesOneChange() async throws {
         let fixture = try ThemeGalleryFixture(#"{"widgets":[{"id":"clock","type":"clock","position":"right"}]}"#)
         defer { fixture.close() }
@@ -109,6 +130,42 @@ final class ThemeGalleryTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.packages.directory.appending(path: "store-theme/1").path))
         await gallery.refresh()
         XCTAssertTrue(gallery.storeThemes.isEmpty)
+    }
+
+    @MainActor func testSaveAsThemeMovesYourLookIntoANewThemeWithOneUndoStep() async throws {
+        let fixture = try ThemeGalleryFixture(#"""
+        {"theme":{"id":"blueprint"},"tokens":{"accent":"#ff0000","brand":"#00ff00"},"defaults":{"fontSize":17},
+         "bar":{"offset":30,"height":34},
+         "widgets":[{"id":"clock","type":"clock","position":"right","style":{"foreground":"@token.brand"}}]}
+        """#)
+        defer { fixture.close() }
+        let store = try fixture.store()
+        defer { store.stop() }
+        let before = try Data(contentsOf: fixture.url)
+        var look = store.effectiveDocument
+        let gallery = ThemeGallery(store: store)
+        await gallery.refresh()
+        await gallery.save(try XCTUnwrap(gallery.choices.first { $0.key == "blueprint" }), as: "My Blueprint")
+        XCTAssertNil(gallery.error(for: "blueprint"))
+        XCTAssertEqual(gallery.selectedKey, "my-blueprint/1.0.0")
+        let document = try fixture.document()
+        XCTAssertEqual(document["theme"], .object(["id": .string("my-blueprint"), "version": .string("1.0.0")]))
+        XCTAssertEqual(document["tokens"], .object(["brand": .string("#00ff00")]))
+        XCTAssertNil(document["defaults"])
+        XCTAssertEqual(document["bar"], .object(["offset": .number(30)]))
+        XCTAssertNotNil(document["widgets"])
+        var saved = store.effectiveDocument
+        look["theme"] = nil
+        saved["theme"] = nil
+        XCTAssertEqual(saved, look)
+        XCTAssertEqual(gallery.overrides.values.map(\.path), [["tokens", "brand"], ["widgets", "clock", "style", "foreground"]])
+        XCTAssertEqual(store.customizationHistory.undoSteps.count, 1)
+        try store.customizationHistory.undo()
+        XCTAssertEqual(try Data(contentsOf: fixture.url), before)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.packages.directory.appending(path: "my-blueprint/1.0.0").path))
+        await gallery.refresh()
+        await gallery.save(try XCTUnwrap(gallery.choices.first { $0.key == "blueprint" }), as: "My Blueprint")
+        XCTAssertEqual(gallery.selectedKey, "my-blueprint/1.0.1")
     }
 
     @MainActor func testOfflineStoreLeavesLocalGalleryAndSelectionWorking() async throws {

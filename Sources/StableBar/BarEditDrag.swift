@@ -48,16 +48,7 @@ final class BarEditDragSourceView: WidgetDragSourceView {
         super.mouseUp(with: event)
     }
 
-    override func dragImage() -> NSImage {
-        let name = name
-        return NSImage(size: NSSize(width: 150, height: 28), flipped: false) { rect in
-            NSColor.controlBackgroundColor.setFill()
-            rect.fill()
-            (name as NSString).draw(in: rect.insetBy(dx: 8, dy: 5), withAttributes: [.font: NSFont.systemFont(ofSize: 12),
-                                                                                  .foregroundColor: NSColor.labelColor])
-            return true
-        }
-    }
+    override func dragImage() -> NSImage { dragChip() }
 
     override func didEndWidgetDrag() { editing?.insertion = nil }
 }
@@ -99,7 +90,7 @@ final class BarEditDropTargetView: WidgetHostingView {
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
         guard let payload = acceptedPayload(sender), let target = target(sender, payload: payload) else { return [] }
-        editing?.insertion = target
+        if editing?.insertion != target { editing?.insertion = target }
         return .move
     }
 
