@@ -127,6 +127,7 @@ final class SetupSession {
     var openAtLogin: Bool?
     var loginStatus = SMAppService.mainApp.status
     var calendarAccess = EKEventStore.authorizationStatus(for: .event)
+    var menuBarHides = UserDefaults.standard.bool(forKey: "_HIHideMenuBar")
     var error: String?
     private(set) var base: Configuration?
     private let sessionEdits: [ConfigurationEdit]
@@ -194,6 +195,7 @@ final class SetupSession {
     func refreshAccess() {
         loginStatus = SMAppService.mainApp.status
         calendarAccess = EKEventStore.authorizationStatus(for: .event)
+        menuBarHides = UserDefaults.standard.bool(forKey: "_HIHideMenuBar")
         guard step < 5 else { return }
         if calendarAccess == .fullAccess { preferences.deferMeetings = false } else { preview() }
     }
@@ -281,6 +283,22 @@ struct SetupCardView: View {
                         }
                         Text("Widgets that control another app ask for Automation access when you use that action.")
                             .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if session.placement == .top {
+                        section("Menu bar") {
+                            if session.menuBarHides {
+                                Label("The macOS menu bar hides automatically", systemImage: "checkmark.circle")
+                                    .foregroundStyle(SettingsPalette.success)
+                            } else {
+                                Text("On the top edge, the macOS menu bar covers StableBar until you set it to hide automatically.")
+                                    .font(.callout).foregroundStyle(.secondary)
+                                Button("Open Menu Bar Settings…") {
+                                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension")!)
+                                }
+                                Text("Choose Always for “Automatically hide and show the menu bar”.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                     }
                     section("Windows") {
                         switchRow("Keep windows clear of StableBar", isOn: Binding(

@@ -241,6 +241,13 @@ struct SetupTourView: View {
                 placementTile(.top, title: "Top edge", detail: "Covers the menu bar area.")
                 placementTile(.belowMenuBar, title: "Below menu bar", detail: "Keeps macOS menus visible.")
             }
+            if session.placement == .top && !session.menuBarHides {
+                Label("The macOS menu bar covers a bar on the top edge until it hides automatically. You can turn that on before you finish.",
+                      systemImage: "menubar.rectangle")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(maxWidth: 520)
+            }
             if session.base?.widgets.contains(where: { if case .clock = $0.content { true } else { false } }) == true {
                 HStack(spacing: 12) {
                     Text("Clock").font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
