@@ -160,6 +160,38 @@ private final class MenuApplication: NSRunningApplication, @unchecked Sendable {
     #expect(first.dataProvider?.data == second.dataProvider?.data)
 }
 
+@Test @MainActor func appMenuReportsExpansionAndReturnsToItsCollapsedWidth() async throws {
+    let source = MenuReadFixture()
+    let menu = AppMenu(checkAccess: { source.trusted }, readAttribute: source.read)
+    menu.read(MenuApplication(pid: 100))
+    var expanded: Bool?
+    func content(hovering: Bool) -> AppMenuView {
+        AppMenuView(appMenu: menu, items: menu.items, expandOnHover: true, hovering: hovering,
+                    appearance: WidgetAppearance(WidgetStyle(), defaults: WidgetStyle()),
+                    padding: EdgeInsets(), requestAccess: {}) { expanded = $0 }
+    }
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 500, height: 40),
+                          styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.close() }
+    let host = NSHostingView(rootView: content(hovering: false))
+    window.contentView = host
+    var widths: [CGFloat] = []
+    for hovering in [false, true, false] {
+        host.rootView = content(hovering: hovering)
+        for _ in 0..<100 {
+            host.layoutSubtreeIfNeeded()
+            if expanded == hovering { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(expanded == hovering)
+        widths.append(host.fittingSize.width)
+    }
+    #expect(widths[1] > widths[0])
+    #expect(abs(widths[2] - widths[0]) < 0.5)
+    #expect(!window.isVisible)
+}
+
 /// Actual AppKit/SwiftUI rendering, in a window that is never ordered onto the user's screen.
 @MainActor final class PresentationHostingView: NSHostingView<AnyView> {
     private(set) var layoutCalls = 0

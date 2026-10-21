@@ -103,6 +103,7 @@ func updateTileStaysAtTheRightEndOfTheBar(stage: AppUpdate.Stage) {
     var busy = false
     var probes = 0
     var backgroundChecks = 0
+    var userChecks = 0
 
     override var automaticallyChecksForUpdates: Bool {
         get { checksAutomatically }
@@ -120,6 +121,12 @@ func updateTileStaysAtTheRightEndOfTheBar(stage: AppUpdate.Stage) {
     override func checkForUpdatesInBackground() {
         #expect(!busy)
         backgroundChecks += 1
+        busy = true
+    }
+
+    override func checkForUpdates() {
+        #expect(!busy)
+        userChecks += 1
         busy = true
     }
 }
@@ -190,4 +197,122 @@ func completedUpdateSessionsDoNotStartAnotherBackgroundCheck(check: SPUUpdateChe
     update.updater(updater, didFindValidUpdate: .empty())
     update.updater(updater, didFinishUpdateCycleFor: check, error: nil)
     #expect(updater.backgroundChecks == 0)
+}
+
+private func updateState(_ stage: SPUUserUpdateStage = .notDownloaded) throws -> SPUUserUpdateState {
+    let encoder = NSKeyedArchiver(requiringSecureCoding: true)
+    encoder.encode(stage.rawValue, forKey: "SPUUserUpdateStateStage")
+    encoder.encode(false, forKey: "SPUUserUpdateStateUserInitiated")
+    encoder.finishEncoding()
+    let decoder = try NSKeyedUnarchiver(forReadingFrom: encoder.encodedData)
+    defer { decoder.finishDecoding() }
+    return try #require(SPUUserUpdateState(coder: decoder))
+}
+
+@Test @MainActor func downloadingAPendingUpdateChecksAgainAndInstallsOnlyTheNewOffer() throws {
+    let (update, updater) = updateProbe()
+    var oldChoices: [SPUUserUpdateChoice] = []
+    update.showUpdateFound(with: .empty(), state: try updateState()) { oldChoices.append($0) }
+    let offeredVersion = update.version
+    updater.busy = true
+    updater.checksAutomatically = false
+
+    update.proceed()
+    #expect(oldChoices == [.dismiss])
+    #expect(updater.userChecks == 0)
+    #expect(!update.canProceed)
+    #expect(update.action == "Checking…")
+    update.dismissUpdateInstallation()
+    #expect(update.version == offeredVersion)
+
+    updater.busy = false
+    update.updater(updater, didFinishUpdateCycleFor: .updatesInBackground, error: nil)
+    #expect(updater.userChecks == 1)
+    #expect(!update.canProceed)
+
+    var newChoices: [SPUUserUpdateChoice] = []
+    update.showUpdateFound(with: .empty(), state: try updateState()) { newChoices.append($0) }
+    #expect(oldChoices == [.dismiss])
+    #expect(newChoices == [.install])
+    #expect(update.stage == .downloading)
+    #expect(!update.canProceed)
+    updater.checksAutomatically = true
+    update.checkForUpdateInformation()
+    #expect(updater.probes == 0)
+
+    var installChoices: [SPUUserUpdateChoice] = []
+    update.showReady(toInstallAndRelaunch: { installChoices.append($0) })
+    update.proceed()
+    #expect(installChoices == [.install])
+    #expect(updater.userChecks == 1)
+}
+
+@Test @MainActor func failedDownloadChecksDoNotDownloadALaterOffer() throws {
+    let (update, updater) = updateProbe()
+    update.showUpdateFound(with: .empty(), state: try updateState()) { _ in }
+    update.proceed()
+    update.dismissUpdateInstallation()
+    update.updater(updater, didFinishUpdateCycleFor: .updates, error: nil)
+    update.dismissUpdateInstallation()
+    updater.busy = false
+    update.updater(updater, didFinishUpdateCycleFor: .updates, error: URLError(.notConnectedToInternet))
+    #expect(update.version == nil)
+    #expect(updater.userChecks == 1)
+
+    var choices: [SPUUserUpdateChoice] = []
+    update.showUpdateFound(with: .empty(), state: try updateState()) { choices.append($0) }
+    #expect(choices.isEmpty)
+    #expect(update.canProceed)
+    #expect(update.action == "Download")
+}
+
+@Test @MainActor func alreadyDownloadedUpdatesInstallWithoutCheckingAgain() throws {
+    let (update, updater) = updateProbe()
+    var choices: [SPUUserUpdateChoice] = []
+    update.showUpdateFound(with: .empty(), state: try updateState(.downloaded)) { choices.append($0) }
+    update.proceed()
+    #expect(choices == [.install])
+    #expect(updater.userChecks == 0)
+}
+
+@Test func updateHistoryIncludesEveryReleaseInTheInstalledToOfferedRange() async throws {
+    let data = Data("""
+        [
+          {"tag_name":"v0.5.0-beta.99","body":"* First fix","published_at":"2026-10-19T10:05:00Z"},
+          {"tag_name":"v0.5.0-beta.94","body":"* Already installed","published_at":"2026-10-19T10:00:00Z"},
+          {"tag_name":"appcast","body":"Feed","published_at":"2026-10-19T10:06:00Z"},
+          {"tag_name":"v0.5.0-beta.113","body":"* Second fix","published_at":"2026-10-19T10:10:00Z"},
+          {"tag_name":"v0.5.0-beta.121","body":"* Not offered yet","published_at":"2026-10-20T08:00:00Z"},
+          {"tag_name":"v0.4.0","body":"* Old release","published_at":"2026-10-15T08:00:00Z"}
+        ]
+        """.utf8)
+    let releases = try await UpdateRelease.load(after: "0.5.0-beta.94", through: "0.5.0-beta.113") { _ in data }
+    #expect(releases.map(\.tagName) == ["v0.5.0-beta.113", "v0.5.0-beta.99"])
+    #expect(releases.map(\.body) == ["* Second fix", "* First fix"])
+}
+
+@Test func updateHistoryReadsPastTheFirstPageAndIncludesTheStableRelease() async throws {
+    let firstPage = try JSONSerialization.data(withJSONObject: (0..<100).map { index in
+        ["tag_name": "v0.6.0-beta.\(index)", "body": "* Future change", "published_at": "2026-10-21T08:00:00Z"]
+    })
+    let secondPage = Data("""
+        [
+          {"tag_name":"v0.5.0","body":"* Stable release","published_at":"2026-10-20T12:00:00Z"},
+          {"tag_name":"v0.5.0-beta.113","body":null,"published_at":"2026-10-20T11:00:00Z"},
+          {"tag_name":"v0.5.0-beta.99","body":"* Already installed","published_at":"2026-10-19T10:05:00Z"}
+        ]
+        """.utf8)
+    var pages: [String] = []
+    let releases = try await UpdateRelease.load(after: "0.5.0-beta.99", through: "0.5.0") { url in
+        pages.append(url.query!)
+        return pages.count == 1 ? firstPage : secondPage
+    }
+    #expect(pages == ["per_page=100&page=1", "per_page=100&page=2"])
+    #expect(releases.map(\.tagName) == ["v0.5.0", "v0.5.0-beta.113"])
+}
+
+@Test func updateHistoryReportsMissingReleaseBoundariesInsteadOfShowingAnIncompleteRange() async {
+    await #expect(throws: URLError.self) {
+        try await UpdateRelease.load(after: "0.5.0-beta.99", through: "0.5.0") { _ in Data("[]".utf8) }
+    }
 }

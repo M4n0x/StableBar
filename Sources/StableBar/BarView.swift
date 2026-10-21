@@ -331,6 +331,16 @@ struct WidgetView: View {
         default: false
         }
         let tile = content(resolution, open: isOpen, padding: padding)
+            .overlay(alignment: .topTrailing) {
+                if widget.id == AppUpdate.widgetID {
+                    Circle()
+                        .fill(appearance.accent)
+                        .frame(width: appearance.iconSize / 2, height: appearance.iconSize / 2)
+                        .overlay { Circle().strokeBorder(appearance.background, lineWidth: 1.5) }
+                        .offset(x: 2, y: -2)
+                        .accessibilityHidden(true)
+                }
+            }
             .padding(.leading, style.paddingLeading ?? appearance.paddingHorizontal)
             .padding(.trailing, style.paddingTrailing ?? appearance.paddingHorizontal)
             .padding(.top, hasCells ? 0 : padding.top)
@@ -345,7 +355,13 @@ struct WidgetView: View {
                 Button {
                     guard store.barEditing.allowsWidgetActions else { return }
                     store.popup.toggle(popup, widget: widget, defaults: popupDefaults.inheriting(defaults), store: store, anchor: popupAnchor)
-                } label: { tile }
+                } label: {
+                    if widget.id == AppUpdate.widgetID {
+                        tile.accessibilityLabel(widget.tooltip!)
+                    } else {
+                        tile
+                    }
+                }
                 .buttonStyle(.plain)
             } else if let command = output?.onClick ?? widget.onClick {
                 Button { runAction(command, sender: "mouse.clicked", button: "left") } label: { tile }
@@ -438,9 +454,18 @@ struct WidgetView: View {
                           configuration: widget.workspace, animation: widget.animation, defaults: resolution.base,
                           modeAliases: store.configuration?.look(on: screenKind).modeAliases ?? [:], widgetID: widget.id)
         case let .appMenu(expandOnHover) where widget.layout == nil:
-            AppMenuView(appMenu: store.appMenu, items: store.appMenu.items, expandOnHover: expandOnHover, hovering: hovered,
+            AppMenuView(appMenu: store.appMenu, items: store.appMenu.items, expandOnHover: expandOnHover,
+                        hovering: measuring ? store.presentations[widget.id]?.expandedAppMenuDisplays.contains(monitor) == true : hovered,
                         appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
-                        padding: padding, requestAccess: store.windowClearance.requestAccess)
+                        padding: padding, requestAccess: store.windowClearance.requestAccess) { expanded in
+                if !measuring && expandOnHover {
+                    if expanded {
+                        store.presentations[widget.id]?.expandedAppMenuDisplays.insert(monitor)
+                    } else {
+                        store.presentations[widget.id]?.expandedAppMenuDisplays.remove(monitor)
+                    }
+                }
+            }
         case .appleMenu where widget.layout == nil:
             AppMenuView(appMenu: store.appMenu, items: [store.appMenu.appleMenu].compactMap { $0 }, isAppleMenu: true,
                         appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
@@ -661,6 +686,7 @@ struct AppMenuView: View {
     let appearance: WidgetAppearance
     let padding: EdgeInsets
     let requestAccess: () -> Void
+    var expansionChanged: (Bool) -> Void = { _ in }
     @State private var hoveredItem: AppMenuItem?
     @State private var menuOpen = false
 
@@ -681,6 +707,8 @@ struct AppMenuView: View {
         }
         .fixedSize(horizontal: true, vertical: false)
         .onHover { if $0 { appMenu.refresh() } }
+        .onChange(of: hovering || menuOpen, initial: true) { _, expanded in expansionChanged(expanded) }
+        .onDisappear { expansionChanged(false) }
     }
 }
 
@@ -708,11 +736,11 @@ private struct AppMenuTitle: View {
                     Text(item.title).fontWeight(index == 0 ? .bold : nil)
                 }
             }
-            .foregroundStyle(hovered ? appearance.accentText : appearance.foreground)
+            .foregroundStyle(appearance.foreground)
             .padding(.horizontal, 7)
             .padding(padding)
             .background {
-                if hovered { RoundedRectangle(cornerRadius: max(appearance.cornerRadius - 4, 0)).fill(appearance.accent) }
+                if hovered { RoundedRectangle(cornerRadius: max(appearance.cornerRadius - 4, 0)).fill(appearance.hoverBackground) }
             }
             .background(MenuAnchor(view: anchor))
             .contentShape(Rectangle())

@@ -125,9 +125,10 @@ private func block(_ json: String) throws -> PopupBlock {
     #expect(units.map(\.transition) == [.roll, .fade, WidgetTransition.none])
 }
 
-@Test func onlyAnActiveAppThatStayedInTheBarAnimatesItsResize() throws {
+@Test(arguments: [#""type":"activeApp""#, #""type":"appMenu","expandOnHover":true"#])
+func appWidgetsThatStayedInTheBarAnimateTheirResize(content: String) throws {
     let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
-    {"widgets":[{"id":"app","type":"activeApp","position":"left"},
+    {"widgets":[{"id":"app",\#(content),"position":"left"},
                 {"id":"note","type":"text","text":"A","position":"left"}]}
     """#.utf8))
     let units = BarUnit.make(widgets: configuration.widgets, groups: configuration.groups)
@@ -142,11 +143,10 @@ private func block(_ json: String) throws -> PopupBlock {
     #expect(!BarUnit.animatesResize(units, measured: both, from: kept, to: wider, reduceMotion: true))
 }
 
-@Test @MainActor func updateTileAnimatesItsFirstMeasurementAndDownloadLabelWidth() {
+@Test @MainActor func updateTileAnimatesItsFirstMeasurement() {
     let units = BarUnit.make(widgets: [AppUpdate.tile(.available)], groups: [:])
     let id = units[0].id
     #expect(BarUnit.animatesResize(units, measured: [], from: [:], to: [id: 80], reduceMotion: false))
-    #expect(BarUnit.animatesResize(units, measured: [id], from: [id: 80], to: [id: 120], reduceMotion: false))
     #expect(!BarUnit.animatesResize(units, measured: [id], from: [id: 120], to: [id: 120], reduceMotion: false))
     #expect(!BarUnit.animatesResize(units, measured: [], from: [:], to: [id: 80], reduceMotion: true))
 }

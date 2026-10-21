@@ -151,6 +151,68 @@ private enum FrontmostApp {
     }
 }
 
+@Test @MainActor func scrollingTextTakesItsOwnWidthUpToMaxWidth() throws {
+    let context = BlockContext(fillsWidth: false, open: { _ in }, runAction: { _, _ in })
+    func drawing(_ text: String, style: String, scrolls: Bool = true) throws -> Drawing {
+        let speed = scrolls ? #","scrollSpeed":20"# : ""
+        let block = try decode(PopupBlock.self, #"{"type":"field","field":"title"\#(speed),"style":\#(style)}"#)
+        return try draw(PopupBlockView(block: block, inheritedStyle: WidgetStyle(fontSize: 13), fields: ["title": text], context: context))
+    }
+    let short = "Mikasa"
+    let long = "Mikasa — Moha MMZ, the extended mix that keeps going"
+    let plain = try drawing(short, style: "{}", scrolls: false)
+    #expect(plain.width < 320)
+    #expect(try drawing(short, style: #"{"maxWidth":160}"#).width == plain.width, "A short title leaves no gap after it")
+    #expect(try drawing(long, style: #"{"maxWidth":160}"#).width == 320, "A long title stops at maxWidth")
+    #expect(try drawing(short, style: #"{"minWidth":160}"#).width == 320)
+    #expect(try drawing(short, style: #"{"width":160}"#).width == 320, "A fixed width keeps its footprint")
+    #expect(try drawing(long, style: #"{"width":160,"maxWidth":40}"#).width == 320, "A fixed width wins over maxWidth")
+}
+
+@Test @MainActor func blocksStayWithinTheirMinimumAndMaximumWidths() throws {
+    func width(_ json: String, fillsWidth: Bool = false, offered: CGFloat? = nil) throws -> Int {
+        let block = try decode(PopupBlock.self, json)
+        let renderer = ImageRenderer(content: PopupBlockView(block: block, inheritedStyle: WidgetStyle(fontSize: 13), fields: [:],
+                                                             context: BlockContext(fillsWidth: fillsWidth, open: { _ in }, runAction: { _, _ in })))
+        renderer.proposedSize = ProposedViewSize(width: offered, height: nil)
+        return try #require(renderer.cgImage).width
+    }
+    let text = try width(#"{"type":"text","text":"Ready"}"#)
+    #expect(try width(#"{"type":"text","text":"Ready","style":{"maxWidth":200}}"#) == text)
+    #expect(try width(#"{"type":"text","text":"Ready","style":{"minWidth":200}}"#) == 200)
+    #expect(try width(#"{"type":"text","text":"A much longer status line","style":{"maxWidth":40}}"#) == 40)
+    #expect(try width(#"{"type":"text","text":"Ready"}"#, fillsWidth: true, offered: 300) == 300)
+    #expect(try width(#"{"type":"text","text":"Ready","style":{"maxWidth":120}}"#, fillsWidth: true, offered: 300) == 120,
+            "A popup block fills the width up to its maxWidth")
+}
+
+/// A drawing is one frame, so this checks the still shapes: playing in the measuring copy and under
+/// Reduce Motion, and settled when the source is off.
+@Test @MainActor func equalizersDrawStillWhileMeasuredAndSettleWhenTheirSourceIsOff() throws {
+    let style = WidgetStyle(foreground: HexColor(0x2255ccff))
+    let block = try decode(PopupBlock.self, #"{"type":"equalizer","source":"playing"}"#)
+    let always = try decode(PopupBlock.self, #"{"type":"equalizer"}"#)
+    func drawing(_ block: PopupBlock, fields: [String: String] = [:], values: [String: Double] = [:],
+                 _ environment: @escaping (inout EnvironmentValues) -> Void) throws -> Drawing {
+        let context = BlockContext(values: values, fillsWidth: false, open: { _ in }, runAction: { _, _ in })
+        return try draw(PopupBlockView(block: block, inheritedStyle: style, fields: fields, context: context)
+            .transformEnvironment(\.self, transform: environment))
+    }
+    let measuring: (inout EnvironmentValues) -> Void = { $0.measuringBarWidths = true }
+    let reduceMotion: (inout EnvironmentValues) -> Void = { $0._accessibilityReduceMotion = true }
+    let playing = try drawing(always, measuring)
+    #expect(playing.width == 28 && playing.height == 24, "Four 2 pt bars, 2 pt apart, 12 pt tall, at 2×")
+    #expect(try drawing(always, reduceMotion).difference(from: playing) <= tolerance)
+    for on in [["playing": "1"], ["playing": "true"]] {
+        #expect(try drawing(block, fields: on, measuring).difference(from: playing) <= tolerance, "\(on)")
+    }
+    #expect(try drawing(block, values: ["playing": 1], measuring).difference(from: playing) <= tolerance)
+    let settled = try drawing(block, fields: ["playing": ""], measuring)
+    #expect(settled.width == playing.width && settled.height == playing.height, "Settling keeps the footprint")
+    #expect(settled.difference(from: playing) > tolerance)
+    #expect(try drawing(block, measuring).difference(from: settled) <= tolerance, "A missing field is off")
+}
+
 @Test func defaultLayoutsDrawTheWidgetsHoverAndOpenStylesWhileConfiguredLayoutsKeepTheirOwnHover() throws {
     let resolution = ResolvedWidgetStyle(base: try decode(WidgetStyle.self, ##"""
     {"foreground":"#111111","states":{"hover":{"fontWeight":"bold","foreground":"#222222"},"open":{"foreground":"#333333"}}}

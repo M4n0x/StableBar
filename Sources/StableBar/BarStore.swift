@@ -62,7 +62,7 @@ final class BarStore: NSObject {
     private var triedTheme: ThemeChoice?
     private var managesConnections = false
     private let configurationWatcher = ConfigurationWatcher()
-    private var reloadTask: Task<Void, Never>?
+    private(set) var reloadTask: Task<Void, Never>?
     private var eventObservers: [NSObjectProtocol] = []
     private var reloadObserver: NSObjectProtocol?
     private var actions: [UUID: Task<Void, Never>] = [:]
@@ -162,7 +162,7 @@ final class BarStore: NSObject {
         if reload { readConfiguration(leavingEditMode: false) }
     }
 
-    private func scheduleReload() {
+    func scheduleReload() {
         reloadTask?.cancel()
         let generation = configurationWatcher.generation
         reloadTask = Task {
@@ -1004,6 +1004,7 @@ private func withoutShellVariables(_ environment: [String: String]) -> [String: 
 final class WidgetPresentation {
     private(set) var style = ResolvedWidgetStyle(base: WidgetStyle())
     private(set) var screenStyles: [String: ResolvedWidgetStyle] = [:]
+    var expandedAppMenuDisplays: Set<Int> = []
     /// Output `hidden`, unless the widget has an error to show.
     private(set) var hidden = false
     /// Output `display`, which replaces the configured one.
