@@ -324,6 +324,16 @@ struct WidgetView: View {
         default: false
         }
         let tile = content(resolution, open: isOpen, padding: padding)
+            .overlay(alignment: .topTrailing) {
+                if widget.id == AppUpdate.widgetID {
+                    Circle()
+                        .fill(appearance.accent)
+                        .frame(width: appearance.iconSize / 2, height: appearance.iconSize / 2)
+                        .overlay { Circle().strokeBorder(appearance.background, lineWidth: 1.5) }
+                        .offset(x: 2, y: -2)
+                        .accessibilityHidden(true)
+                }
+            }
             .padding(.leading, style.paddingLeading ?? appearance.paddingHorizontal)
             .padding(.trailing, style.paddingTrailing ?? appearance.paddingHorizontal)
             .padding(.top, hasCells ? 0 : padding.top)
@@ -362,8 +372,7 @@ struct WidgetView: View {
                                   shape: RoundedRectangle(cornerRadius: appearance.cornerRadius)))
         .overlay {
             RoundedRectangle(cornerRadius: appearance.cornerRadius)
-                .strokeBorder(widget.id == AppUpdate.widgetID ? appearance.accent : appearance.borderColor,
-                              lineWidth: widget.id == AppUpdate.widgetID ? 1 : appearance.borderWidth)
+                .strokeBorder(appearance.borderColor, lineWidth: appearance.borderWidth)
         }
         .overlay(alignment: .topTrailing) {
             if let error = store.scripts[widget.id]?.error ?? store.actionErrors[widget.id] {

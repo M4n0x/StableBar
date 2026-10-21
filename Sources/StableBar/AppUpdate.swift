@@ -89,11 +89,11 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
 
     static func tile(_ stage: Stage) -> WidgetConfiguration {
         let (icon, tooltip) = switch stage {
-        case .available: ("arrow.down", "Download update")
-        case .downloading: ("arrow.down", "Downloading update…")
-        case .extracting: ("arrow.down", "Preparing update…")
-        case .ready: ("arrow.clockwise", "Install and relaunch")
-        case .installing: ("arrow.clockwise", "Installing update…")
+        case .available: ("arrow.down.circle.fill", "Download update")
+        case .downloading: ("arrow.down.circle.fill", "Downloading update…")
+        case .extracting: ("arrow.down.circle.fill", "Preparing update…")
+        case .ready: ("arrow.triangle.2.circlepath.circle.fill", "Install and relaunch")
+        case .installing: ("arrow.triangle.2.circlepath.circle.fill", "Installing update…")
         }
         return try! ConfigurationValue.object([
             "id": .string(widgetID), "position": .string("right"), "type": .string("text"),
