@@ -62,7 +62,7 @@ private func presentationConfiguration(_ json: String) throws -> Configuration {
     let resolved = block.resolvedStyle(inherited: WidgetStyle(fontSize: 13), styles: ["emphasis": WidgetStyle(fontSize: 19)],
         fields: [:], states: mode, roles: config.roles)
     #expect(resolved.text.fontSize == 18) // active state beats every base layer
-    #expect(resolved.box.background == HexColor(0xabcdefff))
+    #expect(resolved.box.background == .color(HexColor(0xabcdefff)))
     #expect(resolved.box.paddingHorizontal == 9)
     #expect(resolved.inherited.background == nil)
     #expect(resolved.inherited.width == nil)
@@ -176,10 +176,10 @@ private func presentationConfiguration(_ json: String) throws -> Configuration {
     defer { store.stop() }
     let widget = config.widgets[0], popup = try #require(widget.popup)
     let view = PopupView(popup: popup, style: popup.baseStyle(widget: widget, defaults: config.popupDefaults.inheriting(config.defaults)), store: store, widget: widget)
-    #expect(view.presentationStyle.background == HexColor(0x222222ff))
+    #expect(view.presentationStyle.background == .color(HexColor(0x222222ff)))
     #expect(view.presentationStyle.fontSize == 13)
     store.workspaceStore.acceptMode("tailing")
-    #expect(view.presentationStyle.background == HexColor(0x222222ff))
+    #expect(view.presentationStyle.background == .color(HexColor(0x222222ff)))
     #expect(view.presentationStyle.borderColor == HexColor(0xaa8844ff))
 }
 
@@ -283,8 +283,8 @@ private func presentationConfiguration(_ json: String) throws -> Configuration {
         """##
         let config = try presentationConfiguration(json)
         let workspace = try #require(config.widgets[0].workspace)
-        #expect(workspace.cellStyle(nil).hovered.background == HexColor(0x111111ff))
-        #expect(workspace.cellStyle(.focused).hovered.background == HexColor(0x111111ff))
+        #expect(workspace.cellStyle(nil).hovered.background == .color(HexColor(0x111111ff)))
+        #expect(workspace.cellStyle(.focused).hovered.background == .color(HexColor(0x111111ff)))
         #expect(workspace.cellStyle(nil).hoveredApp.foreground == HexColor(0x555555ff))
         #expect(workspace.cellStyle(.focused).hoveredApp.foreground == HexColor(0x555555ff))
     }

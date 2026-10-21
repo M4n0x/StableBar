@@ -8,6 +8,7 @@ final class PackageDraft {
     var secrets: [String: String] = [:]
     var savedSecrets: Set<String>?
     var screenshotData: Data?
+    var themePreview: ThemePreview?
     var error: String?
     var credentialsError: String?
     var checking = false
@@ -27,17 +28,20 @@ final class PackageLibrary {
     private let packages: WidgetPackageStore
     private let reviewing: Bool
     private var drafts: [String: PackageDraft] = [:]
+    private var downloads: Set<URL> = []
     private var selectionRequest = 0
     private(set) var installed: [WidgetPackageManifest] = []
     private(set) var entries: [PackageIndex.Entry] = []
     private(set) var selections: [WidgetPackageSelection] = []
     private(set) var draft: PackageDraft?
+    private var requestedID: String?
     private(set) var loading = false
     private(set) var loadingStore = false
+    private(set) var getting: Set<String> = []
     var storeError: String?
     var error: String?
     var search = ""
-    var showingInstalled = false
+    var showingStore = false
 
     init(store: BarStore, client: PackageStoreClient? = nil, reviewing: Bool = false) {
         self.store = store
@@ -46,10 +50,13 @@ final class PackageLibrary {
         self.reviewing = reviewing
     }
 
+    var selectedID: String? { requestedID ?? draft?.inspection.manifest.id }
+
     var installedPackages: [WidgetPackageManifest] {
         var result: [WidgetPackageManifest] = []
-        for manifest in installed.sorted(by: { $0.version.compare($1.version, options: .numeric) == .orderedDescending }) {
-            if !result.contains(where: { $0.id == manifest.id }) { result.append(manifest) }
+        let newest = installed.sorted { $0.version.compare($1.version, options: .numeric) == .orderedDescending }
+        for manifest in installed.filter(isActive) + newest where !result.contains(where: { $0.id == manifest.id }) {
+            result.append(manifest)
         }
         return result.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
     }
@@ -60,8 +67,27 @@ final class PackageLibrary {
     }
 
     func isActive(_ draft: PackageDraft) -> Bool {
+        isActive(draft.inspection.manifest)
+    }
+
+    func isActive(_ manifest: WidgetPackageManifest) -> Bool {
+        selections.contains { $0.id == manifest.id && $0.version == manifest.version && $0.enabled }
+    }
+
+    func update(for manifest: WidgetPackageManifest) -> PackageIndex.Entry? {
+        entries.first { $0.id == manifest.id && $0.version.compare(manifest.version, options: .numeric) == .orderedDescending }
+    }
+
+    func source(_ draft: PackageDraft) -> PackageSource? {
         let manifest = draft.inspection.manifest
-        return selections.contains { $0.id == manifest.id && $0.version == manifest.version && $0.enabled }
+        let installed = packages.directory.appending(path: manifest.id).appending(path: manifest.version)
+        if draft.inspection.directory == installed { return source(of: manifest) }
+        if reviewing || downloads.contains(draft.inspection.directory) { return .store }
+        return .local
+    }
+
+    func source(of manifest: WidgetPackageManifest) -> PackageSource? {
+        entries.contains { $0.id == manifest.id } ? .listed : .installed
     }
 
     func shownWidgets(_ draft: PackageDraft) -> Int {
@@ -109,6 +135,19 @@ final class PackageLibrary {
         }
     }
 
+    private func preview(_ inspection: WidgetPackageInspection) async throws -> (screenshot: Data?, theme: ThemePreview?) {
+        let screenshot = try await client.screenshotData(for: inspection)
+        let themesDirectory = store.themesDirectory
+        let theme = try await Task.detached { () throws -> ThemePreview? in
+            if inspection.manifest.kind == .theme {
+                return try ThemePreview(choice: ThemeChoice(manifest: inspection.manifest, directory: inspection.directory, isBundled: false),
+                                        themesDirectory: themesDirectory)
+            }
+            return nil
+        }.value
+        return (screenshot, theme)
+    }
+
     func selectPackage(_ id: String) async {
         if let selection = selections.first(where: { $0.id == id && $0.enabled }),
            let manifest = installed.first(where: { $0.id == id && $0.version == selection.version }) {
@@ -121,26 +160,33 @@ final class PackageLibrary {
     }
 
     func selectInstalled(_ manifest: WidgetPackageManifest) async {
+        requestedID = manifest.id
         if let saved = drafts[manifest.versionKey] {
             selectionRequest += 1
             await show(saved)
             return
         }
         do { await select(try packages.directory(id: manifest.id, version: manifest.version)) }
-        catch { self.error = errorMessage(error) }
+        catch {
+            self.error = errorMessage(error)
+            requestedID = nil
+        }
     }
 
     func selectStore(_ entry: PackageIndex.Entry) async {
+        requestedID = entry.id
         selectionRequest += 1
         let request = selectionRequest
         loading = true
         do {
             let inspection = try await client.packageForAdding(entry)
             guard request == selectionRequest else { return }
+            downloads.insert(inspection.directory)
             await select(inspection.directory)
         } catch {
             guard request == selectionRequest else { return }
             self.error = errorMessage(error)
+            requestedID = nil
             loading = false
         }
     }
@@ -164,18 +210,42 @@ final class PackageLibrary {
             guard request == selectionRequest else { return }
             let draft = PackageDraft(inspection: reviewed, settings: values)
             drafts[key] = draft
-            draft.screenshotData = try await client.screenshotData(for: reviewed)
+            let preview = try await preview(reviewed)
+            draft.screenshotData = preview.screenshot
+            draft.themePreview = preview.theme
             guard request == selectionRequest else { return }
             await show(draft)
         } catch {
             guard request == selectionRequest else { return }
             self.error = errorMessage(error)
+            requestedID = nil
             loading = false
+        }
+    }
+
+    func deselect() {
+        selectionRequest += 1
+        draft = nil
+        requestedID = nil
+        loading = false
+    }
+
+    func get(_ entry: PackageIndex.Entry) async {
+        getting.insert(entry.id)
+        defer { getting.remove(entry.id) }
+        do {
+            _ = try await client.installWithoutReview(entry)
+            await loadInstalled()
+        } catch PackageStoreClientError.reviewRequired {
+            await selectStore(entry)
+        } catch {
+            self.error = errorMessage(error)
         }
     }
 
     private func show(_ draft: PackageDraft) async {
         self.draft = draft
+        requestedID = nil
         loading = false
         error = nil
         do {
@@ -280,15 +350,17 @@ final class PackageLibrary {
         }
     }
 
-    func uninstall(_ draft: PackageDraft) async {
+    func uninstall(_ manifest: WidgetPackageManifest) async {
         do {
-            let manifest = draft.inspection.manifest
             try store.uninstallPackage(id: manifest.id, version: manifest.version, fromCustomization: true)
             drafts[manifest.versionKey] = nil
-            self.draft = nil
             await loadInstalled()
+            if draft?.inspection.manifest.versionKey == manifest.versionKey {
+                draft = nil
+                if let next = installedPackages.first(where: { $0.id == manifest.id }) { await selectInstalled(next) }
+            }
         } catch {
-            draft.error = errorMessage(error)
+            draft?.error = errorMessage(error)
         }
     }
 

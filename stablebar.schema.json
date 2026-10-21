@@ -245,6 +245,20 @@
       "$ref": "#/definitions/strings",
       "description": "Widget IDs to place first."
     },
+    "screens": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "laptop",
+          "monitor",
+          "vertical"
+        ]
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/screen"
+      },
+      "description": "Theme, colors, styles, bar settings and layout for the laptop screen, landscape monitors or vertical monitors."
+    },
     "popups": {
       "type": "object",
       "additionalProperties": {
@@ -438,6 +452,51 @@
       ],
       "description": "#RRGGBB or #RRGGBBAA, or {\"light\": …, \"dark\": …} for a color that follows the light or dark appearance."
     },
+    "background": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/color"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gradient"
+          ],
+          "properties": {
+            "gradient": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "colors"
+              ],
+              "properties": {
+                "colors": {
+                  "type": "array",
+                  "minItems": 2,
+                  "items": {
+                    "$ref": "#/definitions/color"
+                  }
+                },
+                "angle": {
+                  "anyOf": [
+                    { "type": "number" },
+                    { "$ref": "#/definitions/reference" }
+                  ],
+                  "description": "Degrees clockwise from towards the top, as in CSS: 90 (the default) runs left to right, 180 top to bottom."
+                },
+                "locations": {
+                  "type": "array",
+                  "items": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "description": "Where each color sits, from 0 to 1 in ascending order, one per color. Evenly spaced by default."
+                }
+              }
+            }
+          }
+        }
+      ],
+      "description": "A color, or {\"gradient\": {\"colors\": […], \"angle\": …, \"locations\": […]}} for a linear gradient."
+    },
     "strings": {
       "type": [
         "array",
@@ -567,10 +626,10 @@
           "$ref": "#/definitions/color"
         },
         "background": {
-          "$ref": "#/definitions/color"
+          "$ref": "#/definitions/background"
         },
         "hoverBackground": {
-          "$ref": "#/definitions/color"
+          "$ref": "#/definitions/background"
         },
         "borderColor": {
           "$ref": "#/definitions/color"
@@ -1531,7 +1590,7 @@
           "$ref": "#/definitions/number"
         },
         "background": {
-          "$ref": "#/definitions/color"
+          "$ref": "#/definitions/background"
         },
         "animationDuration": {
           "$ref": "#/definitions/number"
@@ -1642,6 +1701,99 @@
         },
         "settings": {
           "type": ["object", "null"]
+        }
+      }
+    },
+    "screen": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bar": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "height": {
+              "$ref": "#/definitions/bar/properties/height"
+            },
+            "offset": {
+              "$ref": "#/definitions/bar/properties/offset"
+            },
+            "margin": {
+              "$ref": "#/definitions/bar/properties/margin"
+            },
+            "inset": {
+              "$ref": "#/definitions/bar/properties/inset"
+            },
+            "spacing": {
+              "$ref": "#/definitions/bar/properties/spacing"
+            },
+            "background": {
+              "$ref": "#/definitions/bar/properties/background"
+            },
+            "notchWidth": {
+              "$ref": "#/definitions/bar/properties/notchWidth"
+            },
+            "notchSpacing": {
+              "$ref": "#/definitions/bar/properties/notchSpacing"
+            },
+            "style": {
+              "$ref": "#/definitions/bar/properties/style"
+            },
+            "glass": {
+              "$ref": "#/definitions/bar/properties/glass"
+            },
+            "appearance": {
+              "$ref": "#/definitions/bar/properties/appearance"
+            }
+          },
+          "description": "Bar settings that replace the shared ones on this kind of screen."
+        },
+        "layout": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "left",
+              "notchLeft",
+              "center",
+              "notchRight",
+              "right"
+            ]
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": "Widget IDs by position, in order. Unlisted widgets follow in their own position."
+        },
+        "theme": {
+          "$ref": "#/definitions/packageSelection",
+          "description": "Theme for this kind of screen instead of the shared one."
+        },
+        "tokens": {
+          "type": "object",
+          "description": "Token values for this kind of screen, merged over the shared ones."
+        },
+        "defaults": {
+          "$ref": "#/definitions/style",
+          "description": "Widget styles for this kind of screen, merged over the shared defaults."
+        },
+        "popupDefaults": {
+          "$ref": "#/definitions/style",
+          "description": "Popup styles for this kind of screen, merged over the shared popupDefaults."
+        },
+        "roles": {
+          "$ref": "#/properties/roles",
+          "description": "Presentation role styles for this kind of screen, merged over the shared ones."
+        },
+        "workspaceDefaults": {
+          "$ref": "#/properties/workspaceDefaults",
+          "description": "Workspace look for this kind of screen, merged over the shared one."
+        },
+        "modeAliases": {
+          "$ref": "#/properties/modeAliases",
+          "description": "AeroSpace mode names for this kind of screen, merged over the shared ones."
         }
       }
     },

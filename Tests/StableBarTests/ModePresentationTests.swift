@@ -19,7 +19,7 @@ private func modeConfiguration(_ json: String) throws -> Configuration {
     var states = StyleStates(data: "warning", workspace: .focused, mode: mode)
     #expect(states.names == ["warning", "focused", "mode", "mode.command"])
     #expect(style.resolved(for: states).foreground == HexColor(0x444444ff))
-    #expect(style.resolved(for: states).background == HexColor(0xabcdefff))
+    #expect(style.resolved(for: states).background == .color(HexColor(0xabcdefff)))
     states.hover = true
     #expect(style.resolved(for: states).foreground == HexColor(0x555555ff))
     states.open = true

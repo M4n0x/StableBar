@@ -4,6 +4,7 @@ struct BarView: View {
     let store: BarStore
     let display: BarDisplay
     var nativeDecorations = false
+    var preview = false
     @State private var measuredWidths: [String: CGFloat] = [:]
     @State private var measuredUnits: Set<String> = []
     @State private var overflowAnchor = NSView()
@@ -12,9 +13,9 @@ struct BarView: View {
 
     var body: some View {
         Group {
-            if store.barEditing.isActive {
+            if store.barEditing.isActive && !preview {
                 BarEditView(store: store, display: display)
-            } else if let config = store.configuration {
+            } else if let config = store.configuration?.onScreen(ScreenKind(display)) {
                 let scale = CGFloat(config.bar.scale(for: display))
                 let barGeometry = config.barGeometry(for: display)
                 let notch = display.notch.map { range in
@@ -89,11 +90,11 @@ struct BarView: View {
                             measuredWidths.merge(widths) { $1 }
                         }
                     }
-                    .onChange(of: visible, initial: true) { _, ids in store.setVisibleWidgets(ids: ids, displayID: display.id) }
+                    .onChange(of: visible, initial: true) { _, ids in if !preview { store.setVisibleWidgets(ids: ids, displayID: display.id) } }
                     .frame(width: geometry.size.width / scale, height: geometry.size.height / scale)
                     .scaleEffect(scale, anchor: .topLeading)
                 }
-                .modifier(BarSurface(store: store, settings: config.bar))
+                .modifier(BarSurface(store: store, settings: config.bar, kind: ScreenKind(display)))
                 .overlay(alignment: .topTrailing) {
                     if let error = store.configurationError {
                         Button { store.onCustomize?() } label: {
@@ -109,20 +110,25 @@ struct BarView: View {
                 .frame(height: nativeDecorations ? barGeometry.layoutHeight : barGeometry.panelHeight, alignment: .top)
             }
         }
-        .environment(\.colorScheme, store.configuration?.bar.appearance?.colorScheme ?? colorScheme)
+        .environment(\.colorScheme, store.configuration?.bar(on: ScreenKind(display)).appearance?.colorScheme ?? colorScheme)
+        .environment(\.screenKind, ScreenKind(display))
         .frame(maxHeight: .infinity, alignment: .top)
-        .onDisappear { store.setVisibleWidgets(ids: [], displayID: display.id) }
+        .allowsHitTesting(!preview)
+        .accessibilityHidden(preview)
+        .onDisappear { if !preview { store.setVisibleWidgets(ids: [], displayID: display.id) } }
         .contextMenu {
-            Text("StableBar")
-            if store.barEditing.isAvailable { Button(store.barEditing.menuTitle, action: store.barEditing.toggle) }
-            Button("Try Themes…") { store.onTryThemes?(display.id) }
-            if let error = store.configurationError ?? store.workspaceStore.error {
+            if !preview {
+                Text("StableBar")
+                if store.barEditing.isAvailable { Button(store.barEditing.menuTitle, action: store.barEditing.toggle) }
+                Button("Try Themes…") { store.onTryThemes?(display.id) }
+                if let error = store.configurationError ?? store.workspaceStore.error {
+                    Divider()
+                    Text(error)
+                }
                 Divider()
-                Text(error)
+                Button("Settings…") { store.onCustomize?() }
+                Button("Quit StableBar") { NSApp.terminate(nil) }
             }
-            Divider()
-            Button("Settings…") { store.onCustomize?() }
-            Button("Quit StableBar") { NSApp.terminate(nil) }
         }
     }
 
@@ -258,7 +264,7 @@ struct BarUnitSurface<Content: View>: View {
             .padding(.trailing, style.paddingTrailing ?? style.paddingHorizontal ?? 0)
             .padding(.top, style.paddingTop ?? style.paddingVertical ?? 0)
             .padding(.bottom, style.paddingBottom ?? style.paddingVertical ?? 0)
-            .background(style.background?.color ?? .clear, in: RoundedRectangle(cornerRadius: style.cornerRadius ?? 0))
+            .background(style.background?.shapeStyle ?? AnyShapeStyle(Color.clear), in: RoundedRectangle(cornerRadius: style.cornerRadius ?? 0))
             .overlay {
                 RoundedRectangle(cornerRadius: style.cornerRadius ?? 0)
                     .strokeBorder(style.borderColor?.color ?? .clear, lineWidth: style.borderWidth ?? 0)
@@ -297,9 +303,10 @@ struct WidgetView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.measuringBarWidths) private var measuring
     @Environment(\.barUnitID) private var unitID
+    @Environment(\.screenKind) private var screenKind
 
     private var resolution: ResolvedWidgetStyle {
-        store.presentations[widget.id]?.style ?? ResolvedWidgetStyle(base: resolveStyle([defaults, widget.style]))
+        store.presentations[widget.id]?.style(on: screenKind) ?? ResolvedWidgetStyle(base: resolveStyle([defaults, widget.style]))
     }
 
     /// How the widget's text, field and symbol blocks show changes.
@@ -352,7 +359,7 @@ struct WidgetView: View {
         }
         .font(appearance.font)
         .foregroundStyle(appearance.foreground)
-        .modifier(GlassBackground(color: style.background, glass: store.configuration?.bar.glass ?? GlassSettings(), surface: \.widgets,
+        .modifier(GlassBackground(fill: style.background, glass: store.configuration?.bar(on: screenKind).glass ?? GlassSettings(), surface: \.widgets,
                                   shape: RoundedRectangle(cornerRadius: appearance.cornerRadius)))
         .overlay {
             RoundedRectangle(cornerRadius: appearance.cornerRadius)
@@ -429,7 +436,7 @@ struct WidgetView: View {
                           appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
                           animationDuration: animationDuration, padding: padding,
                           configuration: widget.workspace, animation: widget.animation, defaults: resolution.base,
-                          modeAliases: store.configuration?.modeAliases ?? [:], widgetID: widget.id)
+                          modeAliases: store.configuration?.look(on: screenKind).modeAliases ?? [:], widgetID: widget.id)
         case let .appMenu(expandOnHover) where widget.layout == nil:
             AppMenuView(appMenu: store.appMenu, items: store.appMenu.items, expandOnHover: expandOnHover, hovering: hovered,
                         appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
@@ -482,6 +489,7 @@ struct WidgetBlocks: View {
     var fillsWidth = false
     var motion = BlockMotion()
     let runAction: (String, [String: String]) -> Void
+    @Environment(\.screenKind) private var screenKind
 
     var body: some View {
         let script = store.scripts[widget.id]
@@ -492,7 +500,7 @@ struct WidgetBlocks: View {
                            context: BlockContext(lists: script?.output.lists ?? [:], samples: script?.samples ?? [],
                                                  menu: script?.output.menu ?? widget.menu ?? [], values: script?.output.values ?? [:],
                                                  targets: script?.output.targets ?? [:], styles: script?.output.styles ?? [:],
-                                                 series: script?.output.series ?? [:], roles: store.configuration?.roles ?? [:],
+                                                 series: script?.output.series ?? [:], roles: store.configuration?.look(on: screenKind).roles ?? [:],
                                                  fillsWidth: fillsWidth, open: { if store.barEditing.allowsWidgetActions { $0.open() } },
                                                  states: style.states, tracksHover: style.tracksHover, appIcon: appIcon, motion: motion,
                                                  runAction: runAction))
@@ -583,7 +591,7 @@ struct WorkspaceView: View {
                 .overlay(alignment: .bottom) {
                     if indicator == .underline && workspace.isVisible && styles.underline.placement != .belowBar {
                         RoundedRectangle(cornerRadius: styles.underline.cornerRadius ?? 0)
-                            .fill(styles.underline.background?.color ?? appearance.accent)
+                            .fill(styles.underline.background?.shapeStyle ?? AnyShapeStyle(appearance.accent))
                             .frame(width: styles.underline.width.map { CGFloat($0) }, height: styles.underline.height ?? 2)
                             .matchedGeometryEffect(id: "workspace-underline", in: selection)
                             .offset(x: styles.underline.offsetX ?? 0, y: styles.underline.offsetY ?? 0)
@@ -599,7 +607,7 @@ struct WorkspaceView: View {
                 .background {
                     if indicator == .background && workspace.isFocused {
                         RoundedRectangle(cornerRadius: styles.resting.cornerRadius ?? max(appearance.cornerRadius - 4, 0))
-                            .fill(styles.resting.background?.color ?? appearance.accent)
+                            .fill(styles.resting.background?.shapeStyle ?? AnyShapeStyle(appearance.accent))
                             .matchedGeometryEffect(id: "focused-workspace", in: selection)
                     } else if indicator == .background && workspace.isVisible {
                         RoundedRectangle(cornerRadius: styles.resting.cornerRadius ?? max(appearance.cornerRadius - 4, 0))
@@ -613,7 +621,7 @@ struct WorkspaceView: View {
                     // One visible selection per widget/display keeps its identity as focus moves.
                     return BarAnchors(underlines: [widgetID: WorkspaceUnderlineAnchor(widget: widgetID, cell: anchor,
                         selection: workspace.name,
-                        style: styles.underline, color: styles.underline.background?.color ?? appearance.accent,
+                        style: styles.underline, color: styles.underline.background?.firstColor.color ?? appearance.accent,
                         animation: animation ?? WidgetAnimation(curve: .smooth, duration: animationDuration))])
                 }
                 .buttonStyle(.plain)

@@ -73,8 +73,8 @@ final class WidgetDragRowView: WidgetDragSourceView {
     }
 
     private func acceptedPayload(_ sender: any NSDraggingInfo) -> WidgetDragSession.Payload? {
-        guard let source = sender.draggingSource as? WidgetDragRowView,
+        guard let source = sender.draggingSource as? WidgetDragSourceView,
               let data = sender.draggingPasteboard.data(forType: Self.pasteboardType) else { return nil }
-        return session?.payload(from: data, source: source.session)
+        return session?.payload(from: data, source: source.dragSession)
     }
 }

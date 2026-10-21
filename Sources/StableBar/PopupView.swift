@@ -5,12 +5,13 @@ struct PopupView: View {
     let style: WidgetStyle
     let store: BarStore
     let widget: WidgetConfiguration
+    @Environment(\.screenKind) private var screenKind
 
     private var mode: ModePresentation {
-        let roles = store.configuration?.roles ?? [:]
+        let roles = store.configuration?.look(on: screenKind).roles ?? [:]
         guard style.usesModeStates || popup.layout.usesModeStates(roles: roles)
             || store.scripts[widget.id]?.output.styles?.values.contains(where: \.usesModeStates) == true else { return ModePresentation() }
-        return store.modePresentation
+        return store.modePresentation(on: screenKind)
     }
 
     var presentationStyle: WidgetStyle { style.resolved(for: StyleStates(mode: mode)) }
@@ -30,7 +31,7 @@ struct PopupView: View {
                                context: BlockContext(lists: lists, samples: samples, menu: menu,
                                                      values: script?.output.values ?? [:], targets: script?.output.targets ?? [:],
                                                      styles: script?.output.styles ?? [:], series: script?.output.series ?? [:],
-                                                     roles: store.configuration?.roles ?? [:], open: { target in
+                                                     roles: store.configuration?.look(on: screenKind).roles ?? [:], open: { target in
                     guard store.barEditing.allowsWidgetActions else { return }
                     if popup.dismissOnAction { store.popup.close() }
                     target.open()
@@ -52,7 +53,7 @@ struct PopupView: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: appearance.cornerRadius))
-        .modifier(GlassBackground(color: presentationStyle.background, glass: store.configuration?.bar.glass ?? GlassSettings(), surface: \.popups,
+        .modifier(GlassBackground(fill: presentationStyle.background, glass: store.configuration?.bar(on: screenKind).glass ?? GlassSettings(), surface: \.popups,
                                   shape: RoundedRectangle(cornerRadius: appearance.cornerRadius)))
         .overlay {
             RoundedRectangle(cornerRadius: appearance.cornerRadius)
@@ -228,7 +229,7 @@ struct PopupBlockView: View {
             .padding(.bottom, box.paddingBottom ?? box.paddingVertical ?? 0)
             .frame(width: box.width.map { CGFloat($0) }, height: box.height.map { CGFloat($0) }, alignment: alignment)
             .frame(maxWidth: context.fillsWidth && box.width == nil ? .infinity : nil, alignment: alignment)
-            .background(box.background?.color ?? .clear, in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
+            .background(box.background?.shapeStyle ?? AnyShapeStyle(Color.clear), in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
             .overlay {
                 RoundedRectangle(cornerRadius: appearance.cornerRadius)
                     .strokeBorder(box.borderColor?.color ?? .clear, lineWidth: box.borderWidth ?? 0)
@@ -337,7 +338,7 @@ struct PopupBlockView: View {
         case let .progress(source, height):
             ProgressRule(value: context.values[source] ?? Double(fields[source] ?? "") ?? 0, target: context.targets[source],
                          animation: block.animation ?? WidgetAnimation(), color: appearance.accent,
-                         track: style.text.background?.color ?? .clear, cornerRadius: appearance.cornerRadius)
+                         track: style.text.background?.shapeStyle ?? AnyShapeStyle(Color.clear), cornerRadius: appearance.cornerRadius)
                 .frame(height: height)
         case .appIcon:
             if let icon = context.appIcon {
@@ -414,7 +415,7 @@ struct ProgressRule: View {
     let target: Double?
     let animation: WidgetAnimation
     let color: Color
-    let track: Color
+    let track: AnyShapeStyle
     let cornerRadius: Double
     @State private var fraction = 0.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -511,7 +512,7 @@ struct PopupMenuRow: View {
                 label
             }
         }
-        .background(hovered && item.onClick != nil ? appearance.hoverBackground : .clear,
+        .background(hovered && item.onClick != nil ? appearance.hoverBackground : AnyShapeStyle(Color.clear),
                     in: RoundedRectangle(cornerRadius: appearance.cornerRadius))
         .onHover { hovered = $0 }
     }

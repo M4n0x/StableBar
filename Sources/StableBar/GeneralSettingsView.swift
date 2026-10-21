@@ -3,139 +3,109 @@ import SwiftUI
 
 struct GeneralSettingsView: View {
     let editor: ConfigurationEditor
-    @State private var aboutExpanded = false
-    @State private var sharing: ScreenSetup?
     private var store: BarStore { editor.store }
 
     var body: some View {
         ScrollViewReader { scroll in
-            Form {
-                Section("Startup") {
-                    LoginItemSettings()
-                }
-                .id(SettingsSearchResult.login.id)
-                Section {
-                    if let setup = store.screenSetup, store.configurationURL == store.sharedConfigurationURL {
-                        LabeledContent {
-                            Button("Give It Its Own Bar") {
-                                do { try store.giveScreenSetupItsOwnBar() }
-                                catch { editor.error = errorMessage(error) }
-                            }
-                        } label: {
-                            Text(setup.title)
-                            Text("Connected now, using the shared bar")
+            ScrollView {
+                VStack(spacing: 0) {
+                    SettingsGroup("Startup") {
+                        LoginItemSettings()
+                    }
+                    .id(SettingsSearchResult.login.id)
+                    SettingsGroup("Windows and notifications") {
+                        let bar = StyleFields(store: store, path: "bar",
+                            values: (try? store.effectiveDocument["bar"]?.decoded([String: ConfigurationValue].self)) ?? [:],
+                            set: { editor.change(ConfigurationEdit(action: .bar, properties: $0)) },
+                            unset: { editor.change(ConfigurationEdit(action: .unset, properties: ["bar": .object($0)])) })
+                        bar.toggle("Keep windows clear of the bar", "keepWindowsClear", default: false,
+                                   hint: "Moves ordinary windows below the bar. Leave it off when AeroSpace or yabai sets gaps.")
+                        bar.toggle("Keep notifications clear of the bar", "keepNotificationsClear", default: false,
+                                   hint: "macOS 26 and later")
+                    }
+                    .id(SettingsSearchResult.windows.id)
+                    SettingsGroup("Workspaces") {
+                        let source = store.configuration?.workspaceSource ?? .aerospace
+                        SettingRow(title: "Workspace manager") {
+                            SettingsSegments(selection: Binding(get: { source }, set: {
+                                if $0 != source { editor.change(ConfigurationEdit(action: .workspaceSource, name: $0.rawValue)) }
+                            }), options: [(WorkspaceSource.aerospace, "AeroSpace"), (.yabai, "yabai")], stretches: false)
+                        }
+                        connection
+                    }
+                    .id(SettingsSearchResult.workspaces.id)
+                    SettingsGroup("Access") {
+                        let permissions = requiredPermissions
+                        if permissions.isEmpty {
+                            SettingRow(title: "Your current widgets don't need extra access") {}
+                        } else {
+                            VStack(spacing: 16) { SourcePermissionList(permissions: permissions) }.groupRow()
                         }
                     }
-                    ForEach(store.screenSetupsWithOwnBars, id: \.fileName) { setup in
-                        LabeledContent {
-                            Button("Use Shared Bar…") { sharing = setup }
-                        } label: {
-                            Text(setup.title)
-                            Text(setup == store.screenSetup ? "Connected now, with its own bar" : "Its own bar")
+                    .id(SettingsSearchResult.access.id)
+                    SettingsGroup("Configuration file") {
+                        row {
+                            Text(store.configurationURL.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                                .font(.system(size: 12, design: .monospaced))
+                                .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                        } control: {
+                            Button("Open", action: store.openConfiguration)
+                            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([store.configurationURL]) }
+                            Button("Reload", action: store.reloadConfiguration)
                         }
                     }
-                } header: {
-                    Text("Screen setups")
-                } footer: {
-                    Text("Each combination of screens, such as the laptop alone or with a monitor, can have its own bar: its widgets on each screen, size, theme and placement. StableBar switches bars when you connect or disconnect a screen. Setups without their own bar use the shared bar, your main configuration.")
+                    .id(SettingsSearchResult.configuration.id)
+                    SettingsGroup("Updates") {
+                        AboutView(update: store.update).rows
+                    }
+                    .id(SettingsSearchResult.updates.id)
+                    SettingsGroup("Help") {
+                        SettingRow(title: "Run setup again") {
+                            Button("Open setup…") { NSApp.sendAction(#selector(AppDelegate.showSetup), to: NSApp.delegate, from: nil) }
+                        }
+                        SettingRow(title: "User guide") {
+                            Button("Open") { NSWorkspace.shared.open(URL(string: "https://github.com/Seb-GRAF/StableBar#readme")!) }
+                        }
+                    }
+                    .id(SettingsSearchResult.help.id)
                 }
-                .id(SettingsSearchResult.screenSetups.id)
-                .confirmationDialog("Use the shared bar for \(sharing?.title.lowercased() ?? "")?", isPresented: Binding(
-                    get: { sharing != nil }, set: { if !$0 { sharing = nil } }), presenting: sharing) { setup in
-                    Button("Use Shared Bar") {
-                        do { try store.useSharedBar(for: setup) }
-                        catch { editor.error = errorMessage(error) }
-                    }
-                } message: { _ in
-                    Text("Its own bar moves to the Trash.")
-                }
-                Section {
-                    let bar = StyleFields(store: store, path: "bar",
-                        values: (try? store.effectiveDocument["bar"]?.decoded([String: ConfigurationValue].self)) ?? [:],
-                        set: { editor.change(ConfigurationEdit(action: .bar, properties: $0)) },
-                        unset: { editor.change(ConfigurationEdit(action: .unset, properties: ["bar": .object($0)])) })
-                    bar.number("Offset from top", "offset", default: 0)
-                    bar.number("Margin", "margin", default: 0)
-                    scale("Built-in display scale", key: "builtIn")
-                    scale("External display scale", key: "external")
-                    bar.toggle("Keep windows clear of StableBar", "keepWindowsClear", default: false)
-                    bar.toggle("Keep notifications clear of StableBar", "keepNotificationsClear", default: false)
-                } header: {
-                    Text("Displays and placement")
-                } footer: {
-                    Text("Window clearance moves and resizes ordinary windows below the bar. Fullscreen windows stay unchanged. Leave it off when AeroSpace or yabai manages window gaps. Notification clearance requires macOS 26.")
-                }
-                .id(SettingsSearchResult.placement.id)
-                Section("Access") {
-                    let permissions = requiredPermissions
-                    if permissions.isEmpty {
-                        Text("Your current widgets do not need additional access.").foregroundStyle(.secondary)
-                    } else {
-                        SourcePermissionList(permissions: permissions)
-                    }
-                }
-                .id(SettingsSearchResult.access.id)
-                Section("Workspace connection") {
-                    Picker("Source", selection: Binding(get: { store.configuration?.workspaceSource ?? .aerospace }, set: {
-                        editor.change(ConfigurationEdit(action: .workspaceSource, name: $0.rawValue))
-                    })) {
-                        Text("AeroSpace").tag(WorkspaceSource.aerospace)
-                        Text("yabai").tag(WorkspaceSource.yabai)
-                    }
-                    HStack {
-                        Text("The workspace manager must be installed and configured separately.")
-                            .font(.callout).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Reconnect", action: store.workspaceStore.reconnect)
-                    }
-                    if let error = store.workspaceStore.error {
-                        Text(error).foregroundStyle(.red).textSelection(.enabled)
-                    }
-                }
-                .id(SettingsSearchResult.connections.id)
-                Section {
-                    LabeledContent("File") {
-                        Text(store.configurationURL.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                            .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
-                    }
-                    HStack {
-                        Button("Open File", action: store.openConfiguration)
-                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([store.configurationURL]) }
-                        Spacer()
-                        Button("Reload", action: store.reloadConfiguration)
-                    }
-                } header: {
-                    Text("Configuration")
-                } footer: {
-                    Text("Saved file changes apply automatically. Settings writes to the file of the bar on your screens; imported files stay intact. Temporary command-line changes have their own Save and Discard actions.")
-                }
-                .id(SettingsSearchResult.configuration.id)
-                Section("Getting started") {
-                    Text("Select a widget in Your bar to change its content, appearance and behavior. Edit Bar in Place moves widgets directly on the bar. Undo reverses saved edits.")
-                        .font(.callout).foregroundStyle(.secondary)
-                    HStack {
-                        Button("Set Up StableBar…") { NSApp.sendAction(#selector(AppDelegate.showSetup), to: NSApp.delegate, from: nil) }
-                        Link("User guide", destination: URL(string: "https://github.com/Seb-GRAF/StableBar#readme")!)
-                    }
-                }
-                .id(SettingsSearchResult.help.id)
-                Section {
-                    DisclosureGroup("About and updates", isExpanded: $aboutExpanded) {
-                        AboutView(update: store.update).sections
-                    }
-                }
-                .id(SettingsSearchResult.updates.id)
+                .font(.system(size: 13))
+                .frame(maxWidth: 720)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 28)
+                .frame(maxWidth: .infinity)
             }
-            .formStyle(.grouped)
             .task(id: editor.searchTarget) {
                 if let target = editor.searchTarget {
-                    if target == SettingsSearchResult.updates.id { aboutExpanded = true }
                     await Task.yield()
                     if Task.isCancelled { return }
                     scroll.scrollTo(target, anchor: .top)
                     editor.searchTarget = nil
                 }
             }
+        }
+    }
+
+    private var connection: some View {
+        let workspaces = store.workspaceStore
+        let (status, color): (String, Color) = if let error = workspaces.error { (error, .red) }
+            else if workspaces.isRunning { ("Connected", SettingsPalette.success) }
+            else { ("Not in use", .secondary) }
+        return row {
+            HStack(spacing: 8) {
+                Circle().fill(color).frame(width: 8, height: 8)
+                Text(status).textSelection(.enabled)
+            }
+        } control: {
+            Button("Reconnect", action: workspaces.reconnect).disabled(!workspaces.isRunning)
+        }
+    }
+
+    private func row<Label: View, Control: View>(@ViewBuilder label: () -> Label, @ViewBuilder control: () -> Control) -> some View {
+        LabeledContent {
+            HStack(spacing: 8) { control() }
+        } label: {
+            label()
         }
     }
 
@@ -149,26 +119,14 @@ struct GeneralSettingsView: View {
         }
         return permissions
     }
+}
 
-    private func scale(_ title: String, key: String) -> some View {
-        let values = store.configuration?.bar.displayScale.mapValues(ConfigurationValue.number) ?? [:]
-        let property = store.propertySources(path: "bar.displayScale", key: key, values: values)
-        let value = if case let .number(value) = property.editingValue { value } else { 1.0 }
-        let binding = Binding(get: { value }, set: { scale in
-            if scale != value {
-                editor.change(ConfigurationEdit(action: .bar, properties: ["displayScale": .object([key: .number(scale)])]))
-            }
-        })
-        return OverrideRow(title: title, source: store.propertySourceText(property),
-            reset: property.saved.map { source in {
-                do { try store.removePropertySource(source) }
-                catch { store.customizationHistory.error = errorMessage(error) }
-            } },
-            sourceDetails: PropertySourceView(store: store, title: title, property: property)) {
-                TextField(title, value: binding, format: .number)
-                    .labelsHidden().frame(width: 60).multilineTextAlignment(.trailing)
-                Text("×").foregroundStyle(.secondary)
-                Stepper(title, value: binding, in: 0.25...3, step: 0.05).labelsHidden()
-            }
+struct SettingsSectionTitle: View {
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(.secondary)
     }
 }

@@ -3,6 +3,33 @@ import XCTest
 @testable import StableBar
 
 final class ConfigurationHistoryTests: XCTestCase {
+    @MainActor func testCompletedMoveAppliesOnceAndKeepsPendingEditsAsTheirOwnUndoStep() throws {
+        let fixture = try Fixture(configuration: #"{"widgets":[{"id":"a","type":"text","position":"left","text":"A"},{"id":"b","type":"text","position":"right","text":"B"}]}"#)
+        defer { fixture.close() }
+        let store = fixture.store
+        let history = store.customizationHistory
+        try history.change(ConfigurationEdit(action: .set, id: "a", properties: ["text": .string("Updated")]))
+        var applications = 0
+        store.onConfigurationChange = { applications += 1 }
+        try WidgetSetup(store: store).move("a", to: .right)
+        XCTAssertEqual(applications, 1)
+        XCTAssertEqual(history.undoSteps.count, 2)
+        XCTAssertFalse(history.hasPendingChanges)
+        XCTAssertEqual(store.configuration?.widgets.map(\.id), ["b", "a"])
+        XCTAssertEqual(store.configuration?.widgets.last?.content, .text("Updated"))
+        try history.undo()
+        XCTAssertEqual(store.configuration?.widgets.map(\.id), ["a", "b"])
+        XCTAssertEqual(store.configuration?.widgets.first?.content, .text("Updated"))
+        try history.undo()
+        XCTAssertEqual(store.configuration?.widgets.first?.content, .text("A"))
+        try history.redo()
+        let before = try Data(contentsOf: fixture.url)
+        XCTAssertThrowsError(try history.change([ConfigurationEdit(action: .set, id: "a", properties: ["unknown": .bool(true)])]))
+        XCTAssertEqual(try Data(contentsOf: fixture.url), before)
+        XCTAssertEqual(history.undoSteps.count, 1)
+        XCTAssertEqual(history.redoSteps.count, 1)
+    }
+
     @MainActor func testBurstUpdatesLiveAndWritesOnceAfterPausing() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }
@@ -69,12 +96,16 @@ final class ConfigurationHistoryTests: XCTestCase {
 
     @MainActor func testOutsideChangesInvalidateUndoAndRedoWithoutWriting() throws {
         for redo in [false, true] {
-            let fixture = try Fixture()
+            let fixture = try Fixture(configuration: #"{"bar":{"height":40},"widgets":[],"profiles":[{"name":"work","configuration":{}}]}"#)
             defer { fixture.close() }
             let history = fixture.store.customizationHistory
             try history.change(ConfigurationEdit(action: .bar, properties: ["height": .number(48)]))
             try history.flush()
             if redo { try history.undo() }
+            let editor = ConfigurationEditor(store: fixture.store)
+            editor.editBar(for: "work")
+            XCTAssertFalse(history.canUndo)
+            XCTAssertFalse(history.canRedo)
             var external = try fixture.document()
             external["bar"] = .object(["height": .number(55)])
             let externalData = try configurationData(external)
@@ -692,6 +723,254 @@ final class ConfigurationHistoryTests: XCTestCase {
         try Data(String(decoding: packageData, as: UTF8.self).replacingOccurrences(of: "7", with: "9").utf8).write(to: package)
         store.reloadConfiguration()
         XCTAssertEqual(store.profiles[0].configuration["bar"], .object(["height": .number(44), "spacing": .number(9), "offset": .null]))
+    }
+
+    @MainActor func testEditingTheBarForAProfileSavesEditsResetsAndUndoInThatProfile() throws {
+        for pin in [nil, "home"] {
+            let fixture = try Fixture(configuration: #"{"bar":{"height":40},"widgets":[{"id":"a","type":"text","position":"left","text":"A"}],"#
+                + (pin.map { #""profile":"\#($0)","# } ?? "")
+                + #""profiles":[{"name":"home","configuration":{}},{"name":"work","when":{"app":"com.unfocused"},"configuration":{}}]}"#)
+            defer { fixture.close() }
+            let store = fixture.store
+            let editor = ConfigurationEditor(store: store)
+            func work() throws -> [String: ConfigurationValue] {
+                try XCTUnwrap(fixture.document()["profiles"]).decoded([ConfigurationProfile].self)[1].configuration
+            }
+            let original = try fixture.document()
+            editor.editBar(for: "work")
+            XCTAssertEqual(try fixture.document(), original)
+            XCTAssertFalse(editor.history.canUndo)
+            XCTAssertFalse(editor.history.canRedo)
+            XCTAssertEqual(editor.section, .widgets)
+            XCTAssertEqual(store.activeProfiles, ["work"])
+            XCTAssertNil(store.propertySources(path: "bar", key: "height", values: [:]).saved)
+
+            editor.change(ConfigurationEdit(action: .bar, properties: ["height": .number(30)]))
+            editor.set(["style": .object(["fontSize": .number(15)])], for: "a")
+            try editor.history.flush()
+            XCTAssertEqual(try fixture.document()["bar"], .object(["height": .number(40)]))
+            XCTAssertNil(try XCTUnwrap(fixture.document()["widgets"]).decoded([[String: ConfigurationValue]].self)[0]["style"])
+            XCTAssertEqual(try work(), [
+                "bar": .object(["height": .number(30)]),
+                "widgetOverrides": .object(["a": .object(["style": .object(["fontSize": .number(15)])])])
+            ])
+            XCTAssertEqual(store.configuration?.bar.height, 30)
+            var base = try fixture.document()
+            base["profiles"] = original["profiles"]
+            XCTAssertEqual(base, original)
+
+            editor.undo()
+            XCTAssertEqual(try work(), ["bar": .object(["height": .number(30)])])
+            XCTAssertEqual(store.activeProfiles, ["work"])
+            editor.redo()
+            XCTAssertEqual(store.activeProfiles, ["work"])
+
+            editor.change(ConfigurationEdit(action: .unset, properties: ["profiles": .object([
+                "work": .object(["configuration": .object(["bar": .object(["height": .null])])])
+            ])]))
+            XCTAssertEqual(store.configuration?.bar.height, 40)
+            XCTAssertEqual(try fixture.document()["bar"], original["bar"])
+            editor.undo()
+            XCTAssertEqual(store.configuration?.bar.height, 30)
+
+            let fontSize = try XCTUnwrap(store.propertySources(path: "widgets.a.style", key: "fontSize", defaultsPath: "defaults",
+                                                               widgetID: "a", values: editor.style(for: "a")).saved)
+            XCTAssertEqual(fontSize.origin?.profile, "work")
+            try store.removePropertySource(fontSize)
+            editor.change(ConfigurationEdit(action: .unset, properties: ["bar": .object(["height": .null])]))
+            try editor.history.flush()
+            XCTAssertEqual(try work(), [:])
+            XCTAssertEqual(store.configuration?.bar.height, 40)
+
+            editor.change(ConfigurationEdit(action: .reorder, ids: ["a"]))
+            XCTAssertEqual(editor.error, "A profile keeps your bar’s order. Click Done to reorder widgets.")
+            editor.undo()
+            XCTAssertEqual(try work(), ["bar": .object(["height": .number(30)])])
+
+            if pin == nil { editor.showProfile("work") } else { editor.section = .general }
+            XCTAssertNil(editor.editingProfile)
+            XCTAssertEqual(try fixture.document()["profile"], pin.map(ConfigurationValue.string))
+            editor.change(ConfigurationEdit(action: .bar, properties: ["height": .number(44)]))
+            try editor.history.flush()
+            XCTAssertEqual(try fixture.document()["bar"], .object(["height": .number(44)]))
+            XCTAssertEqual(try work(), ["bar": .object(["height": .number(30)])])
+        }
+    }
+
+    @MainActor func testProfileUndoAndRedoStopAtBaseHistoryAndPreserveItAfterLeaving() throws {
+        for pending in [false, true] {
+            let fixture = try Fixture(configuration: #"{"bar":{"height":40},"widgets":[],"profiles":[{"name":"work","configuration":{}}]}"#)
+            defer { fixture.close() }
+            let editor = ConfigurationEditor(store: fixture.store)
+            let history = editor.history
+            let original = try Data(contentsOf: fixture.url)
+            editor.change(ConfigurationEdit(action: .bar, properties: ["height": .number(48)]))
+            editor.editBar(for: "work")
+            let base = try Data(contentsOf: fixture.url)
+            XCTAssertEqual(try fixture.document()["bar"], .object(["height": .number(48)]))
+            XCTAssertFalse(history.canUndo)
+            editor.undo()
+            XCTAssertEqual(try Data(contentsOf: fixture.url), base)
+
+            editor.change(ConfigurationEdit(action: .bar, properties: ["height": .number(30)]))
+            if !pending { try history.flush() }
+            XCTAssertTrue(history.canUndo)
+            editor.undo()
+            XCTAssertEqual(try Data(contentsOf: fixture.url), base)
+            XCTAssertFalse(history.canUndo)
+            XCTAssertTrue(history.canRedo)
+            editor.undo()
+            XCTAssertEqual(try Data(contentsOf: fixture.url), base)
+            editor.redo()
+            let profile = try Data(contentsOf: fixture.url)
+            XCTAssertEqual(try fixture.document()["bar"], .object(["height": .number(48)]))
+            XCTAssertEqual(fixture.store.profiles[0].configuration["bar"], .object(["height": .number(30)]))
+            XCTAssertFalse(history.canRedo)
+
+            editor.endProfileEditing()
+            editor.editBar(for: "work")
+            XCTAssertTrue(history.canUndo)
+            editor.undo()
+            XCTAssertEqual(try Data(contentsOf: fixture.url), base)
+            editor.endProfileEditing()
+            XCTAssertTrue(history.canUndo)
+            editor.undo()
+            XCTAssertEqual(try Data(contentsOf: fixture.url), original)
+            XCTAssertTrue(history.canRedo)
+            editor.editBar(for: "work")
+            XCTAssertFalse(history.canRedo)
+            editor.redo()
+            XCTAssertEqual(try Data(contentsOf: fixture.url), original)
+            editor.endProfileEditing()
+            editor.redo()
+            XCTAssertEqual(try Data(contentsOf: fixture.url), base)
+            editor.editBar(for: "work")
+            XCTAssertTrue(history.canRedo)
+            editor.redo()
+            XCTAssertEqual(try Data(contentsOf: fixture.url), profile)
+            XCTAssertNil(editor.error)
+        }
+    }
+
+    @MainActor func testProfileHistoryDoesNotCrossAnotherProfilesChanges() throws {
+        let fixture = try Fixture(configuration: #"{"bar":{"height":40},"widgets":[{"id":"a","type":"text","position":"left","text":"A"}],"profiles":[{"name":"work","configuration":{}},{"name":"home","configuration":{}}]}"#)
+        defer { fixture.close() }
+        let editor = ConfigurationEditor(store: fixture.store)
+        let history = editor.history
+        let original = try Data(contentsOf: fixture.url)
+        editor.editBar(for: "work")
+        editor.change(ConfigurationEdit(action: .bar, properties: ["height": .number(30)]))
+        editor.editBar(for: "home")
+        let work = try Data(contentsOf: fixture.url)
+        XCTAssertFalse(history.canUndo)
+        editor.undo()
+        XCTAssertEqual(try Data(contentsOf: fixture.url), work)
+        editor.set(["text": .string("Home")], for: "a")
+        editor.editBar(for: "work")
+        let home = try Data(contentsOf: fixture.url)
+        XCTAssertFalse(history.canUndo)
+        editor.undo()
+        XCTAssertEqual(try Data(contentsOf: fixture.url), home)
+        XCTAssertEqual(try fixture.document()["bar"], .object(["height": .number(40)]))
+        XCTAssertEqual(fixture.store.profiles[0].configuration["bar"], .object(["height": .number(30)]))
+        XCTAssertEqual(fixture.store.profiles[1].configuration["widgetOverrides"], .object(["a": .object(["text": .string("Home")])]))
+
+        editor.endProfileEditing()
+        editor.undo()
+        XCTAssertEqual(try Data(contentsOf: fixture.url), work)
+        editor.editBar(for: "work")
+        editor.undo()
+        XCTAssertEqual(try Data(contentsOf: fixture.url), original)
+        editor.editBar(for: "home")
+        XCTAssertFalse(history.canRedo)
+        editor.redo()
+        XCTAssertEqual(try Data(contentsOf: fixture.url), original)
+        editor.editBar(for: "work")
+        XCTAssertTrue(history.canRedo)
+        editor.redo()
+        XCTAssertEqual(try Data(contentsOf: fixture.url), work)
+        XCTAssertFalse(history.canRedo)
+        editor.redo()
+        XCTAssertEqual(try Data(contentsOf: fixture.url), work)
+        editor.editBar(for: "home")
+        XCTAssertTrue(history.canRedo)
+        editor.redo()
+        XCTAssertEqual(try Data(contentsOf: fixture.url), home)
+        XCTAssertNil(editor.error)
+    }
+
+    @MainActor func testProfileEditingPreviewsDisabledInheritedProfilesAndRestoresTheSessionPin() throws {
+        let fixture = try Fixture()
+        defer { fixture.close() }
+        let module = fixture.url.deletingLastPathComponent().appending(path: "profiles.json")
+        let included = Data(#"{"profile":"home","profiles":[{"name":"home","configuration":{}},{"name":"work","enabled":false,"configuration":{"defaults":{"fontSize":11},"widgets":[{"id":"b","type":"text","position":"left","text":"B"}]}}]}"#.utf8)
+        try included.write(to: module)
+        var original = try fixture.document()
+        original["includes"] = .array([.string("profiles.json")])
+        try configurationData(original).write(to: fixture.url)
+        let store = fixture.store
+        store.reloadConfiguration()
+        try store.applyEdits([ConfigurationEdit(action: .profile), ConfigurationEdit(action: .bar, properties: ["height": .number(60)])], persist: false)
+        let editor = ConfigurationEditor(store: store)
+        editor.editBar(for: "work")
+        XCTAssertEqual(store.activeProfiles, ["work"])
+        XCTAssertFalse(store.profiles[1].enabled)
+        XCTAssertEqual(try fixture.document(), original)
+        XCTAssertNil(store.propertySources(path: "defaults", key: "fontSize", values: [:]).saved)
+
+        editor.set(["text": .string("Edited")], for: "b")
+        editor.change(ConfigurationEdit(action: .defaults, properties: ["fontSize": .number(15)]))
+        try editor.history.flush()
+        XCTAssertNil(editor.error)
+        let profiles = try XCTUnwrap(fixture.document()["profiles"]).decoded([[String: ConfigurationValue]].self)
+        XCTAssertEqual(profiles, [["name": .string("work"), "configuration": .object([
+            "widgetOverrides": .object(["b": .object(["text": .string("Edited")])]),
+            "defaults": .object(["fontSize": .number(15)])
+        ])]])
+        let font = try XCTUnwrap(store.propertySources(path: "defaults", key: "fontSize", values: [:]).saved)
+        try store.removePropertySource(font)
+        XCTAssertNil(store.propertySources(path: "defaults", key: "fontSize", values: [:]).saved)
+        XCTAssertEqual(store.configuration?.defaults.fontSize, 11)
+        editor.undo()
+        XCTAssertEqual(store.configuration?.defaults.fontSize, 15)
+        editor.redo()
+        XCTAssertEqual(store.configuration?.defaults.fontSize, 11)
+        XCTAssertEqual(try Data(contentsOf: module), included)
+        var base = try fixture.document()
+        base["profiles"] = nil
+        XCTAssertEqual(base, original)
+
+        editor.endProfileEditing()
+        XCTAssertNil(store.pinnedProfile)
+        XCTAssertEqual(store.activeProfiles, ["home"])
+        XCTAssertEqual(store.configuration?.bar.height, 60)
+        XCTAssertEqual(store.sessionEdits.count, 2)
+        try store.setSessionEdits([])
+        XCTAssertEqual(store.pinnedProfile, "home")
+    }
+
+    @MainActor func testProfileEditingRejectsGlobalActionsWithoutChangingTheBaseOrHistory() throws {
+        let fixture = try Fixture(configuration: #"{"widgets":[{"id":"a","type":"text","position":"left","text":"A"}],"profiles":[{"name":"work","configuration":{}}]}"#)
+        defer { fixture.close() }
+        let store = fixture.store
+        let editor = ConfigurationEditor(store: store)
+        let original = try fixture.document()
+        editor.editBar(for: "work")
+        let history = editor.history
+        for action in [ConfigurationEdit.Action.reorder, .theme, .package] {
+            XCTAssertThrowsError(try history.change(ConfigurationEdit(action: action)))
+        }
+        XCTAssertThrowsError(try history.changePackageSettings(ConfigurationEdit(action: .package)))
+        XCTAssertThrowsError(try history.change([
+            ConfigurationEdit(action: .bar, properties: ["height": .number(30)]),
+            ConfigurationEdit(action: .package)
+        ]))
+        XCTAssertEqual(try fixture.document(), original)
+        XCTAssertFalse(history.canUndo)
+        XCTAssertFalse(history.hasPendingChanges)
+        editor.endProfileEditing()
+        XCTAssertEqual(try fixture.document(), original)
+        XCTAssertFalse(history.canUndo)
     }
 
     @MainActor func testLiquidGlassControlsSaveAndUndoWithoutCopyingInheritedSettings() throws {

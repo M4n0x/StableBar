@@ -4,6 +4,29 @@ import XCTest
 @testable import StableBar
 
 final class PackagesViewTests: XCTestCase {
+    @MainActor func testStorePreviewsDoNotInstallPackagesOrRunTheirCommands() async throws {
+        let fixture = try ThemeGalleryFixture()
+        defer { fixture.close() }
+        let index = LocalPackageIndex(fixture: fixture)
+        let marker = fixture.directory.appending(path: "command-ran")
+        let widget = try await index.add(id: "command-preview", kind: nil, configuration:
+            #"{"widgets":[{"id":"script","type":"script","position":"right","command":"touch '\#(marker.path)'"}]}"#)
+        let theme = try await index.add(configuration: #"{"bar":{"height":31}}"#)
+        let store = try fixture.store()
+        defer { store.stop() }
+        let before = try Data(contentsOf: fixture.url)
+        let library = PackageLibrary(store: store, client: PackageStoreClient(packages: fixture.packages, indexURL: index.url))
+        await library.selectStore(widget)
+        XCTAssertNil(library.draft?.themePreview)
+        await library.selectStore(theme)
+        XCTAssertEqual(library.draft?.themePreview?.light.bar.height, 31)
+        XCTAssertEqual(library.draft?.themePreview?.dark.bar.height, 31)
+        XCTAssertTrue(try fixture.packages.list().isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+        XCTAssertEqual(try Data(contentsOf: fixture.url), before)
+        XCTAssertTrue(store.customizationHistory.undoSteps.isEmpty)
+    }
+
     @MainActor func testPackageSettingsSaveAcrossNavigationAsOneUndoStepAndCredentialsStayADraft() async throws {
         let fixture = try ThemeGalleryFixture()
         defer { fixture.close() }
@@ -62,6 +85,28 @@ final class PackagesViewTests: XCTestCase {
         draft.inspectionTask?.cancel()
     }
 
+    @MainActor func testRemovingAnAddedPackageFromTheBarDropsItsWidgetOverrides() async throws {
+        let fixture = try ThemeGalleryFixture()
+        defer { fixture.close() }
+        let source = fixture.directory.appending(path: "note")
+        try fixture.write(#"{"id":"note","name":"Note","version":"1","entry":"config.json"}"#, to: source.appending(path: "package.json"))
+        try fixture.write(#"{"widgets":[{"id":"note","type":"text","position":"right","text":"Note"}]}"#,
+                          to: source.appending(path: "config.json"))
+        let installed = try fixture.packages.install(source)
+        let store = try fixture.store()
+        defer { store.stop() }
+        _ = try WidgetSetup(store: store).enable(installed, settings: [:], position: .left)
+        XCTAssertNotNil(try fixture.document()["widgetOverrides"])
+        let library = store.packageLibrary
+        await library.loadInstalled()
+        await library.selectInstalled(installed.manifest)
+        let draft = try XCTUnwrap(library.draft)
+        library.deactivate(draft)
+        XCTAssertNil(draft.error)
+        XCTAssertNil(try fixture.document()["widgetOverrides"])
+        XCTAssertEqual(store.configuration?.widgets.map(\.id), [])
+    }
+
     @MainActor func testReviewingANewVersionCarriesCompatibleSettingsAndKeepsItsDraft() async throws {
         let fixture = try ThemeGalleryFixture()
         defer { fixture.close() }
@@ -97,6 +142,49 @@ final class PackagesViewTests: XCTestCase {
         XCTAssertEqual(store.configuration?.widgets.first?.content, .text("Bern"))
     }
 
+    @MainActor func testStoreListingDoesNotClaimInstalledPackageOrigin() async throws {
+        let fixture = try ThemeGalleryFixture()
+        defer { fixture.close() }
+        let index = LocalPackageIndex(fixture: fixture)
+        let entry = try await index.add(id: "listed", kind: "widgets", configuration: #"{"widgets":[]}"#, version: "2")
+        func folder(_ id: String, _ version: String) throws -> URL {
+            let source = fixture.directory.appending(path: "folders/\(id)-\(version)")
+            try fixture.write(#"{"id":"\#(id)","name":"\#(id)","version":"\#(version)","kind":"widgets","entry":"config.json"}"#,
+                              to: source.appending(path: "package.json"))
+            try fixture.write(#"{"widgets":[]}"#, to: source.appending(path: "config.json"))
+            return source
+        }
+        let older = try fixture.packages.install(folder("listed", "1")).manifest
+        let newer = try fixture.packages.install(folder("listed", "3")).manifest
+        let unlisted = try fixture.packages.install(folder("unlisted", "1")).manifest
+        let store = try fixture.store()
+        defer { store.stop() }
+        let library = PackageLibrary(store: store, client: PackageStoreClient(packages: fixture.packages, indexURL: index.url))
+        await library.loadInstalled()
+        XCTAssertEqual(library.source(of: older), .installed)
+        await library.loadStore()
+        XCTAssertEqual(library.source(of: older), .listed)
+        XCTAssertEqual(library.source(of: newer), .listed)
+        XCTAssertEqual(library.source(of: unlisted), .installed)
+        await library.selectStore(entry)
+        XCTAssertEqual(library.draft.map { library.source($0) }, .store)
+        await library.select(try folder("listed", "1"))
+        XCTAssertEqual(library.draft.map { library.source($0) }, .local)
+        let installed = try fixture.packages.install(folder("listed", "2"))
+        let review = PackageLibrary(store: store, client: PackageStoreClient(packages: fixture.packages, indexURL: index.url), reviewing: true)
+        let installedDraft = PackageDraft(inspection: installed, settings: [:])
+        XCTAssertEqual(review.source(installedDraft), .installed)
+        await review.loadStore()
+        XCTAssertEqual(review.source(installedDraft), .listed)
+        await review.selectStore(entry)
+        XCTAssertEqual(review.draft.map { review.source($0) }, .listed)
+        let downloaded = try await PackageStoreClient(packages: fixture.packages, indexURL: index.url).package(entry)
+        XCTAssertEqual(review.source(PackageDraft(inspection: downloaded, settings: [:])), .store)
+        try fixture.write(#"{"packages":[]}"#, to: index.url)
+        await library.loadStore(reload: true)
+        XCTAssertEqual(library.source(of: installed.manifest), .installed)
+    }
+
     @MainActor func testPackagesBrowserOpensInstalledPackageSettingsFromSelection() async throws {
         let fixture = try ThemeGalleryFixture()
         defer { fixture.close() }
@@ -124,7 +212,7 @@ final class PackagesViewTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         let table = try XCTUnwrap(tables(in: host).first)
-        XCTAssertEqual(table.numberOfRows, 3)
+        XCTAssertEqual(table.numberOfRows, 4)
         XCTAssertEqual(table.selectedRow, 1)
         XCTAssertTrue(textFields(host).contains("Ready to customize"))
         XCTAssertFalse(window.isVisible)
@@ -160,14 +248,14 @@ final class PackagesViewTests: XCTestCase {
         }
         let text = textFields(host)
         for expected in ["echo reviewed", "Automation", "example.com", "Hello"] {
-            XCTAssertTrue(text.contains(expected), "Review is missing \(expected): \(text)")
+            XCTAssertTrue(text.contains { $0.contains(expected) }, "Review is missing \(expected): \(text)")
         }
         XCTAssertFalse(window.isVisible)
         XCTAssertTrue(try fixture.packages.list().isEmpty)
         XCTAssertTrue(store.customizationHistory.undoSteps.isEmpty)
     }
 
-    @MainActor func testAddWidgetSheetLoadsTheCommandReviewAfterChoosingAPackage() async throws {
+    @MainActor func testAddWidgetPopoverLoadsTheCommandReviewAfterChoosingAPackage() async throws {
         let fixture = try ThemeGalleryFixture()
         defer { fixture.close() }
         let index = LocalPackageIndex(fixture: fixture)
@@ -181,9 +269,10 @@ final class PackagesViewTests: XCTestCase {
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         defer { window.close() }
-        let host = NSHostingView(rootView: WidgetAddView(setup: setup, store: store, position: .left, added: { _ in
+        let model = WidgetAddPopoverModel(setup: setup, position: .left, before: nil, added: { _ in
             XCTFail("Commands must be reviewed before adding")
-        }))
+        })
+        let host = NSHostingView(rootView: WidgetAddPopoverView(model: model, store: store))
         host.sizingOptions = []
         window.contentView = host
         for _ in 0..<50 {

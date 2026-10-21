@@ -2,6 +2,33 @@ import XCTest
 @testable import StableBar
 
 final class ThemeOverridesTests: XCTestCase {
+    @MainActor func testThemeResetWhileEditingAProfileKeepsBaseOverrides() async throws {
+        let fixture = try ThemeGalleryFixture(##"""
+        {"theme":{"id":"test-theme","version":"1"},"defaults":{"fontSize":20},"widgets":[],
+         "profiles":[{"name":"work","configuration":{"defaults":{"background":{"gradient":{"colors":["#112233","#445566"]}}}}}]}
+        """##)
+        defer { fixture.close() }
+        _ = try fixture.theme(##"{"defaults":{"fontSize":12,"background":"#ffffff"}}"##)
+        let store = try fixture.store()
+        defer { store.stop() }
+        store.reloadConfiguration()
+        let editor = ConfigurationEditor(store: store)
+        editor.editBar(for: "work")
+        let gallery = ThemeGallery(store: store)
+        await gallery.refresh()
+        XCTAssertEqual(gallery.overrides.values.map(\.path), [["defaults", "background"]])
+        editor.change(gallery.overrides.resetEdit)
+        try editor.history.flush()
+        let document = try fixture.document()
+        XCTAssertEqual(document["defaults"], .object(["fontSize": .number(20)]))
+        XCTAssertEqual(try document["profiles"]?.decoded([ConfigurationProfile].self).first?.configuration, [:])
+        editor.undo()
+        XCTAssertEqual(store.configuration?.defaults.background,
+                       .gradient(BackgroundGradient(colors: [HexColor(0x112233ff), HexColor(0x445566ff)])))
+        XCTAssertEqual(store.configuration?.defaults.fontSize, 20)
+        XCTAssertNil(editor.error)
+    }
+
     @MainActor func testThemeProfileOverridesFollowMergedEnabledConditionsAndPinning() async throws {
         let fixture = try ThemeGalleryFixture(#"""
         {"theme":{"id":"test-theme","version":"1"},"bar":{"height":48,"spacing":17},"widgets":[],
@@ -58,9 +85,38 @@ final class ThemeOverridesTests: XCTestCase {
             "All widgets: border edges", "All widgets: icon size", "All widgets: vertical offset", "All widgets: horizontal padding",
             "Text color in dark mode", "Text color in light mode"
         ])
-        XCTAssertEqual(overrides.notice, "Your settings override this theme in 6 places.")
+        XCTAssertEqual(overrides.notice(theme: "Rosé Pine"), "6 of your settings replace what Rosé Pine sets")
+        XCTAssertEqual(overrides.summary, "All widgets: border edges, All widgets: icon size, All widgets: vertical offset, All widgets: horizontal padding and 2 more")
         let single = ThemeOverrides(main: ["bar": .object(["height": .number(40)])], theme: ["bar": .object(["height": .number(32)])], widgets: [])
-        XCTAssertEqual(single.notice, "Your settings override this theme in 1 place.")
+        XCTAssertEqual(single.notice(theme: "Rosé Pine"), "1 of your settings replaces what Rosé Pine sets")
+        XCTAssertEqual(single.summary, "Bar height")
+    }
+
+    func testGradientOverridesCountAndResetTheWholeFill() throws {
+        let gradient = ConfigurationValue.object(["gradient": .object([
+            "colors": .array([.string("#112233"), .string("#445566")]),
+            "angle": .number(120), "locations": .array([.number(0), .number(1)])])])
+        let colors: [ConfigurationValue] = [
+            .string("@token.surface"), .string("#ffffff"),
+            .object(["light": .string("#ffffff"), "dark": .string("#000000")]), gradient
+        ]
+        for color in colors {
+            for (own, themed) in [(gradient, color), (color, gradient)] {
+                let main: [String: ConfigurationValue] = [
+                    "popupDefaults": .object(["background": own, "fontSize": .number(14)])
+                ]
+                let overrides = ThemeOverrides(main: main,
+                    theme: ["popupDefaults": .object(["background": themed])], widgets: [])
+                XCTAssertEqual(overrides.values, [ThemeOverride(path: ["popupDefaults", "background"], title: "Popups: background")])
+                var ids: [String] = []
+                let reset = try overrides.resetEdit.applying(to: main, widgetIDs: &ids)
+                XCTAssertEqual(reset, ["popupDefaults": .object(["fontSize": .number(14)])])
+            }
+        }
+        let tokens: [String: ConfigurationValue] = ["tokens": .object([
+            "gradient": .string("#112233"), "text": .string("#445566")])]
+        let overrides = ThemeOverrides(main: tokens, theme: tokens, widgets: [])
+        XCTAssertEqual(overrides.values.map(\.path), [["tokens", "gradient"], ["tokens", "text"]])
     }
 
     func testStarterDimensionsCountOnlyWhenTheSelectedThemeSetsThem() throws {

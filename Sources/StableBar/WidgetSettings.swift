@@ -24,9 +24,9 @@ enum WidgetClickChoice: String, CaseIterable {
         if widget.onClick != nil || output?.onClick != nil { actions.append("runs a command") }
         if widget.popup != nil || widget.popupName != nil { actions.append("opens a popup") }
         if widget.menu != nil || output?.menu != nil { actions.append("opens a menu") }
-        if !actions.isEmpty { return "This widget \(actions.joined(separator: " and ")). Change it under Technical details." }
+        if !actions.isEmpty { return "This widget \(actions.joined(separator: " and ")). Change it with Edit as JSON in the More menu." }
         if let open = widget.open, case .url(let url) = OpenTarget(open), !["http", "https"].contains(url.scheme?.lowercased() ?? "") {
-            return "This widget opens a link. Change it under Technical details."
+            return "This widget opens a link. Change it with Edit as JSON in the More menu."
         }
         return nil
     }
@@ -48,7 +48,7 @@ enum WidgetClickChoice: String, CaseIterable {
 
     func properties(for widget: WidgetConfiguration, value: String? = nil, output: ScriptOutput? = nil) throws -> [String: ConfigurationValue] {
         guard Self.control(for: widget, output: output) == .choices else {
-            throw CommandFailure(message: "Change this widget’s click action under Technical details.")
+            throw CommandFailure(message: "Change this widget’s click action with Edit as JSON in the More menu.")
         }
         switch self {
         case .nothing: return ["open": .null]
@@ -63,7 +63,7 @@ enum WidgetClickChoice: String, CaseIterable {
                 throw CommandFailure(message: "Enter a web address beginning with https:// or http://.")
             }
             return ["open": .string(value)]
-        case .advanced: throw CommandFailure(message: "Change this widget’s click action under Technical details.")
+        case .advanced: throw CommandFailure(message: "Change this widget’s click action with Edit as JSON in the More menu.")
         }
     }
 }
@@ -120,6 +120,14 @@ struct WidgetClockFormat {
         Self(title: "24-hour time", value: "HH:mm"),
         Self(title: "12-hour time", value: "h:mm a"),
         Self(title: "Time with seconds", value: "HH:mm:ss"),
-        Self(title: "Date and time", value: "EEE d MMM  HH:mm")
+        Self(title: "Day and time", value: "EEE HH:mm"),
+        Self(title: "Date and time", value: "EEE d MMM  HH:mm"),
+        Self(title: "Date", value: "d MMM")
     ]
+
+    var sample: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = value
+        return formatter.string(from: .now)
+    }
 }

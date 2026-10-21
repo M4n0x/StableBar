@@ -17,7 +17,18 @@ final class ConfigurationEditor {
             searchTarget = nil
         }
     }
-    var section: CustomizationSection? = .widgets
+    var section: CustomizationSection? = .general {
+        didSet { if ![.widgets, .appearance].contains(section) { endProfileEditing() } }
+    }
+    var showsValueSources = false
+    var editingProfile: String? {
+        get { history.editingProfile }
+        set { history.editingProfile = newValue }
+    }
+    var barItem = BarItem.widget
+    var barTab = BarTab.size
+    var widgetTab = WidgetTab.style
+    var barScreen = ScreenKind.laptop
     var selectedPackageID: String?
     var diagnosticWidgetID: String?
     var selectedProfileName: String?
@@ -46,8 +57,10 @@ final class ConfigurationEditor {
 
     func showWidget(_ id: String) {
         guard store.configuration?.widgets.contains(where: { $0.id == id }) == true else { return }
+        if selectedID == id { finishEditing() }
         searchTarget = nil
         selectedID = id
+        barItem = .widget
         section = .widgets
     }
 
@@ -56,6 +69,17 @@ final class ConfigurationEditor {
         searchTarget = nil
         selectedPackageID = id
         section = .packages
+    }
+
+    func reset(_ widget: WidgetConfiguration) {
+        let keys = definedInMainFile(widget)
+            ? ["style", "role", "rules", "transition", "animation", "tooltip", "onClick", "open", "actions", "expandOnHover", "format", "workspace"]
+            : WidgetConfiguration.CodingKeys.allCases.map(\.stringValue).filter { !["id", "position", "display", "enabled", "group"].contains($0) }
+        change(ConfigurationEdit(action: .unset, id: widget.id, properties: Dictionary(uniqueKeysWithValues: keys.map { ($0, .null) })))
+    }
+
+    func definedInMainFile(_ widget: WidgetConfiguration) -> Bool {
+        store.origins["widgets.\(widget.id).id"]?.file == store.configurationURL.standardizedFileURL.path
     }
 
     func troubleshoot(_ id: String) {
@@ -70,6 +94,29 @@ final class ConfigurationEditor {
         searchTarget = nil
         selectedProfileName = name
         section = .profiles
+    }
+
+    func editBar(for profile: String) {
+        finishEditing()
+        do {
+            try history.flush()
+            guard try store.customizationProfiles().contains(where: { $0.name == profile }) else {
+                throw CommandFailure(message: "Save command-line changes before editing this profile.")
+            }
+            editingProfile = profile
+            store.previewProfile(profile)
+            if section != .appearance { section = .widgets }
+            keepSelection()
+        } catch { self.error = errorMessage(error) }
+    }
+
+    func endProfileEditing() {
+        guard editingProfile != nil else { return }
+        finishEditing()
+        store.flushCustomization()
+        editingProfile = nil
+        store.previewProfile(nil)
+        keepSelection()
     }
 
     func showSetting(_ result: SettingsSearchResult) {

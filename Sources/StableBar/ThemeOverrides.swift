@@ -8,8 +8,13 @@ struct ThemeOverride: Equatable {
 struct ThemeOverrides {
     let values: [ThemeOverride]
 
-    var notice: String {
-        "Your settings override this theme in \(values.count) \(values.count == 1 ? "place" : "places")."
+    func notice(theme: String) -> String {
+        "\(values.count) of your settings \(values.count == 1 ? "replaces" : "replace") what \(theme) sets"
+    }
+
+    var summary: String {
+        let names = values.prefix(4).map(\.title).joined(separator: ", ")
+        return values.count > 4 ? "\(names) and \(values.count - 4) more" : names
     }
 
     init(main: [String: ConfigurationValue], theme: [String: ConfigurationValue],
@@ -81,6 +86,7 @@ struct ThemeOverrides {
 /// Compare raw paths, before token substitution, including an entire value that masks a subtree.
 private func overlapping(_ main: ConfigurationValue, _ theme: ConfigurationValue, path: [String] = []) -> [[String]] {
     if case let .object(themed) = theme, themed.isEmpty { return [] }
+    if main.isGradient || theme.isGradient { return [path] }
     if case let .object(own) = main {
         if case let .object(themed) = theme {
             return own.keys.sorted().flatMap { key in
@@ -115,7 +121,7 @@ private func detailTitle(_ path: [String]) -> String {
     return title.prefix(1).lowercased() + title.dropFirst()
 }
 
-private func styleTitle(_ path: [String]) -> String {
+func styleTitle(_ path: [String]) -> String {
     let appearance = ["light", "dark"].contains(path.last ?? "") ? path.last : nil
     let title = path.filter { $0 != "states" && $0 != appearance }.map { key in
         ["foreground": "Text color", "background": "Background", "borderColor": "Border color",
@@ -136,7 +142,7 @@ private func appearanceTitle(_ title: String, appearance: String?) -> String {
     return "\(title) in \(appearance) mode"
 }
 
-private func friendly(_ value: String) -> String {
+func friendly(_ value: String) -> String {
     let spaced = value.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression)
         .replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: "_", with: " ")
         .lowercased()

@@ -118,7 +118,7 @@ final class BarEditing {
     /// Turned-off widgets aren't on the bar, even while editing: removing a package or include
     /// widget turns it off, so it leaves the bar. Settings → Your bar can turn it on again.
     func widgets(on display: BarDisplay) -> [WidgetConfiguration] {
-        (store.configuration?.widgets ?? []).filter { $0.enabled && (isActive || !visibility(of: $0, on: display).isHidden) }
+        (store.configuration?.onScreen(ScreenKind(display)).widgets ?? []).filter { $0.enabled && (isActive || !visibility(of: $0, on: display).isHidden) }
     }
 
     func entries(on display: BarDisplay) -> [BarEditWidget] {
@@ -138,14 +138,14 @@ final class BarEditing {
             let hasContent = drawsCells && widget.layout == nil
                 || layout.map { BarEditContent.hasContent($0, fields: label.fields, output: output,
                                                           menu: output?.menu ?? widget.menu ?? []) } == true
-            let transparent = store.presentations[widget.id]?.style.base.opacity == 0
+            let transparent = store.presentations[widget.id]?.style(on: ScreenKind(display)).base.opacity == 0
             return BarEditWidget(widget: widget, name: names[widget.id] ?? widget.id, visibility: visibility,
                                  usesPlaceholder: visibility.isHidden || !hasContent || transparent)
         }
     }
 
     func geometry(for display: BarDisplay) -> BarGeometry? {
-        guard let config = store.configuration else { return nil }
+        guard let config = store.configuration?.onScreen(ScreenKind(display)) else { return nil }
         if !isActive { return config.barGeometry(for: display) }
         let scale = CGFloat(config.bar.scale(for: display))
         let initial = max(BarEditTrayMetrics.slot, config.bar.height - 2 * config.bar.margin / scale)
@@ -180,25 +180,10 @@ final class BarEditing {
     /// Groups are one insertion target, even when a member's frame is missing.
     func dropTarget(_ id: String, on displayID: Int, position: WidgetPosition, x: CGFloat,
                     frames: [String: CGRect]) -> BarEditInsertion? {
-        guard isActive, let config = store.configuration,
-              let moving = config.widgets.first(where: { $0.id == id }) else { return nil }
-        let remaining = config.widgets.filter {
-            $0.position == position && $0.id != id && (moving.group == nil || $0.group != moving.group)
-        }
-        let units = BarUnit.make(widgets: remaining, groups: config.groups)
-        var index = 0
-        var end: CGFloat = 8
-        for unit in units {
-            let bounds = unit.widgets.compactMap { frames[$0.id] }.reduce(CGRect.null) { $0.union($1) }
-            guard !bounds.isNull else { index += unit.widgets.count; continue }
-            if x < bounds.midX {
-                return BarEditInsertion(displayID: displayID, position: position, before: unit.widgets[0].id,
-                                        index: index, x: bounds.minX - 3)
-            }
-            end = bounds.maxX + 3
-            index += unit.widgets.count
-        }
-        return BarEditInsertion(displayID: displayID, position: position, before: nil, index: remaining.count, x: end)
+        guard isActive, let shared = store.configuration else { return nil }
+        let configuration = screenKind(displayID).map(shared.onScreen) ?? shared
+        return WidgetPlacement.dropTarget(id, on: displayID, position: position, x: x, frames: frames,
+                                          widgets: configuration.widgets, groups: configuration.groups)
     }
 
     @discardableResult
@@ -210,13 +195,13 @@ final class BarEditing {
 
     func move(_ id: String, to position: WidgetPosition, before anchor: String? = nil, on displayID: Int? = nil) {
         guard isActive else { return }
-        perform(on: displayID) { try WidgetSetup(store: store).move(id, to: position, before: anchor) }
+        perform(on: displayID) { try WidgetSetup(store: store).move(id, to: position, before: anchor, on: screenKind(displayID)) }
     }
 
     func move(_ id: String, by offset: Int, on displayID: Int? = nil) {
         guard isActive else { return }
         // Step over the turned-off widgets the bar leaves out.
-        perform(on: displayID) { try WidgetSetup(store: store).move(id, by: offset, listed: \.enabled) }
+        perform(on: displayID) { try WidgetSetup(store: store).move(id, by: offset, on: screenKind(displayID), listed: \.enabled) }
     }
 
     func remove(_ id: String, on displayID: Int? = nil) {
@@ -240,9 +225,19 @@ final class BarEditing {
         }
     }
 
+    func setDisplay(_ id: String, to display: ConfigurationValue, on displayID: Int) {
+        perform(on: displayID) {
+            try store.customizationHistory.change(ConfigurationEdit(action: .set, id: id, properties: ["display": display]))
+        }
+    }
+
     func select(_ id: String) {
         guard isActive, store.configuration?.widgets.contains(where: { $0.id == id }) == true else { return }
         store.onCustomizeWidget?(id)
+    }
+
+    private func screenKind(_ displayID: Int?) -> ScreenKind? {
+        NSScreen.screens.map(BarDisplay.init).first { $0.id == displayID }.map(ScreenKind.init)
     }
 
     private func perform(on displayID: Int?, _ action: () throws -> Void) {

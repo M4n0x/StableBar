@@ -34,7 +34,7 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     #expect(loader.activeProfiles == ["dark", "portable"])
     #expect(dark.widgets[0].style.fontSize == 16)
     #expect(dark.defaults.foreground == HexColor(0xeeeeeeff))
-    #expect(dark.widgets[0].style.background == HexColor(0xeeeeeeff))
+    #expect(dark.widgets[0].style.background == .color(HexColor(0xeeeeeeff)))
     #expect(dark.bar.height == 32)
     #expect(loader.origins["widgets.status.main.style.fontSize"]?.description.contains("template base") == true)
     #expect(loader.origins["widgets.status.main.style.background"]?.description.contains("widget override") == true)
@@ -357,6 +357,60 @@ private func writePackageFile(_ text: String, to url: URL) throws {
         #expect(try packages.list().map(\.version) == ["1"])
         #expect(store.configuration?.bar.height == 48)
     }
+}
+
+@Test @MainActor func uninstallRemovesTheVersionFromOtherBarsAndTheirWidgetOverrides() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    let packages = WidgetPackageStore(directory: directory.appending(path: "packages"))
+    try writePackageFile(#"{"id":"clock","name":"Clock","version":"1","entry":"config.json"}"#, to: source.appending(path: "package.json"))
+    try writePackageFile(#"{"widgets":[{"id":"clock","type":"text","position":"left","text":"Clock"}]}"#, to: source.appending(path: "config.json"))
+    _ = try packages.install(source)
+    let url = directory.appending(path: "config.json")
+    try writePackageFile(#"{"widgets":[]}"#, to: url)
+    let laptopBar = directory.appending(path: "setup-laptop.json")
+    try writePackageFile(#"{"packages":[{"id":"clock","version":"1"}],"widgetOverrides":{"clock":{"enabled":false}}}"#, to: laptopBar)
+    let store = BarStore(configurationURL: url)
+    defer { store.stop() }
+    store.reloadConfiguration()
+    try store.uninstallPackage(id: "clock", version: "1")
+    var loader = ConfigurationLoader()
+    let document = try loader.compose(laptopBar)
+    #expect(try packages.list().isEmpty)
+    #expect(document["widgetOverrides"] == nil)
+    #expect(try document["packages"]?.decoded([WidgetPackageSelection].self).map(\.enabled) == [false])
+    #expect(try loader.load(laptopBar).widgets.isEmpty)
+}
+
+@Test @MainActor func uninstallRemovesScreenThemesThatNameTheVersion() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appending(path: "source")
+    let packages = WidgetPackageStore(directory: directory.appending(path: "packages"))
+    for version in ["1", "2"] {
+        try writePackageFile(#"{"id":"sample","name":"Sample","version":"\#(version)","kind":"theme","entry":"config.json"}"#,
+                             to: source.appending(path: "package.json"))
+        try writePackageFile(#"{"bar":{"height":48}}"#, to: source.appending(path: "config.json"))
+        _ = try packages.install(source)
+    }
+    let url = directory.appending(path: "config.json")
+    try writePackageFile("""
+    {"theme":{"id":"sample","version":"2"},"screens":{"monitor":{"theme":{"id":"sample","version":"1"}},"laptop":{"theme":{"id":"sample","version":"2"}}}}
+    """, to: url)
+    let verticalBar = directory.appending(path: "setup-vertical.json")
+    try writePackageFile(#"{"screens":{"vertical":{"theme":{"id":"sample","version":"1"}}}}"#, to: verticalBar)
+    let store = BarStore(configurationURL: url)
+    defer { store.stop() }
+    store.reloadConfiguration()
+    try store.uninstallPackage(id: "sample", version: "1")
+    var loader = ConfigurationLoader()
+    let screens = try #require(loader.compose(url)["screens"]).decoded([String: [String: ConfigurationValue]].self)
+    #expect(screens.keys.sorted() == ["laptop"])
+    #expect(try loader.compose(verticalBar)["screens"] == nil)
+    _ = try loader.load(url)
+    _ = try loader.load(verticalBar)
+    #expect(try packages.list().map(\.version) == ["2"])
 }
 
 @Test func rootPackagePinsOverrideIncludedSelectionsWithoutDuplicatingProviders() throws {
@@ -693,8 +747,8 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     let light = try loader.load(root, data: Data(json.utf8))
     #expect(light.defaults.foreground == HexColor(0x111111ff))
     #expect(light.widgets[0].style.foreground == HexColor(0x222222ff))
-    #expect(light.widgets[0].style.background == HexColor(0x888888ff))
-    #expect(light.defaults.background == HexColor(0x666666ff))
+    #expect(light.widgets[0].style.background == .color(HexColor(0x888888ff)))
+    #expect(light.defaults.background == .color(HexColor(0x666666ff)))
     #expect(light.defaults.fontSize == 13)
     #expect(light.bar.height == 30)
     #expect(light.widgets.map(\.id) == ["status", "note"])
@@ -724,7 +778,7 @@ private let bundledThemes = URL(filePath: #filePath).deletingLastPathComponent()
      "widgets":[]}
     """##.utf8))
     #expect(configuration.defaults.foreground == HexColor(light: 0x111111ff, dark: 0xeeeeeeff))
-    #expect(configuration.defaults.background == HexColor(0x22222280))
+    #expect(configuration.defaults.background == .color(HexColor(0x22222280)))
     #expect(configuration.defaults.borderColor == HexColor(light: 0x333333ff, dark: 0x444444ff))
     for (color, message) in [
         (##"{"light":"#111111"}"##, "defaults.foreground: Missing property dark."),
@@ -735,6 +789,65 @@ private let bundledThemes = URL(filePath: #filePath).deletingLastPathComponent()
             try loader.load(url, data: Data(#"{"widgets":[],"defaults":{"foreground":\#(color)}}"#.utf8))
         }
         #expect(error.map(errorMessage) == message)
+    }
+}
+
+@Test func backgroundsTakeAGradientOfColors() throws {
+    let url = FileManager.default.temporaryDirectory.appending(path: "gradients.json")
+    var loader = ConfigurationLoader()
+    let configuration = try loader.load(url, data: Data(##"""
+    {"tokens":{"accent":{"light":"#111111","dark":"#eeeeee"},"line":"#333333","sunset":{"gradient":{"colors":["#ff0000","#0000ff"]}}},
+     "defaults":{"background":{"gradient":{"colors":["@token.accent","#eb6f92"],"angle":120,"locations":[0,0.6]}},
+                 "hoverBackground":"@token.sunset"},
+     "bar":{"background":{"gradient":{"colors":["#000000",{"light":"@token.line","dark":"#222222"},"#ffffff"]}}},
+     "widgets":[]}
+    """##.utf8))
+    #expect(configuration.defaults.background == .gradient(BackgroundGradient(
+        colors: [HexColor(light: 0x111111ff, dark: 0xeeeeeeff), HexColor(0xeb6f92ff)], angle: 120, locations: [0, 0.6])))
+    #expect(configuration.defaults.hoverBackground == .gradient(BackgroundGradient(colors: [HexColor(0xff0000ff), HexColor(0x0000ffff)])))
+    #expect(configuration.bar.background == .gradient(BackgroundGradient(
+        colors: [HexColor(0x000000ff), HexColor(light: 0x333333ff, dark: 0x222222ff), HexColor(0xffffffff)])))
+    let locations = "defaults.background.gradient.locations: Give one location per color, from 0 to 1 in ascending order."
+    for (key, background, message) in [
+        ("background", ##"{"gradient":{"colors":["#111111"]}}"##, "defaults.background.gradient.colors: A gradient needs two or more colors."),
+        ("background", ##"{"gradient":{"colors":["#111111","blue"]}}"##, "defaults.background.gradient.colors.1: Use #RRGGBB or #RRGGBBAA for colors."),
+        ("background", ##"{"gradient":{"colors":["#111111","#222222"],"spread":"pad"}}"##, "defaults.background.gradient.spread: Unknown property."),
+        ("background", ##"{"gradient":{"colors":["#111111","#222222"]},"light":"#111111"}"##, "defaults.background.light: Unknown property."),
+        ("background", ##"{"gradient":{"colors":["#111111","#222222"],"locations":[0]}}"##, locations),
+        ("background", ##"{"gradient":{"colors":["#111111","#222222"],"locations":[0,1.5]}}"##, locations),
+        ("background", ##"{"gradient":{"colors":["#111111","#222222"],"locations":[0.6,0.2]}}"##, locations),
+        ("foreground", ##"{"gradient":{"colors":["#111111","#222222"]}}"##, "defaults.foreground.gradient: Unknown property.")
+    ] {
+        let error = #expect(throws: (any Error).self) {
+            try loader.load(url, data: Data(#"{"widgets":[],"defaults":{"\#(key)":\#(background)}}"#.utf8))
+        }
+        #expect(error.map(errorMessage) == message, "\(background)")
+    }
+    for (angle, normalized) in [(-90.0, 270.0), (450, 90), (720, 0)] {
+        let fill = try JSONDecoder().decode(BackgroundFill.self, from: Data(##"{"gradient":{"colors":["#111111","#222222"],"angle":\##(angle)}}"##.utf8))
+        #expect(fill == .gradient(BackgroundGradient(colors: [HexColor(0x111111ff), HexColor(0x222222ff)], angle: normalized)))
+    }
+}
+
+@Test func aGradientReplacesTheBackgroundItOverridesInsteadOfMergingWithIt() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let two = ##"{"gradient":{"colors":["#111111","#222222"]}}"##
+    let three = ##"{"gradient":{"colors":["#111111","#222222","#333333"],"angle":180,"locations":[0,0.2,1]}}"##
+    let pair = ##"{"light":"#444444","dark":"#555555"}"##
+    let twoColors = BackgroundFill.gradient(BackgroundGradient(colors: [HexColor(0x111111ff), HexColor(0x222222ff)]))
+    var loader = ConfigurationLoader()
+    for (theme, own, background) in [(pair, two, twoColors), (two, pair, .color(HexColor(light: 0x444444ff, dark: 0x555555ff))),
+                                     (three, two, twoColors)] {
+        try Data(##"{"tokens":{"surface":"#666666"},"defaults":{"background":\##(theme)}}"##.utf8)
+            .write(to: directory.appending(path: "theme.json"))
+        let configuration = try loader.load(directory.appending(path: "config.json"), data: Data(##"""
+        {"includes":["theme.json"],"tokens":{"gradient":\##(two)},"defaults":{"background":\##(own),"hoverBackground":"@token.gradient"},
+         "bar":{"background":"@token.surface"},"widgets":[]}
+        """##.utf8))
+        #expect(configuration.defaults.background == background, "\(own) over \(theme)")
+        #expect(configuration.bar.background == .color(HexColor(0x666666ff)))
     }
 }
 
@@ -756,9 +869,9 @@ private let bundledThemes = URL(filePath: #filePath).deletingLastPathComponent()
     let builtIn = try loader.load(root, data: Data("{\(widgets)}".utf8))
     let textMuted = HexColor(light: 0x6e6e73ff, dark: 0xa1a1a6ff)
     #expect(builtIn.defaults.foreground == HexColor(light: 0x1d1d1fff, dark: 0xf5f5f7ff))
-    #expect(builtIn.defaults.background == HexColor(light: 0xf8f8faed, dark: 0x242629ee))
+    #expect(builtIn.defaults.background == .color(HexColor(light: 0xf8f8faed, dark: 0x242629ee)))
     #expect(builtIn.widgets[0].style.foreground == textMuted)
-    #expect(builtIn.widgets[0].style.background == HexColor(0x888888ff))
+    #expect(builtIn.widgets[0].style.background == .color(HexColor(0x888888ff)))
     #expect(builtIn.widgets[1].style.foreground == textMuted)
     let rosePine = try loader.load(root, data: Data(#"{"theme":{"id":"rose-pine"},\#(widgets)}"#.utf8))
     #expect(rosePine.defaults.foreground == HexColor(light: 0x575279ff, dark: 0xe0def4ff))
@@ -839,7 +952,7 @@ private let bundledThemes = URL(filePath: #filePath).deletingLastPathComponent()
         var loader = ConfigurationLoader()
         loader.themesDirectory = bundledThemes
         let configuration = try loader.load(root)
-        #expect(configuration.defaults.background == HexColor(light: 0xfaf4edee, dark: 0x191724ee))
+        #expect(configuration.defaults.background == .color(HexColor(light: 0xfaf4edee, dark: 0x191724ee)))
         #expect(configuration.defaults.accent == HexColor(light: 0x8a72a4ff, dark: 0xc4a7e7ff))
     }
     let handSet = ##"{"bar":{"height":40},"defaults":{"foreground":"#abcdefff","background":"#242629ee","hoverBackground":"#36383cff","borderColor":"#ffffff1f","shadowColor":"#00000040","accent":"#ff8800"},"widgets":[]}"##
@@ -870,12 +983,12 @@ private let bundledThemes = URL(filePath: #filePath).deletingLastPathComponent()
      "widgetOverrides":{"label":{"style":{"states":{"hover":{"background":"#777777"}}}},
                         "meter":{"style":{"states":{"warning":{"background":"#888888"}}}}}}
     """##.utf8), context: ConfigurationContext(appearance: "dark"))
-    #expect(configuration.defaults.states?["warning"] == WidgetStyle(foreground: HexColor(0x222222ff), background: HexColor(0x666666ff)))
-    #expect(configuration.defaults.states?["hover"]?.background == HexColor(0x444444ff))
+    #expect(configuration.defaults.states?["warning"] == WidgetStyle(foreground: HexColor(0x222222ff), background: .color(HexColor(0x666666ff))))
+    #expect(configuration.defaults.states?["hover"]?.background == .color(HexColor(0x444444ff)))
     let label = try #require(configuration.widgets.first { $0.id == "label" })
-    #expect(label.style.states?["hover"] == WidgetStyle(foreground: HexColor(0x555555ff), background: HexColor(0x777777ff)))
+    #expect(label.style.states?["hover"] == WidgetStyle(foreground: HexColor(0x555555ff), background: .color(HexColor(0x777777ff))))
     let meter = try #require(configuration.widgets.first { $0.id == "meter" })
-    #expect(meter.style.states?["warning"] == WidgetStyle(foreground: HexColor(0x111111ff), background: HexColor(0x888888ff)))
+    #expect(meter.style.states?["warning"] == WidgetStyle(foreground: HexColor(0x111111ff), background: .color(HexColor(0x888888ff))))
 }
 
 @Test func aLaterLayerRemovesAnInheritedStateWithNull() throws {
@@ -931,10 +1044,10 @@ private let bundledThemes = URL(filePath: #filePath).deletingLastPathComponent()
      "profiles":[{"name":"p","configuration":{"defaults":{"states":{"hover":{"foreground":"#888888"}}}}}]}
     """##.utf8))
     #expect(configuration.defaults.states?["warning"] == WidgetStyle(foreground: HexColor(light: 0xaa0000ff, dark: 0xff4444ff),
-                                                                      background: HexColor(0x555555ff)))
+                                                                      background: .color(HexColor(0x555555ff))))
     #expect(configuration.defaults.states?["muted"] == nil)
     #expect(configuration.defaults.states?["hover"] == WidgetStyle(foreground: HexColor(0x888888ff),
-                                                                    background: HexColor(light: 0x333333ff, dark: 0x444444ff)))
+                                                                    background: .color(HexColor(light: 0x333333ff, dark: 0x444444ff))))
     let cell = try #require(configuration.widgets[0].workspace).cellStyle(.focused)
     #expect(cell.resting.foreground == HexColor(light: 0x666666ff, dark: 0x777777ff))
     let error = #expect(throws: (any Error).self) {

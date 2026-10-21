@@ -58,6 +58,87 @@ struct HexColor: Decodable, Equatable, Sendable {
     }
 }
 
+enum BackgroundFill: Decodable, Equatable, Sendable {
+    case color(HexColor)
+    case gradient(BackgroundGradient)
+
+    enum CodingKeys: String, CodingKey, CaseIterable { case gradient }
+
+    init(from decoder: Decoder) throws {
+        if let values = try? decoder.container(keyedBy: CodingKeys.self), values.contains(.gradient) {
+            try decoder.rejectUnknownKeys(CodingKeys.self)
+            self = .gradient(try values.decode(BackgroundGradient.self, forKey: .gradient))
+        } else {
+            self = .color(try HexColor(from: decoder))
+        }
+    }
+
+    var shapeStyle: AnyShapeStyle {
+        switch self {
+        case let .color(color): AnyShapeStyle(color.color)
+        case let .gradient(gradient): AnyShapeStyle(gradient.linearGradient)
+        }
+    }
+
+    var firstColor: HexColor {
+        switch self {
+        case let .color(color): color
+        case let .gradient(gradient): gradient.colors[0]
+        }
+    }
+
+    var configurationValue: ConfigurationValue {
+        switch self {
+        case let .color(color): return color.configurationValue
+        case let .gradient(gradient):
+            var properties: [String: ConfigurationValue] = ["colors": .array(gradient.colors.map(\.configurationValue)),
+                                                            "angle": .number(gradient.angle)]
+            properties["locations"] = gradient.locations.map { .array($0.map(ConfigurationValue.number)) }
+            return .object(["gradient": .object(properties)])
+        }
+    }
+}
+
+struct BackgroundGradient: Decodable, Equatable, Sendable {
+    let colors: [HexColor]
+    var angle = 90.0
+    var locations: [Double]?
+
+    enum CodingKeys: String, CodingKey, CaseIterable { case colors, angle, locations }
+
+    var points: (start: UnitPoint, end: UnitPoint) {
+        let radians = angle * .pi / 180
+        let x = sin(radians), y = -cos(radians)
+        let half = (abs(x) + abs(y)) / 2
+        return (UnitPoint(x: 0.5 - x * half, y: 0.5 - y * half), UnitPoint(x: 0.5 + x * half, y: 0.5 + y * half))
+    }
+
+    var linearGradient: LinearGradient {
+        let gradient = locations.map { Gradient(stops: zip(colors, $0).map { Gradient.Stop(color: $0.color, location: $1) }) }
+            ?? Gradient(colors: colors.map(\.color))
+        return LinearGradient(gradient: gradient, startPoint: points.start, endPoint: points.end)
+    }
+}
+
+extension BackgroundGradient {
+    init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        colors = try values.decode([HexColor].self, forKey: .colors)
+        guard colors.count >= 2 else {
+            throw DecodingError.dataCorruptedError(forKey: .colors, in: values, debugDescription: "A gradient needs two or more colors.")
+        }
+        angle = try values.decodeIfPresent(Double.self, forKey: .angle)
+            .map { ($0.truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360) } ?? angle
+        locations = try values.decodeIfPresent([Double].self, forKey: .locations)
+        if let locations, locations.count != colors.count || !locations.allSatisfy({ (0...1).contains($0) })
+            || zip(locations, locations.dropFirst()).contains(where: { $0 > $1 }) {
+            throw DecodingError.dataCorruptedError(forKey: .locations, in: values,
+                                                   debugDescription: "Give one location per color, from 0 to 1 in ascending order.")
+        }
+    }
+}
+
 enum BarBorderEdges: String, Decodable, CaseIterable, Sendable {
     case bottom, all
 }
@@ -93,7 +174,7 @@ struct GlassSettings: Decodable, Sendable {
 
 struct WidgetStyle: Decodable, Equatable, Sendable {
     var foreground: HexColor?
-    var background: HexColor?
+    var background: BackgroundFill?
     var borderColor: HexColor?
     var accent: HexColor?
     var accentText: HexColor?
@@ -132,7 +213,7 @@ struct WidgetStyle: Decodable, Equatable, Sendable {
         case paddingBottom, offsetX, offsetY, opacity, placement, hoverForeground, states
     }
 
-    var hoverBackground: HexColor? { states?["hover"]?.background }
+    var hoverBackground: BackgroundFill? { states?["hover"]?.background }
     var hoverForeground: HexColor? { states?["hover"]?.foreground }
 
     func inheriting(_ defaults: WidgetStyle) -> WidgetStyle {
@@ -185,7 +266,7 @@ extension WidgetStyle {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)
         foreground = try values.decodeIfPresent(HexColor.self, forKey: .foreground)
-        background = try values.decodeIfPresent(HexColor.self, forKey: .background)
+        background = try values.decodeIfPresent(BackgroundFill.self, forKey: .background)
         borderColor = try values.decodeIfPresent(HexColor.self, forKey: .borderColor)
         accent = try values.decodeIfPresent(HexColor.self, forKey: .accent)
         accentText = try values.decodeIfPresent(HexColor.self, forKey: .accentText)
@@ -214,7 +295,7 @@ extension WidgetStyle {
         opacity = try values.decodeIfPresent(Double.self, forKey: .opacity)
         placement = try values.decodeIfPresent(IndicatorPlacement.self, forKey: .placement)
         let hoverForeground = try values.decodeIfPresent(HexColor.self, forKey: .hoverForeground)
-        let hoverBackground = try values.decodeIfPresent(HexColor.self, forKey: .hoverBackground)
+        let hoverBackground = try values.decodeIfPresent(BackgroundFill.self, forKey: .hoverBackground)
         let explicit = try values.decodeIfPresent([String: WidgetStyle?].self, forKey: .states)?.compactMapValues { $0 }
         states = explicit?.isEmpty == false ? explicit : nil
         if hoverForeground != nil || hoverBackground != nil {
@@ -230,8 +311,8 @@ let fontWeights: [(name: String, weight: Font.Weight)] = [
 
 struct WidgetAppearance {
     let foreground: Color
-    let background: Color
-    let hoverBackground: Color
+    let background: AnyShapeStyle
+    let hoverBackground: AnyShapeStyle
     let borderColor: Color
     let accent: Color
     let accentText: Color
@@ -248,8 +329,8 @@ struct WidgetAppearance {
 
     init(_ style: WidgetStyle, defaults: WidgetStyle) {
         foreground = (style.foreground ?? defaults.foreground)?.color ?? .primary
-        background = (style.background ?? defaults.background)?.color ?? .clear
-        hoverBackground = (style.hoverBackground ?? defaults.hoverBackground)?.color ?? background
+        background = (style.background ?? defaults.background)?.shapeStyle ?? AnyShapeStyle(Color.clear)
+        hoverBackground = (style.hoverBackground ?? defaults.hoverBackground)?.shapeStyle ?? background
         borderColor = (style.borderColor ?? defaults.borderColor)?.color ?? .clear
         accent = (style.accent ?? defaults.accent ?? HexColor(0xf7821bff)).color
         accentText = (style.accentText ?? defaults.accentText ?? HexColor(0xffffffff)).color
@@ -288,7 +369,7 @@ enum WidgetContent: Equatable, Sendable {
 struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     let id: String
     let role: PresentationRole?
-    let position: WidgetPosition
+    var position: WidgetPosition
     let content: WidgetContent
     let icon: String?
     let tooltip: String?
@@ -412,7 +493,7 @@ struct BarSettings: Decodable, Sendable {
     var keepNotificationsClear = false
     var inset = 12.0
     var spacing = 8.0
-    var background = HexColor(0x00000000)
+    var background = BackgroundFill.color(HexColor(0x00000000))
     var animationDuration = 0.22
     var notchWidth: Double?
     var notchSpacing = 16.0
@@ -440,7 +521,7 @@ struct BarSettings: Decodable, Sendable {
         keepNotificationsClear = try values.decodeIfPresent(Bool.self, forKey: .keepNotificationsClear) ?? keepNotificationsClear
         inset = try values.decodeIfPresent(Double.self, forKey: .inset) ?? inset
         spacing = try values.decodeIfPresent(Double.self, forKey: .spacing) ?? spacing
-        background = try values.decodeIfPresent(HexColor.self, forKey: .background) ?? background
+        background = try values.decodeIfPresent(BackgroundFill.self, forKey: .background) ?? background
         animationDuration = try values.decodeIfPresent(Double.self, forKey: .animationDuration) ?? animationDuration
         notchWidth = try values.decodeIfPresent(Double.self, forKey: .notchWidth)
         notchSpacing = try values.decodeIfPresent(Double.self, forKey: .notchSpacing) ?? notchSpacing
@@ -454,6 +535,36 @@ struct BarSettings: Decodable, Sendable {
     }
 }
 
+struct ScreenConfiguration: Decodable, Sendable {
+    static let barKeys: Set<String> = ["height", "offset", "margin", "inset", "spacing", "background", "notchWidth", "notchSpacing", "style",
+                                       "glass", "appearance"]
+    let bar: [String: ConfigurationValue]?
+    let layout: [String: [String]]?
+    let hasLook: Bool
+
+    enum CodingKeys: String, CodingKey, CaseIterable { case bar, layout, theme, tokens, defaults, popupDefaults, roles, workspaceDefaults, modeAliases }
+
+    init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        bar = try values.decodeIfPresent([String: ConfigurationValue].self, forKey: .bar)
+        if let bar, !bar.keys.allSatisfy(Self.barKeys.contains) {
+            throw DecodingError.dataCorruptedError(forKey: .bar, in: values,
+                debugDescription: "Use \(Self.barKeys.sorted().joined(separator: ", ")).")
+        }
+        layout = try values.decodeIfPresent([String: [String]].self, forKey: .layout)
+        if let layout {
+            let ids = layout.values.flatMap { $0 }
+            guard layout.keys.allSatisfy({ WidgetPosition(rawValue: $0) != nil }), Set(ids).count == ids.count else {
+                throw DecodingError.dataCorruptedError(forKey: .layout, in: values,
+                    debugDescription: "List widget IDs once under left, notchLeft, center, notchRight or right.")
+            }
+        }
+        _ = try values.decodeIfPresent(WidgetPackageSelection.self, forKey: .theme)
+        hasLook = [.bar, .theme, .tokens, .defaults, .popupDefaults, .roles, .workspaceDefaults, .modeAliases].contains(where: values.contains)
+    }
+}
+
 struct Configuration: Decodable, Sendable {
     let workspaceSource: WorkspaceSource
     let modeAliases: [String: String]
@@ -462,7 +573,10 @@ struct Configuration: Decodable, Sendable {
     let popupDefaults: WidgetStyle
     let roles: [String: WidgetStyle]
     let workspaceDefaults: WorkspaceDefaults
-    let widgets: [WidgetConfiguration]
+    private(set) var widgets: [WidgetConfiguration]
+    let screenLayouts: [String: [String: [String]]]
+    let screensWithOwnLook: [ScreenKind]
+    var screenLooks: [String: Configuration] = [:]
     let popups: [String: PopupConfiguration]
     let environment: [String: String]
 
@@ -474,7 +588,7 @@ struct Configuration: Decodable, Sendable {
     /// source sends, a provider of that source, unless a provider of another type has its name.
     let activeProviders: Set<String>
 
-    enum CodingKeys: String, CodingKey, CaseIterable { case workspaceSource, modeAliases, bar, defaults, popupDefaults, roles, workspaceDefaults, widgets, popups, templates, widgetOverrides, environment, providers, groups }
+    enum CodingKeys: String, CodingKey, CaseIterable { case workspaceSource, modeAliases, bar, defaults, popupDefaults, roles, workspaceDefaults, widgets, screens, popups, templates, widgetOverrides, environment, providers, groups }
 
     init(from decoder: Decoder) throws {
         try decoder.rejectUnknownKeys(CodingKeys.self, allowing: ["$schema", "tokens", "packages", "theme"])
@@ -516,6 +630,12 @@ struct Configuration: Decodable, Sendable {
                 throw CommandFailure(message: "widgets.\(expanded["id"].flatMap { try? $0.decoded(String.self) } ?? "?"): \(errorMessage(error))")
             }
         }
+        let screens = try values.decodeIfPresent([String: ScreenConfiguration].self, forKey: .screens) ?? [:]
+        guard screens.keys.allSatisfy({ ScreenKind(rawValue: $0) != nil }) else {
+            throw DecodingError.dataCorruptedError(forKey: .screens, in: values, debugDescription: "Use laptop, monitor or vertical.")
+        }
+        screenLayouts = screens.compactMapValues(\.layout)
+        screensWithOwnLook = ScreenKind.allCases.filter { screens[$0.rawValue]?.hasLook == true }
         environment = try values.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
         popups = try values.decodeIfPresent([String: PopupConfiguration].self, forKey: .popups) ?? [:]
         var providers = try values.decodeIfPresent([String: ProviderConfiguration].self, forKey: .providers) ?? [:]
@@ -568,5 +688,31 @@ struct Configuration: Decodable, Sendable {
         for id in overrides.keys where !ids.contains(id) {
             throw ConfigurationCompositionError.unknownWidgetOverride(id)
         }
+    }
+
+    func look(on kind: ScreenKind) -> Configuration {
+        screenLooks[kind.rawValue] ?? self
+    }
+
+    func bar(on kind: ScreenKind) -> BarSettings {
+        look(on: kind).bar
+    }
+
+    func onScreen(_ kind: ScreenKind) -> Configuration {
+        var configuration = look(on: kind)
+        configuration.widgets = configuration.widgets(on: kind)
+        return configuration
+    }
+
+    private func widgets(on kind: ScreenKind) -> [WidgetConfiguration] {
+        guard let layout = screenLayouts[kind.rawValue] else { return widgets }
+        let listed = WidgetPosition.allCases.flatMap { position in
+            (layout[position.rawValue] ?? []).compactMap { id in widgets.first { $0.id == id } }.map { widget in
+                var widget = widget
+                widget.position = position
+                return widget
+            }
+        }
+        return listed + widgets.filter { widget in !listed.contains { $0.id == widget.id } }
     }
 }

@@ -2,6 +2,49 @@ import XCTest
 @testable import StableBar
 
 final class ConfigurationEditorTests: XCTestCase {
+    @MainActor func testScreenVisibilityKeepsOtherKindsAndCanHideTheLastKind() throws {
+        let fixture = try ThemeGalleryFixture(#"{"widgets":[{"id":"clock","type":"clock","position":"right","display":["builtIn","monitor"]}]}"#)
+        defer { fixture.close() }
+        let store = try fixture.store()
+        defer { store.stop() }
+        let editor = ConfigurationEditor(store: store)
+        editor.setWidget(try XCTUnwrap(store.configuration?.widgets.first), shown: false, on: .laptop)
+        XCTAssertEqual(editor.properties(for: "clock")["display"], .array([.string("monitor")]))
+        editor.setWidget(try XCTUnwrap(store.configuration?.widgets.first), shown: false, on: .monitor)
+        XCTAssertEqual(editor.properties(for: "clock")["display"], .array([]))
+        try editor.history.flush()
+        editor.undo()
+        XCTAssertEqual(editor.properties(for: "clock")["display"], .array([.string("builtIn"), .string("monitor")]))
+        XCTAssertNil(editor.error)
+    }
+
+    @MainActor func testResetClearsTheLookOfOwnWidgetsAndEveryOverrideOfImportedOnes() throws {
+        let fixture = try ThemeGalleryFixture(#"{"includes":["included.json"],"widgets":[{"id":"own","type":"text","position":"left","text":"Hi","format":"x","onClick":"open -a Mail","style":{"fontSize":20}}],"widgetOverrides":{"imported":{"text":"Changed","position":"right","style":{"fontSize":9}}}}"#)
+        defer { fixture.close() }
+        try fixture.write(#"{"widgets":[{"id":"imported","type":"text","position":"left","text":"Original"}]}"#, to: fixture.directory.appending(path: "included.json"))
+        let store = try fixture.store()
+        defer { store.stop() }
+        let editor = ConfigurationEditor(store: store)
+        for widget in try XCTUnwrap(store.configuration?.widgets) { editor.reset(widget) }
+        XCTAssertEqual(editor.properties(for: "own"), ["id": .string("own"), "type": .string("text"), "position": .string("left"), "text": .string("Hi")])
+        XCTAssertEqual(try fixture.document()["widgetOverrides"], .object(["imported": .object(["position": .string("right")])]))
+        XCTAssertEqual(editor.properties(for: "imported")["text"], .string("Original"))
+        XCTAssertNil(editor.error)
+    }
+
+    @MainActor func testShowOnScreenEnablesTheWidgetAndKeepsItsOtherKinds() throws {
+        let fixture = try ThemeGalleryFixture(#"{"widgets":[{"id":"clock","type":"clock","position":"right","enabled":false,"display":"vertical"}]}"#)
+        defer { fixture.close() }
+        let store = try fixture.store()
+        defer { store.stop() }
+        let editor = ConfigurationEditor(store: store)
+        editor.setWidget(try XCTUnwrap(store.configuration?.widgets.first), shown: true, on: .laptop)
+        let widget = try XCTUnwrap(store.configuration?.widgets.first)
+        XCTAssertTrue(widget.enabled)
+        XCTAssertEqual(editor.properties(for: "clock")["display"], .array([.string("builtIn"), .string("vertical")]))
+        XCTAssertNil(editor.error)
+    }
+
     @MainActor func testUnchangedProfileApplyKeepsAFailedPendingSaveVisible() throws {
         let fixture = try ThemeGalleryFixture(#"{"widgets":[{"id":"a","type":"text","position":"left","text":"A"}],"profiles":[{"name":"work","configuration":{"bar":{"height":40}}}]}"#)
         defer { fixture.close() }
@@ -80,12 +123,20 @@ final class ConfigurationEditorTests: XCTestCase {
         XCTAssertEqual(editor.style(for: "b")["fontSize"], .number(19))
         XCTAssertNil(editor.selected["style"])
         pending = 21
+        editor.barItem = .everyWidget
         editor.showWidget("a")
         XCTAssertEqual(committedIDs, ["a", "b", added!])
         XCTAssertEqual(editor.section, .widgets)
+        XCTAssertEqual(editor.barItem, .widget)
         XCTAssertEqual(editor.selectedID, "a")
         XCTAssertEqual(editor.style(for: added!)["fontSize"], .number(21))
         XCTAssertEqual(editor.style(for: "a")["fontSize"], .number(17))
+        pending = 23
+        editor.barItem = .everyWidget
+        editor.showWidget("a")
+        XCTAssertEqual(committedIDs, ["a", "b", added!, "a"])
+        XCTAssertEqual(editor.barItem, .widget)
+        XCTAssertEqual(editor.style(for: "a")["fontSize"], .number(23))
         editor.showWidget("missing")
         XCTAssertEqual(editor.selectedID, "a")
         XCTAssertNil(editor.error)

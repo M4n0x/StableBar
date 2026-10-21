@@ -17,25 +17,26 @@ struct LoginItemSettings: View {
     @State private var error: String?
 
     var body: some View {
-        Toggle("Open at login", isOn: Binding(get: { status == .enabled || status == .requiresApproval }, set: { enabled in
-            do {
-                try setLaunchAtLogin(enabled)
-                error = nil
-            } catch {
-                self.error = errorMessage(error)
+        SettingRow(title: "Open at login", hint: appIsInApplications() ? nil : "Move StableBar to Applications to open it at login.") {
+            if status == .requiresApproval {
+                Button("Allow StableBar in Login Items…") { SMAppService.openSystemSettingsLoginItems() }
             }
-            status = SMAppService.mainApp.status
-        }))
-        .disabled(!appIsInApplications())
+            Toggle("Open at login", isOn: Binding(get: { status == .enabled || status == .requiresApproval }, set: { enabled in
+                do {
+                    try setLaunchAtLogin(enabled)
+                    error = nil
+                } catch {
+                    self.error = errorMessage(error)
+                }
+                status = SMAppService.mainApp.status
+            }))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .disabled(!appIsInApplications())
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             status = SMAppService.mainApp.status
-        }
-        if !appIsInApplications() {
-            Text("Move StableBar to Applications to open it at login.")
-                .font(.callout).foregroundStyle(.secondary)
-        }
-        if status == .requiresApproval {
-            Button("Allow StableBar in Login Items…") { SMAppService.openSystemSettingsLoginItems() }
         }
         if let error {
             Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)

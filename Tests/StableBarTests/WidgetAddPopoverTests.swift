@@ -267,7 +267,7 @@ final class WidgetAddPopoverTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         let text = accessibleText(host)
-        for expected in ["echo reviewed", "Automation", "example.com", "Hello"] {
+        for expected in ["echo reviewed", "Uses Automation access", "Connects to example.com", "Hello"] {
             XCTAssertTrue(text.contains(expected), "Review is missing \(expected): \(text)")
         }
         XCTAssertEqual(setup.review?.inspection.manifest.name, "Review package")

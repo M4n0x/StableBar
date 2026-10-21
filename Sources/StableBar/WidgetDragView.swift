@@ -68,6 +68,17 @@ class WidgetDragSourceView: WidgetHostingView, NSDraggingSource {
         }
     }
 
+    func dragChip() -> NSImage {
+        let name = name
+        return NSImage(size: NSSize(width: 150, height: 28), flipped: false) { rect in
+            NSColor.controlBackgroundColor.setFill()
+            rect.fill()
+            (name as NSString).draw(in: rect.insetBy(dx: 8, dy: 5), withAttributes: [.font: NSFont.systemFont(ofSize: 12),
+                                                                                  .foregroundColor: NSColor.labelColor])
+            return true
+        }
+    }
+
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         context == .withinApplication ? .move : []
     }

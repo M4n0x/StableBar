@@ -12,59 +12,50 @@ struct SourcePermissionList: View {
     @State private var error: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            ForEach(permissions, id: \.self) { permission in
-                HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: permission.symbol).font(.title2).frame(width: 28)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(permission.title).font(.headline)
-                        Text(permission.detail).font(.callout).foregroundStyle(.secondary)
-                        switch permission.privacyPane {
-                        case "Privacy_Calendars":
-                            if calendarAccess == .fullAccess {
-                                Label("Access allowed", systemImage: "checkmark.circle").foregroundStyle(.green)
-                            } else if calendarAccess == .notDetermined {
-                                Text("Access needed").foregroundStyle(.secondary)
-                                Button("Allow Calendar Access…") {
-                                    requestingCalendar = true
-                                    Task {
-                                        do {
-                                            _ = try await EKEventStore().requestFullAccessToEvents()
-                                            error = nil
-                                        } catch {
-                                            self.error = errorMessage(error)
-                                        }
-                                        calendarAccess = EKEventStore.authorizationStatus(for: .event)
-                                        requestingCalendar = false
-                                        accessChanged()
-                                    }
+        ForEach(permissions, id: \.self) { permission in
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(permission.title)
+                    Text(permission.detail).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                switch permission.privacyPane {
+                case "Privacy_Calendars":
+                    if calendarAccess == .fullAccess {
+                        allowed
+                    } else if calendarAccess == .notDetermined {
+                        Button("Allow…") {
+                            requestingCalendar = true
+                            Task {
+                                do {
+                                    _ = try await EKEventStore().requestFullAccessToEvents()
+                                    error = nil
+                                } catch {
+                                    self.error = errorMessage(error)
                                 }
-                                .disabled(requestingCalendar)
-                            } else {
-                                Text(calendarAccess == .restricted ? "Access restricted by this Mac" : "Access not allowed")
-                                    .foregroundStyle(.secondary)
-                                Button("Open Calendar Privacy Settings…") { openPrivacyPane(permission.privacyPane) }
+                                calendarAccess = EKEventStore.authorizationStatus(for: .event)
+                                requestingCalendar = false
+                                accessChanged()
                             }
-                        case "Privacy_Accessibility":
-                            if accessibilityAccess {
-                                Label("Access allowed", systemImage: "checkmark.circle").foregroundStyle(.green)
-                            } else {
-                                Text("Access needed").foregroundStyle(.secondary)
-                                Button("Allow Accessibility Access…") {
-                                    AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
-                                    openPrivacyPane(permission.privacyPane)
-                                    accessibilityAccess = AXIsProcessTrusted()
-                                }
-                            }
-                        default:
-                            Button("Open System Settings…") { openPrivacyPane(permission.privacyPane) }
+                        }
+                        .disabled(requestingCalendar)
+                    } else {
+                        Text(calendarAccess == .restricted ? "Restricted by this Mac" : "Not allowed").foregroundStyle(.secondary)
+                        Button("Open Settings…") { openPrivacyPane(permission.privacyPane) }
+                    }
+                case "Privacy_Accessibility":
+                    if accessibilityAccess {
+                        allowed
+                    } else {
+                        Button("Allow…") {
+                            AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+                            openPrivacyPane(permission.privacyPane)
+                            accessibilityAccess = AXIsProcessTrusted()
                         }
                     }
-                    Spacer(minLength: 0)
+                default:
+                    Button("Open Settings…") { openPrivacyPane(permission.privacyPane) }
                 }
-            }
-            if let error {
-                Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -72,6 +63,18 @@ struct SourcePermissionList: View {
             accessibilityAccess = AXIsProcessTrusted()
             accessChanged()
         }
+        if let error {
+            Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+        }
+    }
+
+    private var allowed: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "checkmark").fontWeight(.bold)
+            Text("Allowed")
+        }
+        .font(.callout)
+        .foregroundStyle(SettingsPalette.success)
     }
 }
 

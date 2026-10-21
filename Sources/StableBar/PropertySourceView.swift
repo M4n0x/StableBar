@@ -17,6 +17,9 @@ struct PropertySources {
     let inheritedValue: ConfigurationValue?
 
     var editingValue: ConfigurationValue? { saved?.resolvedValue ?? saved?.value ?? inheritedValue }
+    var editingFill: ConfigurationValue? {
+        saved?.value ?? sources.last { $0.value.isGradient && $0.resolvedValue == editingValue }?.value ?? editingValue
+    }
     var isMasked: Bool {
         guard let saved else { return false }
         let value = saved.resolvedValue ?? saved.value
@@ -122,6 +125,9 @@ extension BarStore {
         let mainDefinition = definition?.file == configurationURL.standardizedFileURL.path
         let saved = own.last { source in
             guard let origin = source.origin, origin.file == configurationURL.standardizedFileURL.path else { return false }
+            if let profile = customizationHistory.editingProfile {
+                return origin.profile == profile && !origin.detail.contains("(template ")
+            }
             if widgetID != nil, mainDefinition {
                 return origin.profile == definition?.profile && !origin.detail.contains("(template ") && !origin.detail.contains("(widget override)")
             }
@@ -215,7 +221,9 @@ extension BarStore {
         let origin = source.origin!
         var path = source.path
         if origin.detail.contains("(widget override)") { path[0] = "widgetOverrides" }
-        if let profile = origin.profile { path = ["profiles", profile, "configuration"] + path }
+        if let profile = origin.profile, profile != customizationHistory.editingProfile {
+            path = ["profiles", profile, "configuration"] + path
+        }
         let mask = path.dropFirst().reversed().reduce(ConfigurationValue.null) { .object([$1: $0]) }
         try customizationHistory.change(ConfigurationEdit(action: .unset, properties: [path[0]: mask]))
     }

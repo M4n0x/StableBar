@@ -76,6 +76,27 @@ final class ThemeGalleryTests: XCTestCase {
         }
     }
 
+    @MainActor func testInstalledThemesShowCatalogMembershipWithoutClaimingOrigin() async throws {
+        let fixture = try ThemeGalleryFixture()
+        defer { fixture.close() }
+        let listed = try fixture.theme(#"{}"#, id: "listed")
+        let unlisted = try fixture.theme(#"{}"#)
+        let index = LocalPackageIndex(fixture: fixture)
+        _ = try await index.add(id: "listed", version: "1")
+        let store = try fixture.store()
+        defer { store.stop() }
+        let gallery = ThemeGallery(store: store, client: PackageStoreClient(packages: fixture.packages, indexURL: index.url))
+        await gallery.refresh()
+        XCTAssertEqual(gallery.source(of: listed), .installed)
+        XCTAssertEqual(gallery.source(of: unlisted), .installed)
+        let included = try XCTUnwrap(gallery.choices.first { $0.isBundled })
+        XCTAssertEqual(gallery.source(of: included), .included)
+        await gallery.loadStore()
+        XCTAssertEqual(gallery.source(of: listed), .listed)
+        XCTAssertEqual(gallery.source(of: unlisted), .installed)
+        XCTAssertEqual(gallery.source(of: included), .included)
+    }
+
     @MainActor func testStorePreviewsUseDownloadedThemesAndGetInstallsSelectsAndSavesOneChange() async throws {
         let fixture = try ThemeGalleryFixture(#"{"widgets":[{"id":"clock","type":"clock","position":"right"}]}"#)
         defer { fixture.close() }

@@ -60,7 +60,8 @@ final class BarEditControls: NSObject {
             guard let entry = controls[id], let host = entry.panel.contentView else { continue }
             entry.panel.level = bar.level
             entry.panel.collectionBehavior = bar.collectionBehavior
-            entry.panel.appearance = store.configuration?.bar.appearance.flatMap { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) }
+            entry.panel.appearance = (bar.screen.map { store.configuration?.bar(on: ScreenKind(BarDisplay(screen: $0))) } ?? store.configuration?.bar)?
+                .appearance.flatMap { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) }
             let fittingSize = host.fittingSize
             let size = CGSize(width: min(fittingSize.width, max(0, visibleFrame.width - 16)), height: fittingSize.height)
             // Keep the established gap below the edit bar window.

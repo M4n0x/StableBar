@@ -39,10 +39,15 @@ indirect enum ConfigurationValue: Codable, Sendable, Equatable {
     }
 
     func overriding(_ earlier: ConfigurationValue) -> ConfigurationValue {
-        if case let .object(base) = earlier, case let .object(next) = self {
+        if case let .object(base) = earlier, case let .object(next) = self, !earlier.isGradient, !isGradient {
             return .object(base.merging(next) { $1.overriding($0) })
         }
         return self
+    }
+
+    var isGradient: Bool {
+        if case let .object(object) = self, case let .object(gradient)? = object["gradient"] { return gradient["colors"] != nil }
+        return false
     }
 }
 
@@ -248,10 +253,12 @@ struct ConfigurationLoader {
     private(set) var activeProfiles: [String] = []
     private(set) var profiles: [ConfigurationProfile] = []
     private(set) var pinnedProfile: String?
+    var previewProfile: String?
     /// The fixed appearance used to match conditions, before profiles apply their settings.
     private(set) var profileAppearance: String?
     private(set) var matchesApps = false
     private(set) var templates: [String: [String: ConfigurationValue]] = [:]
+    private(set) var screenDocuments: [String: [String: ConfigurationValue]] = [:]
     private var packageSources: [String: URL] = [:]
     private var packageNames: [String: String] = [:]
     private var packageIDs: [String: String] = [:]
@@ -259,12 +266,22 @@ struct ConfigurationLoader {
     mutating func load(_ url: URL, data: Data? = nil,
                        context: ConfigurationContext = ConfigurationContext(),
                        previewTheme: ConfigurationLayer? = nil) throws -> Configuration {
-        try ConfigurationValue.object(compose(url, data: data, context: context, previewTheme: previewTheme)).decoded(Configuration.self)
+        var configuration = try ConfigurationValue.object(compose(url, data: data, context: context, previewTheme: previewTheme)).decoded(Configuration.self)
+        screenDocuments = [:]
+        for kind in configuration.screensWithOwnLook {
+            var loader = self
+            let document = try loader.compose(url, data: data, context: context, previewTheme: previewTheme, screen: kind)
+            do { configuration.screenLooks[kind.rawValue] = try ConfigurationValue.object(document).decoded(Configuration.self) }
+            catch { throw CommandFailure(message: "screens.\(kind.rawValue): \(errorMessage(error))") }
+            screenDocuments[kind.rawValue] = document
+            dependencies.formUnion(loader.dependencies)
+        }
+        return configuration
     }
 
     mutating func compose(_ url: URL, data: Data? = nil,
                           context: ConfigurationContext = ConfigurationContext(),
-                          previewTheme: ConfigurationLayer? = nil) throws -> [String: ConfigurationValue] {
+                          previewTheme: ConfigurationLayer? = nil, screen: ScreenKind? = nil) throws -> [String: ConfigurationValue] {
         dependencies = []
         activeProfiles = []
         packageSources = [:]
@@ -272,7 +289,18 @@ struct ConfigurationLoader {
         packageIDs = [:]
         widgetPackageNames = [:]
         widgetPackageIDs = [:]
-        let base = try read(url.standardizedFileURL, data: data, path: [])
+        var base = try read(url.standardizedFileURL, data: data, path: [])
+        var theme = base.values["theme"]
+        if let screen, let look = try base.values["screens"]?.decoded([String: [String: ConfigurationValue]].self)[screen.rawValue] {
+            theme = look["theme"] ?? theme
+            for key in ["bar", "tokens", "defaults", "popupDefaults", "roles", "workspaceDefaults", "modeAliases"] {
+                guard let value = look[key] else { continue }
+                base.values[key] = value.overriding(base.values[key] ?? .object([:]))
+                let prefix = "screens.\(screen.rawValue).\(key)"
+                for (path, origin) in base.origins where path.hasPrefix(prefix) { base.origins[key + path.dropFirst(prefix.count)] = origin }
+                for (path, entries) in base.contributions where path.hasPrefix(prefix) { base.contributions[key + path.dropFirst(prefix.count)] = entries }
+            }
+        }
         let packageStore = WidgetPackageStore(directory: url.deletingLastPathComponent().appending(path: "packages"))
         var layer = ConfigurationLayer(values: ["widgets": .array([])], origins: [:])
         for selection in try base.values["packages"]?.decoded([WidgetPackageSelection].self, at: "packages") ?? [] where selection.enabled {
@@ -283,7 +311,7 @@ struct ConfigurationLoader {
         }
         if let previewTheme {
             try layer.merge(previewTheme)
-        } else if let theme = try base.values["theme"]?.decoded(WidgetPackageSelection.self, at: "theme"), theme.enabled {
+        } else if let theme = try theme?.decoded(WidgetPackageSelection.self, at: "theme"), theme.enabled {
             try layer.merge(theme.version == nil ? readBundledTheme(theme) : readSelectedPackage(theme, from: packageStore, theme: true))
         }
         try layer.merge(base)
@@ -328,14 +356,14 @@ struct ConfigurationLoader {
         activeProfiles = []
         profiles = try layer.values["profiles"]?.decoded([ConfigurationProfile].self, at: "profiles") ?? []
         matchesApps = profiles.contains { $0.enabled && $0.when?.app != nil }
-        let selected = try layer.values["profile"].flatMap { try $0.decoded(String?.self) }
+        let selected = try previewProfile ?? layer.values["profile"].flatMap { try $0.decoded(String?.self) }
         pinnedProfile = selected
         var names = Set<String>()
         for profile in profiles {
             guard names.insert(profile.name).inserted else { throw ThemeConfigurationError.duplicateProfile(profile.name) }
         }
         if let selected, !names.contains(selected) { throw ThemeConfigurationError.unknownProfile(selected) }
-        for profile in profiles where profile.enabled {
+        for profile in profiles where profile.enabled || profile.name == previewProfile {
             let matches = selected.map { $0 == profile.name } ?? (profile.when?.matches(context) ?? true)
             if matches {
                 let source = layer.origins["profiles.\(profile.name).name"]!.inProfile(profile.name)

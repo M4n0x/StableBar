@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Observation
 
 @MainActor @Observable
@@ -161,16 +161,69 @@ final class WidgetSetup {
         return added.first?.id
     }
 
-    func move(_ id: String, to position: WidgetPosition, before anchor: String? = nil) throws {
+    func move(_ id: String, to position: WidgetPosition, before anchor: String? = nil, on kind: ScreenKind? = nil) throws {
         let widgets = store.configuration?.widgets ?? []
         try requireSavedWidget(id, widgets: widgets)
-        try store.customizationHistory.change(WidgetPlacement.move(id, to: position, before: anchor, widgets: widgets))
+        if let kind, let configuration = store.configuration, hasOwnLayout(kind, in: configuration) {
+            return try arrange(WidgetPlacement.arrangement(moving: id, to: position, before: anchor, widgets: configuration.onScreen(kind).widgets), on: kind)
+        }
+        var edits = try WidgetPlacement.move(id, to: position, before: anchor, widgets: widgets)
+        if store.customizationHistory.editingProfile != nil, anchor == nil, edits.contains(where: { $0.action == .set }) {
+            edits.removeAll { $0.action == .reorder }
+        }
+        try store.customizationHistory.change(edits)
     }
 
-    func move(_ id: String, by offset: Int, listed: (WidgetConfiguration) -> Bool = { _ in true }) throws {
+    func move(_ id: String, by offset: Int, on kind: ScreenKind? = nil, listed: (WidgetConfiguration) -> Bool = { _ in true }) throws {
         let widgets = store.configuration?.widgets ?? []
         try requireSavedWidget(id, widgets: widgets)
+        if let kind, let configuration = store.configuration, hasOwnLayout(kind, in: configuration) {
+            return try arrange(WidgetPlacement.arrangement(moving: id, by: offset, widgets: configuration.onScreen(kind).widgets, listed: listed), on: kind)
+        }
         try store.customizationHistory.change(WidgetPlacement.move(id, by: offset, widgets: widgets, listed: listed))
+    }
+
+    private func hasOwnLayout(_ kind: ScreenKind, in configuration: Configuration) -> Bool {
+        configuration.screenLayouts[kind.rawValue] != nil || Set(store.screenSetup?.kinds ?? []).count > 1
+    }
+
+    private func arrange(_ widgets: [WidgetConfiguration], on kind: ScreenKind) throws {
+        try store.customizationHistory.change([layoutEdit(widgets, shownOn: kind, on: kind)])
+    }
+
+    func splitScreen(_ kind: ScreenKind) throws {
+        try arrange(store.configuration!.onScreen(kind).widgets, on: kind)
+    }
+
+    func copyScreen(_ source: ScreenKind, to kind: ScreenKind) throws {
+        let configuration = store.configuration!
+        let displays = NSScreen.screens.map(BarDisplay.init)
+        var edits = configuration.widgets.compactMap { widget -> ConfigurationEdit? in
+            let shown = source.shows(widget.display, among: displays, activeID: store.activeDisplayID)
+            guard shown != kind.shows(widget.display, among: displays, activeID: store.activeDisplayID) else { return nil }
+            let kinds = ScreenKind.allCases.filter { $0 == kind ? shown : $0.shows(widget.display, among: displays, activeID: store.activeDisplayID) }
+            return ConfigurationEdit(action: .set, id: widget.id, properties: ["display": .array(kinds.map { .string($0.selection) })])
+        }
+        edits.append(ConfigurationEdit(action: .unset, properties: ["screens": .object([kind.rawValue: .object(["bar": .null])])]))
+        edits.append(layoutEdit(configuration.onScreen(source).widgets, shownOn: source, on: kind))
+        let screens = try store.effectiveDocument["screens"]?.decoded([String: [String: ConfigurationValue]].self) ?? [:]
+        if let bar = screens[source.rawValue]?["bar"] {
+            edits.append(ConfigurationEdit(action: .screens, properties: [kind.rawValue: .object(["bar": bar])]))
+        }
+        try store.customizationHistory.change(edits)
+    }
+
+    func joinScreen(_ kind: ScreenKind) throws {
+        try store.customizationHistory.change([ConfigurationEdit(action: .unset, properties: ["screens": .object([kind.rawValue: .null])])])
+    }
+
+    private func layoutEdit(_ widgets: [WidgetConfiguration], shownOn source: ScreenKind, on kind: ScreenKind) -> ConfigurationEdit {
+        let displays = NSScreen.screens.map(BarDisplay.init)
+        let shown = widgets.filter { source.shows($0.display, among: displays, activeID: store.activeDisplayID) }
+        let layout = Dictionary(uniqueKeysWithValues: WidgetPosition.allCases.map { position in
+            (position.rawValue, ConfigurationValue.array(shown.filter { $0.position == position }.map { .string($0.id) }))
+        })
+        return ConfigurationEdit(action: .screens, properties: [kind.rawValue: .object(["layout": .object(layout)])])
     }
 
     func remove(_ id: String) throws {

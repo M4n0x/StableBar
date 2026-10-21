@@ -6,7 +6,7 @@ struct BarEditView: View {
     @State private var measuredSizes: [WidgetPosition: CGSize] = [:]
 
     var body: some View {
-        if let config = store.configuration, let geometry = store.barEditing.geometry(for: display) {
+        if let config = store.configuration?.onScreen(ScreenKind(display)), let geometry = store.barEditing.geometry(for: display) {
             let entries = store.barEditing.entries(on: display)
             let scale = CGFloat(config.bar.scale(for: display))
             GeometryReader { proxy in
@@ -49,7 +49,7 @@ struct BarEditView: View {
                 .frame(width: proxy.size.width / scale, height: proxy.size.height / scale, alignment: .topLeading)
                 .scaleEffect(scale, anchor: .topLeading)
             }
-            .modifier(BarSurface(store: store, settings: config.bar))
+            .modifier(BarSurface(store: store, settings: config.bar, kind: ScreenKind(display)))
             .padding(config.bar.margin)
             .frame(height: geometry.layoutHeight)
             .alert("Couldn’t change widget", isPresented: Binding(get: {
@@ -102,7 +102,7 @@ private struct BarEditSection: View {
     var body: some View {
         let state = editing.trayState(on: display.id, position: position)
         let overflow = BarEditOverflow(bounds: rowBounds, viewportWidth: viewportWidth)
-        let surface = BarEditTraySurface(store: store, config: config, colorScheme: colorScheme)
+        let surface = BarEditTraySurface(barStyle: store.barStyle(on: ScreenKind(display)), config: config, colorScheme: colorScheme)
         let shape = RoundedRectangle(cornerRadius: 9)
         BarEditDropTarget(editing: editing, displayID: display.id, position: position, frames: frames) {
             ScrollView(.horizontal) {
@@ -190,10 +190,10 @@ private struct BarEditTraySurface {
     /// Outlines and + use the widgets' text color when it reads on that surface.
     let ink: Color
 
-    @MainActor init(store: BarStore, config: Configuration, colorScheme: ColorScheme) {
+    init(barStyle: WidgetStyle, config: Configuration, colorScheme: ColorScheme) {
         let resolve = { (color: HexColor) in colorScheme == .dark ? color.dark : color.light }
         // The strip's color as `BarSurface` paints it. Themes design their text for it, Liquid Glass or not.
-        let strip = resolve(store.barStyle.background ?? config.bar.background)
+        let strip = resolve((barStyle.background ?? config.bar.background).firstColor)
         // Widgets draw the text color in `defaults`, not the bar style's.
         let text = config.defaults.foreground.map(resolve)
         isOwn = Double(strip & 0xff) / 255 < 0.85
@@ -245,7 +245,7 @@ struct BarEditSectionRow: View {
                 BarUnitSurface(style: unit.style ?? WidgetStyle(), spacing: config.bar.spacing) {
                     ForEach(unit.widgets) { widget in
                         if let entry = entries.first(where: { $0.id == widget.id }) {
-                            BarEditTile(store: store, display: display.id, entry: entry, config: config)
+                            BarEditTile(store: store, display: display.id, kind: ScreenKind(display), entry: entry, config: config)
                                 .background {
                                     GeometryReader { proxy in
                                         Color.clear.preference(key: BarEditFrames.self,
@@ -266,7 +266,7 @@ struct BarEditSectionRow: View {
     }
 
     private var addSlot: some View {
-        let ink = BarEditTraySurface(store: store, config: config, colorScheme: colorScheme).ink
+        let ink = BarEditTraySurface(barStyle: store.barStyle(on: ScreenKind(display)), config: config, colorScheme: colorScheme).ink
         return Button {
             store.barEditing.addPopover.show(store: store, displayID: display.id, position: position, anchor: anchor)
         } label: {
@@ -292,6 +292,7 @@ struct BarEditSectionRow: View {
 struct BarEditTile: View {
     let store: BarStore
     let display: Int
+    let kind: ScreenKind
     let entry: BarEditWidget
     let config: Configuration
     @Environment(\.measuringBarWidths) private var measuring
@@ -346,7 +347,7 @@ struct BarEditTile: View {
     }
 
     private var tile: some View {
-        let surface = BarEditTraySurface(store: store, config: config, colorScheme: colorScheme)
+        let surface = BarEditTraySurface(barStyle: store.barStyle(on: kind), config: config, colorScheme: colorScheme)
         return Button { editing.select(entry.id) } label: {
             Group {
                 if entry.usesPlaceholder {

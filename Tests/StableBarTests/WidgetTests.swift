@@ -57,9 +57,9 @@ import Testing
 }
 
 @Test func popupStylesInheritWidgetOverridesAndGlobalTheme() {
-    let defaults = WidgetStyle(foreground: HexColor(0xeeeeeeff), background: HexColor(0x222222ff),
+    let defaults = WidgetStyle(foreground: HexColor(0xeeeeeeff), background: .color(HexColor(0x222222ff)),
                                fontName: "Helvetica", fontSize: 12, paddingHorizontal: 7, width: 80)
-    let widget = WidgetStyle(background: HexColor(0x333333ff), fontWeight: "bold", width: 85)
+    let widget = WidgetStyle(background: .color(HexColor(0x333333ff)), fontWeight: "bold", width: 85)
     let popup = WidgetStyle(fontSize: 18, paddingHorizontal: 16, width: 380)
     let style = popup.inheriting(widget.inheriting(defaults))
     #expect(style.foreground == defaults.foreground)
