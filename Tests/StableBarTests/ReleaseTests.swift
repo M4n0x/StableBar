@@ -103,6 +103,7 @@ func updateTileStaysAtTheRightEndOfTheBar(stage: AppUpdate.Stage) {
     var busy = false
     var probes = 0
     var backgroundChecks = 0
+    var userChecks = 0
 
     override var automaticallyChecksForUpdates: Bool {
         get { checksAutomatically }
@@ -120,6 +121,12 @@ func updateTileStaysAtTheRightEndOfTheBar(stage: AppUpdate.Stage) {
     override func checkForUpdatesInBackground() {
         #expect(!busy)
         backgroundChecks += 1
+        busy = true
+    }
+
+    override func checkForUpdates() {
+        #expect(!busy)
+        userChecks += 1
         busy = true
     }
 }
@@ -190,4 +197,80 @@ func completedUpdateSessionsDoNotStartAnotherBackgroundCheck(check: SPUUpdateChe
     update.updater(updater, didFindValidUpdate: .empty())
     update.updater(updater, didFinishUpdateCycleFor: check, error: nil)
     #expect(updater.backgroundChecks == 0)
+}
+
+private func updateState(_ stage: SPUUserUpdateStage = .notDownloaded) throws -> SPUUserUpdateState {
+    let encoder = NSKeyedArchiver(requiringSecureCoding: true)
+    encoder.encode(stage.rawValue, forKey: "SPUUserUpdateStateStage")
+    encoder.encode(false, forKey: "SPUUserUpdateStateUserInitiated")
+    encoder.finishEncoding()
+    let decoder = try NSKeyedUnarchiver(forReadingFrom: encoder.encodedData)
+    defer { decoder.finishDecoding() }
+    return try #require(SPUUserUpdateState(coder: decoder))
+}
+
+@Test @MainActor func downloadingAPendingUpdateChecksAgainAndInstallsOnlyTheNewOffer() throws {
+    let (update, updater) = updateProbe()
+    var oldChoices: [SPUUserUpdateChoice] = []
+    update.showUpdateFound(with: .empty(), state: try updateState()) { oldChoices.append($0) }
+    let offeredVersion = update.version
+    updater.busy = true
+    updater.checksAutomatically = false
+
+    update.proceed()
+    #expect(oldChoices == [.dismiss])
+    #expect(updater.userChecks == 0)
+    #expect(!update.canProceed)
+    #expect(update.action == "Checking…")
+    update.dismissUpdateInstallation()
+    #expect(update.version == offeredVersion)
+
+    updater.busy = false
+    update.updater(updater, didFinishUpdateCycleFor: .updatesInBackground, error: nil)
+    #expect(updater.userChecks == 1)
+    #expect(!update.canProceed)
+
+    var newChoices: [SPUUserUpdateChoice] = []
+    update.showUpdateFound(with: .empty(), state: try updateState()) { newChoices.append($0) }
+    #expect(oldChoices == [.dismiss])
+    #expect(newChoices == [.install])
+    #expect(update.stage == .downloading)
+    #expect(!update.canProceed)
+    updater.checksAutomatically = true
+    update.checkForUpdateInformation()
+    #expect(updater.probes == 0)
+
+    var installChoices: [SPUUserUpdateChoice] = []
+    update.showReady(toInstallAndRelaunch: { installChoices.append($0) })
+    update.proceed()
+    #expect(installChoices == [.install])
+    #expect(updater.userChecks == 1)
+}
+
+@Test @MainActor func failedDownloadChecksDoNotDownloadALaterOffer() throws {
+    let (update, updater) = updateProbe()
+    update.showUpdateFound(with: .empty(), state: try updateState()) { _ in }
+    update.proceed()
+    update.dismissUpdateInstallation()
+    update.updater(updater, didFinishUpdateCycleFor: .updates, error: nil)
+    update.dismissUpdateInstallation()
+    updater.busy = false
+    update.updater(updater, didFinishUpdateCycleFor: .updates, error: URLError(.notConnectedToInternet))
+    #expect(update.version == nil)
+    #expect(updater.userChecks == 1)
+
+    var choices: [SPUUserUpdateChoice] = []
+    update.showUpdateFound(with: .empty(), state: try updateState()) { choices.append($0) }
+    #expect(choices.isEmpty)
+    #expect(update.canProceed)
+    #expect(update.action == "Download")
+}
+
+@Test @MainActor func alreadyDownloadedUpdatesInstallWithoutCheckingAgain() throws {
+    let (update, updater) = updateProbe()
+    var choices: [SPUUserUpdateChoice] = []
+    update.showUpdateFound(with: .empty(), state: try updateState(.downloaded)) { choices.append($0) }
+    update.proceed()
+    #expect(choices == [.install])
+    #expect(updater.userChecks == 0)
 }

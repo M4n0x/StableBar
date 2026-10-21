@@ -10,6 +10,10 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
         case available, downloading, extracting, ready, installing
     }
 
+    private enum DownloadCheck {
+        case dismissing, checking
+    }
+
     nonisolated static let widgetID = "stablebar.update"
     static let popup: PopupConfiguration = {
         var popup = PopupConfiguration(style: WidgetStyle(paddingHorizontal: 14, paddingVertical: 14, spacing: 10),
@@ -25,6 +29,7 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
     private(set) var releaseURL: URL?
     private(set) var stage = Stage.available
     private(set) var progress = 0.0
+    private var downloadCheck: DownloadCheck?
     @ObservationIgnored private var reply: ((SPUUserUpdateChoice) -> Void)?
     @ObservationIgnored private var expectedLength: UInt64 = 0
     @ObservationIgnored private var receivedLength: UInt64 = 0
@@ -67,6 +72,12 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
     }
 
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
+        if downloadCheck == .dismissing {
+            downloadCheck = .checking
+            updater.checkForUpdates()
+            return
+        }
+        downloadCheck = nil
         guard updateCheck == .updateInformation, error == nil, foundUpdate, updater.automaticallyChecksForUpdates else { return }
         foundUpdate = false
         updater.checkForUpdatesInBackground()
@@ -93,7 +104,8 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
     }
 
     var action: String {
-        switch stage {
+        if downloadCheck != nil { return "Checking…" }
+        return switch stage {
         case .available: "Download"
         case .downloading: "Downloading…"
         case .extracting: "Preparing…"
@@ -102,12 +114,18 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
         }
     }
 
-    var canProceed: Bool { stage == .available || stage == .ready }
+    var canProceed: Bool { downloadCheck == nil && (stage == .available || stage == .ready) }
 
     /// Downloads the update, or installs it and relaunches StableBar once it's downloaded.
     func proceed() {
-        reply?(.install)
-        reply = nil
+        let reply = reply
+        self.reply = nil
+        if stage == .available {
+            downloadCheck = .dismissing
+            reply?(.dismiss)
+        } else {
+            reply?(.install)
+        }
     }
 
     @objc func checkForUpdates() { updater.checkForUpdates() }
@@ -136,7 +154,13 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
         changes = Self.changes(in: appcastItem.itemDescription ?? "")
         releaseURL = appcastItem.fullReleaseNotesURL
         stage = state.stage == .notDownloaded ? .available : .ready
-        self.reply = reply
+        if downloadCheck == .checking {
+            downloadCheck = nil
+            stage = .downloading
+            reply(.install)
+        } else {
+            self.reply = reply
+        }
     }
 
     func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {}
@@ -189,8 +213,10 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
     }
 
     func dismissUpdateInstallation() {
-        version = nil
         reply = nil
+        if downloadCheck == .dismissing { return }
+        version = nil
+        downloadCheck = nil
     }
 
     private func alert(_ error: any Error, then acknowledgement: () -> Void) {
