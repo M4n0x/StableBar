@@ -789,6 +789,8 @@ An `appMenu` widget shows the frontmost app's menus, such as File, Edit and View
 
 The Apple logo is a separate `appleMenu` widget. Add **Apple menu** to show it, or leave it out to keep only the app's menus.
 
+Both menu widgets use the configured hover background and keep their normal text color when hovered.
+
 ```json
 {
   "widgets": [

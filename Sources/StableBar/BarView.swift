@@ -712,11 +712,11 @@ private struct AppMenuTitle: View {
                     Text(item.title).fontWeight(index == 0 ? .bold : nil)
                 }
             }
-            .foregroundStyle(hovered ? appearance.accentText : appearance.foreground)
+            .foregroundStyle(appearance.foreground)
             .padding(.horizontal, 7)
             .padding(padding)
             .background {
-                if hovered { RoundedRectangle(cornerRadius: max(appearance.cornerRadius - 4, 0)).fill(appearance.accent) }
+                if hovered { RoundedRectangle(cornerRadius: max(appearance.cornerRadius - 4, 0)).fill(appearance.hoverBackground) }
             }
             .background(MenuAnchor(view: anchor))
             .contentShape(Rectangle())
