@@ -467,14 +467,14 @@ struct WidgetView: View {
                           modeAliases: store.configuration?.look(on: screenKind).modeAliases ?? [:], widgetID: widget.id)
         case let .appMenu(expandOnHover) where widget.layout == nil:
             AppMenuView(appMenu: store.appMenu, items: store.appMenu.items, expandOnHover: expandOnHover,
-                        hovering: measuring ? store.presentations[widget.id]?.expandedAppMenuDisplays.contains(monitor) == true : hovered,
+                        hovering: measuring ? store.presentations[widget.id]?.expandedDisplays.contains(monitor) == true : hovered,
                         appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
                         padding: padding, requestAccess: store.windowClearance.requestAccess) { expanded in
                 if !measuring && expandOnHover {
                     if expanded {
-                        store.presentations[widget.id]?.expandedAppMenuDisplays.insert(monitor)
+                        store.presentations[widget.id]?.expandedDisplays.insert(monitor)
                     } else {
-                        store.presentations[widget.id]?.expandedAppMenuDisplays.remove(monitor)
+                        store.presentations[widget.id]?.expandedDisplays.remove(monitor)
                     }
                 }
             }
@@ -482,6 +482,10 @@ struct WidgetView: View {
             AppMenuView(appMenu: store.appMenu, items: [store.appMenu.appleMenu].compactMap { $0 }, isAppleMenu: true,
                         appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
                         padding: padding, requestAccess: store.windowClearance.requestAccess)
+        case .provider where widget.layout == nil && store.configuration?.providerType(of: widget) == DataSourceType.audio.name:
+            SoundWidgetView(widget: widget, store: store, monitor: monitor,
+                            style: resolution.layoutStyle(configured: false, hovered: hovered, open: open),
+                            hovered: hovered, motion: motion, runAction: blockAction)
         case .spacer where widget.layout == nil:
             Spacer(minLength: resolution.base.minWidth ?? 0)
         default:
