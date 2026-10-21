@@ -241,13 +241,16 @@ struct PopupBlockView: View {
     /// The block's content in the box its style gives it. A click anywhere in the box, including its
     /// padding and configured size, reaches the block's action, not only its glyph or text.
     private func boxed(_ content: some View, box: WidgetStyle, alignment: Alignment) -> some View {
-        content
+        // A fixed width wins over the limits. Without either, a block in a popup fills the width.
+        let minWidth: CGFloat? = box.width == nil ? box.minWidth.map { CGFloat($0) } : nil
+        let maxWidth: CGFloat? = box.width == nil ? box.maxWidth.map { CGFloat($0) } ?? (context.fillsWidth ? .infinity : nil) : nil
+        return content
             .padding(.leading, box.paddingLeading ?? box.paddingHorizontal ?? 0)
             .padding(.trailing, box.paddingTrailing ?? box.paddingHorizontal ?? 0)
             .padding(.top, box.paddingTop ?? box.paddingVertical ?? 0)
             .padding(.bottom, box.paddingBottom ?? box.paddingVertical ?? 0)
             .frame(width: box.width.map { CGFloat($0) }, height: box.height.map { CGFloat($0) }, alignment: alignment)
-            .frame(maxWidth: context.fillsWidth && box.width == nil ? .infinity : nil, alignment: alignment)
+            .frame(minWidth: minWidth, maxWidth: maxWidth, alignment: alignment)
             .contentShape(Rectangle())
     }
 
