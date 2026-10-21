@@ -5,11 +5,13 @@ struct SetupTourView: View {
     let screen: NSScreen
     let finish: () -> Void
     let skip: () -> Void
+    @State private var start: Date
+    @State private var departure: Date?
     @State private var phase: Phase
     @State private var wallpaper: CGImage?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private enum Phase { case dim, logo, flight, tour }
+    private enum Phase { case intro, wallpaper, tour }
 
     private static let pages = [
         ("Start from a preset.", "Your bar changes as you choose. Presets add widgets and never remove yours."),
@@ -23,7 +25,9 @@ struct SetupTourView: View {
         self.screen = screen
         self.finish = finish
         self.skip = skip
-        _phase = State(initialValue: intro ? .dim : .tour)
+        _start = State(initialValue: intro ? .now : .distantPast)
+        _departure = State(initialValue: intro ? nil : .distantPast)
+        _phase = State(initialValue: intro ? .intro : .tour)
     }
 
     private var barFrame: CGRect {
@@ -38,7 +42,7 @@ struct SetupTourView: View {
             let size = proxy.size
             let bar = barFrame
             ZStack {
-                Color.black.opacity(0.5)
+                Color.black.opacity(0.82)
                 Group {
                     if let wallpaper {
                         Image(decorative: wallpaper, scale: 1)
@@ -50,23 +54,23 @@ struct SetupTourView: View {
                     RadialGradient(colors: [.black.opacity(0.3), .black.opacity(0.75)], center: .center,
                                    startRadius: size.height * 0.15, endRadius: size.width * 0.7)
                 }
-                .opacity(phase == .dim ? 0 : 1)
-                EllipticalGradient(colors: [.white.opacity(0.22), Color.accentColor.opacity(0.12), .clear])
-                    .frame(width: size.width * 0.8, height: max(bar.height * 6, 180))
-                    .scaleEffect(phase == .flight ? 1.25 : 1)
-                    .position(x: size.width / 2, y: bar.midY)
-                    .opacity(phase == .flight || phase == .tour ? 1 : 0)
-                if phase == .logo || phase == .flight {
-                    logo(size: size, bar: bar)
-                        .transition(.blurFade.combined(with: .scale(scale: 0.92)))
+                .opacity(phase == .intro ? 0 : 1)
+                TimelineView(.animation(paused: phase == .tour)) { context in
+                    intro(size: size, bar: bar, now: context.date)
                 }
                 if phase == .tour {
                     pointer
                         .position(x: size.width / 2, y: bar.maxY + 30)
                         .transition(.opacity)
-                    tour(size: size)
-                        .transition(.blurFade)
                 }
+                tour(size: size)
+                ZStack {
+                    if phase == .tour {
+                        footer.transition(.opacity.animation(.easeOut(duration: 0.4).delay(0.5)))
+                    }
+                }
+                .position(x: size.width / 2, y: size.height - 89)
+                dots.position(x: size.width / 2, y: size.height - 44)
             }
         }
         .ignoresSafeArea()
@@ -81,34 +85,118 @@ struct SetupTourView: View {
                 return CIContext().createCGImage(blurred, from: blurred.extent)
             }.value
         }
-        .task {
-            guard phase == .dim else { return }
-            if reduceMotion {
-                phase = .tour
-                return
-            }
-            try? await Task.sleep(for: .milliseconds(400))
-            withAnimation(.smooth(duration: 0.9)) { phase = .logo }
-            try? await Task.sleep(for: .seconds(2.2))
-            withAnimation(.smooth(duration: 0.8)) { phase = .flight }
-            try? await Task.sleep(for: .milliseconds(700))
-            withAnimation(.smooth(duration: 0.6)) { phase = .tour }
+        .task(id: departure) {
+            guard departure != nil, phase == .intro else { return }
+            try? await Task.sleep(for: .seconds(1.4))
+            withAnimation(.easeInOut(duration: 0.9)) { phase = .wallpaper }
+            try? await Task.sleep(for: .seconds(0.9))
+            withAnimation(.smooth(duration: 0.5)) { phase = .tour }
         }
     }
 
-    private func logo(size: CGSize, bar: CGRect) -> some View {
-        let flying = phase == .flight
+    private func intro(size: CGSize, bar: CGRect, now: Date) -> some View {
+        let t = now.timeIntervalSince(start)
+        let d = departure.map { now.timeIntervalSince($0) } ?? -1
+        let home = size.height * 0.42
+        let beam = size.width * 0.55 * UnitCurve.easeOut.value(at: progress(t, 0.45, 0.8))
+        let condense = UnitCurve.easeInOut.value(at: progress(t, 1.25, 0.6))
+        let shown = progress(t, 1.75, 0.4)
+        let morph = UnitCurve.easeInOut.value(at: progress(d, 0.1, 0.65))
+        let width = beam + (264 - beam) * condense
+        let height = 2 + 66 * condense
+        let leaving = 1 - progress(d, 0, 0.25)
+        let ready = UnitCurve.easeOut.value(at: progress(t, 3.1, 0.45))
+        let spread = UnitCurve.easeOut.value(at: progress(d, 0.65, 0.6))
+        let shine = t > 4 ? progress(t.truncatingRemainder(dividingBy: 4.5), 0, 0.9) : 0
+        let settled = t > 2
+        let name = Array("StableBar")
+        let ember = AngularGradient(colors: [.orange, Color(red: 1, green: 0.8, blue: 0.45), .white, .orange,
+                                             .orange.opacity(0.25), .orange], center: .center, angle: .degrees(t * 80))
+        let glow = LinearGradient(colors: [.clear, .orange, Color(red: 1, green: 0.8, blue: 0.45), .orange, .clear],
+                                  startPoint: .leading, endPoint: .trailing)
         return ZStack {
+            Rectangle()
+                .fill(glow)
+                .frame(width: size.width * spread, height: 2)
+                .background(Rectangle().fill(glow).frame(height: 8).blur(radius: 12))
+                .opacity(spread * (1 - 0.4 * progress(d, 1.3, 0.8)))
+                .position(x: size.width / 2, y: bar.maxY)
+            ZStack {
+                Capsule()
+                    .strokeBorder(LinearGradient(colors: [.white.opacity(condense), .white, .white.opacity(condense)],
+                                                 startPoint: .leading, endPoint: .trailing), lineWidth: 1.5)
+                    .background(Capsule().fill(.orange).blur(radius: 10).opacity(0.5 * (1 - condense)))
+                    .opacity(progress(t, 0.45, 0.2) * (1 - shown))
+                Group {
+                    Capsule().fill(LinearGradient(colors: [Color(white: 0.17), Color(white: 0.08)], startPoint: .top, endPoint: .bottom))
+                    Capsule().fill(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white.opacity(0.14), location: 0.5),
+                                                          .init(color: .clear, location: 1)],
+                                                  startPoint: UnitPoint(x: shine * 1.6 - 0.6, y: 0),
+                                                  endPoint: UnitPoint(x: shine * 1.6 - 0.2, y: 1)))
+                    Capsule().strokeBorder(ember, lineWidth: 1.5)
+                    Capsule().strokeBorder(ember, lineWidth: 4).blur(radius: 8).opacity(0.5)
+                }
+                .opacity(shown)
+            }
+            .frame(width: width + (size.width - width) * morph, height: height + (bar.height - height) * morph)
+            .overlay {
+                HStack(spacing: 12) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .frame(width: 34, height: 34)
+                        .scaleEffect(settled ? 1 : 0.5)
+                        .opacity(settled ? 1 : 0)
+                        .animation(.spring(duration: 0.5, bounce: 0.4), value: settled)
+                    HStack(spacing: 0) {
+                        ForEach(name.indices, id: \.self) { index in
+                            let delay = 0.1 + Double(index) * 0.055
+                            Text(String(name[index]))
+                                .blur(radius: settled ? 0 : 6)
+                                .animation(.easeOut(duration: 0.3).delay(delay), value: settled)
+                                .offset(y: settled ? 0 : -18)
+                                .rotationEffect(.degrees(settled ? 0 : -12))
+                                .opacity(settled ? 1 : 0)
+                                .animation(.spring(duration: 0.55, bounce: 0.45).delay(delay), value: settled)
+                        }
+                    }
+                    .font(.system(size: 28, weight: .semibold, design: .monospaced))
+                    .background(alignment: .bottomLeading) {
+                        GeometryReader { proxy in
+                            let glide = progress(t, 2.1, 0.55)
+                            Capsule()
+                                .fill(.orange)
+                                .frame(width: 22, height: 4)
+                                .shadow(color: .orange, radius: 6)
+                                .offset(x: (proxy.size.width - 22) * UnitCurve.easeInOut.value(at: glide), y: proxy.size.height + 2)
+                                .opacity(progress(t, 2.1, 0.1) * (1 - progress(t, 2.7, 0.4)))
+                        }
+                    }
+                }
+                .foregroundStyle(.white)
+                .opacity(1 - progress(d, 0, 0.15))
+            }
+            .opacity(1 - progress(d, 0.6, 0.25))
+            .position(x: size.width / 2, y: home + (bar.midY - home) * morph)
             Text("A native, configurable bar for your Mac.")
                 .font(.system(size: 17, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.8))
-                .opacity(flying ? 0 : 1)
-                .position(x: size.width / 2, y: size.height * 0.42 + 76)
-            SetupBadge()
-                .scaleEffect(flying ? 0.32 : 1)
-                .opacity(flying ? 0 : 1)
-                .position(x: size.width / 2, y: flying ? bar.midY : size.height * 0.42)
+                .foregroundStyle(.white.opacity(0.85))
+                .offset(y: 8 * (1 - UnitCurve.easeOut.value(at: progress(t, 2.6, 0.45))))
+                .opacity(progress(t, 2.6, 0.45) * leaving)
+                .position(x: size.width / 2, y: home + 76)
+            if phase == .intro {
+                Button { departure = .now } label: { Text("Get Started").frame(width: 164, height: 48) }
+                    .buttonStyle(SetupButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(departure != nil || t < 3.1)
+                    .opacity(ready * leaving)
+                    .offset(y: 12 * (1 - ready))
+                    .position(x: size.width / 2, y: size.height - 89)
+            }
         }
+    }
+
+    private func progress(_ time: Double, _ start: Double, _ duration: Double) -> Double {
+        min(max((time - start) / duration, 0), 1)
     }
 
     private var pointer: some View {
@@ -130,49 +218,54 @@ struct SetupTourView: View {
 
     private func tour(size: CGSize) -> some View {
         let page = Self.pages[session.step]
-        return VStack(spacing: 0) {
-            ZStack {
+        return VStack(spacing: 12) {
+            staged(0) {
                 VStack(spacing: 12) {
-                    Text("\(session.step + 1) / \(Self.pages.count)")
+                    Text("\(session.step + 1)  /  \(Self.pages.count)")
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.4))
                     Text(page.0).font(.system(size: 34, weight: .semibold)).tracking(-0.5)
-                    Text(page.1)
-                        .font(.system(size: 15))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 560)
                 }
-                .id(session.step)
-                .transition(.blurFade)
             }
-            ZStack(alignment: .top) {
-                Group {
-                    switch session.step {
-                    case 0: presets
-                    case 1: themes
-                    case 2: placement
-                    default: hints
-                    }
+            staged(0.08) {
+                Text(page.1)
+                    .font(.system(size: 16))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 560)
+            }
+            staged(0.16) {
+                switch session.step {
+                case 0: presets
+                case 1: themes
+                case 2: placement
+                default: hints
                 }
-                .id(session.step)
-                .transition(.blurFade.animation(.smooth(duration: 0.5).delay(0.1)))
             }
-            .padding(.top, 44)
+            .padding(.top, 32)
             if let error = session.error {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.callout)
                     .foregroundStyle(.orange)
                     .frame(maxWidth: 560)
-                    .padding(.top, 24)
+                    .padding(.top, 12)
             }
-            Spacer(minLength: 24)
-            footer
         }
         .foregroundStyle(.white)
         .padding(.top, size.height * 0.24)
-        .padding(.bottom, 44)
-        .frame(width: size.width, height: size.height)
+        .frame(width: size.width, height: size.height, alignment: .top)
+    }
+
+    private func staged<Content: View>(_ delay: Double, @ViewBuilder content: () -> Content) -> some View {
+        ZStack(alignment: .top) {
+            if phase == .tour {
+                content()
+                    .id(session.step)
+                    .transition(.asymmetric(
+                        insertion: .blurFade.combined(with: .offset(y: 12)).animation(.smooth(duration: 0.5).delay(0.22 + delay)),
+                        removal: .blurFade.combined(with: .offset(y: -8)).animation(.easeIn(duration: 0.2))))
+            }
+        }
     }
 
     private var presets: some View {
@@ -320,52 +413,40 @@ struct SetupTourView: View {
     }
 
     private var footer: some View {
-        VStack(spacing: 16) {
-            Button("Continue") {
+        HStack(spacing: 24) {
+            Button("Back") { withAnimation(.smooth(duration: 0.5)) { session.step -= 1 } }
+                .opacity(session.step > 0 ? 1 : 0)
+                .disabled(session.step == 0)
+                .frame(width: 96, alignment: .trailing)
+            Button {
                 if session.step == Self.pages.count - 1 { finish() }
                 else { withAnimation(.smooth(duration: 0.5)) { session.step += 1 } }
+            } label: {
+                Text("Continue").frame(width: 164, height: 48)
             }
             .buttonStyle(SetupButtonStyle())
             .keyboardShortcut(.defaultAction)
-            HStack(spacing: 20) {
-                if session.step > 0 {
-                    Button("Back") { withAnimation(.smooth(duration: 0.5)) { session.step -= 1 } }
-                }
-                Button("Skip setup", action: skip).keyboardShortcut(.cancelAction)
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 13))
-            .foregroundStyle(.white.opacity(0.45))
-            HStack(spacing: 6) {
-                ForEach(Self.pages.indices, id: \.self) { index in
-                    Capsule()
-                        .fill(.white.opacity(index == session.step ? 0.9 : 0.25))
-                        .frame(width: index == session.step ? 18 : 6, height: 6)
-                }
-            }
-            .animation(.snappy, value: session.step)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Step \(session.step + 1) of \(Self.pages.count)")
+            Button("Skip setup", action: skip)
+                .keyboardShortcut(.cancelAction)
+                .frame(width: 96, alignment: .leading)
         }
+        .buttonStyle(.plain)
+        .font(.system(size: 13))
+        .foregroundStyle(.white.opacity(0.45))
     }
-}
 
-private struct SetupBadge: View {
-    var body: some View {
-        TimelineView(.animation) { context in
-            let gradient = AngularGradient(colors: [.cyan, .blue, .purple, .pink, .orange, .cyan], center: .center,
-                                           angle: .degrees(context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 4) * 90))
-            HStack(spacing: 12) {
-                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 34, height: 34)
-                Text("StableBar").font(.system(size: 28, weight: .semibold, design: .monospaced))
+    private var dots: some View {
+        let active = phase == .tour ? session.step + 1 : 0
+        return HStack(spacing: 7) {
+            ForEach(0...Self.pages.count, id: \.self) { index in
+                Capsule()
+                    .fill(index == active ? Color.orange : .white.opacity(0.3))
+                    .frame(width: index == active ? 20 : 6, height: 6)
             }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 30)
-            .frame(height: 68)
-            .background(.black, in: Capsule())
-            .overlay(Capsule().strokeBorder(gradient, lineWidth: 2))
-            .background(Capsule().fill(gradient).blur(radius: 24).opacity(0.8))
         }
+        .animation(.snappy, value: active)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Step \(session.step + 1) of \(Self.pages.count)")
     }
 }
 
@@ -397,11 +478,11 @@ struct SetupButtonStyle: ButtonStyle {
 
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
         configuration.label
-            .font(.system(size: 14, weight: .semibold))
+            .font(.system(size: 14, weight: .medium, design: .monospaced))
             .foregroundStyle(prominent ? Color.black : Color.white)
             .padding(.horizontal, 28)
             .frame(minHeight: 40)
-            .background(prominent ? Color.white : Color.white.opacity(0.1), in: Capsule())
+            .background(prominent ? Color.white : Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
             .opacity(configuration.isPressed ? 0.8 : 1)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(.snappy(duration: 0.15), value: configuration.isPressed)

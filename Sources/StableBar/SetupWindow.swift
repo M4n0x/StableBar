@@ -23,7 +23,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         self.customizeWidgets = customizeWidgets
         self.showProfile = showProfile
         session = SetupSession(store: store)
-        showTour(intro: true)
+        showTour(intro: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     }
 
     private func showTour(intro: Bool) {
