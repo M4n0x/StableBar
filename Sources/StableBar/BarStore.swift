@@ -306,6 +306,22 @@ final class BarStore: NSObject {
         try FileManager.default.trashItem(at: ownBarURL(for: setup), resultingItemURL: nil)
     }
 
+    func otherBars(applying edits: [ConfigurationEdit]) throws -> [(url: URL, before: Data, after: Data)] {
+        var otherBars: [(url: URL, before: Data, after: Data)] = []
+        for url in [sharedConfigurationURL] + screenSetupsWithOwnBars.map(ownBarURL(for:)) where url != configurationURL {
+            let original = try Data(contentsOf: url)
+            var root = try JSONDecoder().decode([String: ConfigurationValue].self, from: original)
+            var ids: [String] = []
+            for edit in edits { root = try edit.applying(to: root, widgetIDs: &ids) }
+            var other = ConfigurationLoader()
+            other.themesDirectory = themesDirectory
+            _ = try other.load(url, data: configurationData(root), context: context)
+            let data = try configurationData(root, editing: original)
+            if data != original { otherBars.append((url, original, data)) }
+        }
+        return otherBars
+    }
+
     private func showBar(at url: URL) {
         guard url != configurationURL else { return }
         flushCustomization()
