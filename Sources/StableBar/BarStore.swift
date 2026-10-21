@@ -930,6 +930,7 @@ private func withoutShellVariables(_ environment: [String: String]) -> [String: 
 @MainActor @Observable
 final class WidgetPresentation {
     private(set) var style = ResolvedWidgetStyle(base: WidgetStyle())
+    var expandedAppMenuDisplays: Set<Int> = []
     /// Output `hidden`, unless the widget has an error to show.
     private(set) var hidden = false
     /// Output `display`, which replaces the configured one.

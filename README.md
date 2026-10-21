@@ -785,9 +785,11 @@ The AeroSpace connection subscribes to workspace, monitor, window and focus even
 
 ### App menus
 
-An `appMenu` widget shows the frontmost app's menus, such as File, Edit and View, with the app's own menu in bold. In **Settings → Your bar**, select App menus and turn on **Expand on hover** to show only the app name until the pointer enters the widget. The menus stay expanded while one is open. Leave the setting off to show all titles.
+An `appMenu` widget shows the frontmost app's menus, such as File, Edit and View, with the app's own menu in bold. In **Settings → Your bar**, select App menus and turn on **Expand on hover** to show only the app name until the pointer enters the widget. Expanding the menus moves neighboring widgets to make room. The menus stay expanded while one is open. Leave the setting off to show all titles.
 
 The Apple logo is a separate `appleMenu` widget. Add **Apple menu** to show it, or leave it out to keep only the app's menus.
+
+Both menu widgets use the configured hover background and keep their normal text color when hovered.
 
 ```json
 {
