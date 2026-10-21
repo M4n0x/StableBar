@@ -22,6 +22,27 @@ final class WidgetSettingsTests: XCTestCase {
         XCTAssertEqual(try fixture.document(), before)
     }
 
+    @MainActor func testSoundStartsWithItsValueOnChangeAndKeepsIconAndValueAsAChoice() throws {
+        let fixture = try ThemeGalleryFixture(#"{"providers":{"speakers":{"type":"audio"}},"widgets":[{"id":"sound","type":"provider","provider":"speakers","position":"right"}]}"#)
+        defer { fixture.close() }
+        let store = try fixture.store()
+        defer { store.stop() }
+        let editor = ConfigurationEditor(store: store)
+        let before = try fixture.document()
+        XCTAssertEqual(WidgetMetricDisplay.choices(for: "volume").first, .changes)
+        XCTAssertFalse(WidgetMetricDisplay.choices(for: "percent").contains(.changes), "Battery has no value on change")
+        XCTAssertEqual(WidgetMetricDisplay.current(editor.properties(for: "sound")["layout"], source: "volume"), .changes)
+        for choice in [WidgetMetricDisplay.standard, .graph, .icon, .meter, .value, .changes] {
+            editor.set(["layout": try XCTUnwrap(choice.layout(for: "volume"))], for: "sound")
+            try editor.history.flush()
+            XCTAssertNil(editor.error)
+            XCTAssertEqual(WidgetMetricDisplay.current(editor.properties(for: "sound")["layout"], source: "volume"), choice)
+        }
+        XCTAssertNil(store.configuration?.widgets.first?.layout, "Value on change is the default layout")
+        for _ in 0..<6 { editor.undo() }
+        XCTAssertEqual(try fixture.document(), before)
+    }
+
     func testWorkspacesKeepTheirOwnClicksAndSpacerHasNoClickControl() throws {
         for properties: [String: ConfigurationValue] in [[:], ["open": .string("com.apple.iCal")], ["onClick": .string("echo keep")]] {
             let workspaces = try widget(properties.merging(["type": .string("workspaces")]) { $1 })

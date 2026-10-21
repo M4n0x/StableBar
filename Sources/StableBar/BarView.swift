@@ -84,7 +84,7 @@ struct BarView: View {
                     // Keeps the last width of units that leave, so a returning widget is planned at its size.
                     .onPreferenceChange(BarWidthPreference.self) { widths in
                         let animates = BarUnit.animatesResize(units, measured: measuredUnits, from: measuredWidths, to: widths,
-                                                              reduceMotion: reduceMotion)
+                                                              reduceMotion: reduceMotion, providerType: config.providerType(of:))
                         measuredUnits = Set(widths.keys)
                         withAnimation(animates ? .easeOut(duration: config.bar.animationDuration) : nil) {
                             measuredWidths.merge(widths) { $1 }
@@ -532,7 +532,7 @@ struct WidgetBlocks: View {
         let script = store.scripts[widget.id]
         let label = store.label(for: widget, date: date).overlaid(by: store.presentations[widget.id]?.temporaryFields)
         let appIcon = widget.content == .activeApp ? store.activeApp?.icon : nil
-        let providerType = widget.providerName.flatMap { store.configuration?.providers[$0]?.type }
+        let providerType = store.configuration?.providerType(of: widget)
         if let layout = block ?? widget.layout ?? widget.defaultLayout(label, output: script?.output, appIcon: appIcon != nil, providerType: providerType) {
             PopupBlockView(block: layout, inheritedStyle: style.inherited, fields: label.fields,
                            context: BlockContext(lists: script?.output.lists ?? [:], samples: script?.samples ?? [],

@@ -79,6 +79,11 @@ struct TemporaryOutput: Decodable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey, CaseIterable { case fields, duration }
 
+    init(fields: [String: String], duration: Double) {
+        self.fields = fields
+        self.duration = duration
+    }
+
     init(from decoder: Decoder) throws {
         try decoder.rejectUnknownKeys(CodingKeys.self)
         let values = try decoder.container(keyedBy: CodingKeys.self)

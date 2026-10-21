@@ -132,12 +132,15 @@ struct WidgetClockFormat {
     }
 }
 
+/// How a battery or sound widget shows its value. `source` names the value: `percent` for battery,
+/// `volume` for sound.
 enum WidgetMetricDisplay: String, CaseIterable {
-    case standard, icon, value, meter, graph, custom
+    case standard, changes, icon, value, meter, graph, custom
 
     var title: String {
         switch self {
         case .standard: "Icon and value"
+        case .changes: "Icon, value on change"
         case .icon: "Icon only"
         case .value: "Value only"
         case .meter: "Meter and value"
@@ -146,11 +149,19 @@ enum WidgetMetricDisplay: String, CaseIterable {
         }
     }
 
+    /// The choices for `source`, its default first: sound's shows the volume only after a change,
+    /// so it adds that and keeps icon and value as a layout of its own.
+    static func choices(for source: String) -> [Self] {
+        source == "volume" ? [.changes] + allCases.filter { $0 != .changes } : allCases.filter { $0 != .changes }
+    }
+
+    /// The `layout` that shows this choice, `null` for the default layout, or nil for a custom one.
     func layout(for source: String) -> ConfigurationValue? {
         let icon: ConfigurationValue = .object(["type": .string("symbol"), "source": .string("icon")])
         let text: ConfigurationValue = .object(["type": .string("field"), "field": .string("text")])
         switch self {
-        case .standard: return .null
+        case .standard where source == "volume": return .object(["type": .string("row"), "children": .array([icon, text])])
+        case .standard, .changes: return .null
         case .icon: return .object(["type": .string("row"), "children": .array([icon])])
         case .value: return .object(["type": .string("row"), "children": .array([text])])
         case .meter, .graph:
@@ -164,9 +175,9 @@ enum WidgetMetricDisplay: String, CaseIterable {
     }
 
     static func current(_ layout: ConfigurationValue?, source: String) -> Self {
-        if layout == nil || layout == .null { return .standard }
+        if layout == nil || layout == .null { return choices(for: source)[0] }
         guard case let .object(properties) = layout, properties["type"] == .string("row") else { return .custom }
-        return allCases.first {
+        return choices(for: source).first {
             guard case let .object(candidate)? = $0.layout(for: source) else { return false }
             return candidate["children"] == properties["children"]
         } ?? .custom

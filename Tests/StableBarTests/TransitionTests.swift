@@ -143,6 +143,27 @@ func appWidgetsThatStayedInTheBarAnimateTheirResize(content: String) throws {
     #expect(!BarUnit.animatesResize(units, measured: both, from: kept, to: wider, reduceMotion: true))
 }
 
+@Test func soundWidgetsAnimateTheirResizeAsTheVolumeComesAndGoes() throws {
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
+    {"providers":{"speakers":{"type":"audio"}},
+     "widgets":[{"id":"sound","type":"audio","position":"right"},
+                {"id":"named","type":"provider","provider":"speakers","position":"right"},
+                {"id":"power","type":"battery","position":"right"}]}
+    """#.utf8))
+    let units = BarUnit.make(widgets: configuration.widgets, groups: configuration.groups)
+    let all = Set(units.map(\.id))
+    let kept: [String: CGFloat] = ["widget:sound": 20, "widget:named": 20, "widget:power": 60]
+    func animates(_ id: String, measured: Set<String> = all, reduceMotion: Bool = false) -> Bool {
+        BarUnit.animatesResize(units, measured: measured, from: kept, to: kept.merging([id: 52]) { $1 }, reduceMotion: reduceMotion,
+                               providerType: configuration.providerType(of:))
+    }
+    #expect(animates("widget:sound"))
+    #expect(animates("widget:named"))
+    #expect(!animates("widget:sound", measured: all.subtracting(["widget:sound"])), "Its first measurement doesn't animate")
+    #expect(!animates("widget:sound", reduceMotion: true))
+    #expect(!animates("widget:power"))
+}
+
 @Test @MainActor func updateTileAnimatesItsFirstMeasurement() {
     let units = BarUnit.make(widgets: [AppUpdate.tile(.available)], groups: [:])
     let id = units[0].id

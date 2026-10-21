@@ -46,11 +46,17 @@ struct BarUnit: Identifiable {
         return units
     }
 
+    /// Whether a change of measured widths animates: the update tile's, and those of units that were
+    /// already measured with the active app, expanding app menus or the Sound widget, whose volume
+    /// comes and goes. `providerType` names the type of a widget's provider.
     static func animatesResize(_ units: [BarUnit], measured: Set<String>, from previous: [String: CGFloat],
-                               to widths: [String: CGFloat], reduceMotion: Bool) -> Bool {
+                               to widths: [String: CGFloat], reduceMotion: Bool,
+                               providerType: (WidgetConfiguration) -> String? = { _ in nil }) -> Bool {
         !reduceMotion && units.contains { unit in
             previous[unit.id] != widths[unit.id] && unit.widgets.contains {
-                $0.id == AppUpdate.widgetID || (($0.content == .activeApp || $0.content == .appMenu(expandOnHover: true)) && measured.contains(unit.id))
+                $0.id == AppUpdate.widgetID
+                    || (($0.content == .activeApp || $0.content == .appMenu(expandOnHover: true) || providerType($0) == DataSourceType.audio.name)
+                        && measured.contains(unit.id))
             }
         }
     }

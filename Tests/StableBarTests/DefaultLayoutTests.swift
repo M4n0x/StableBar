@@ -145,10 +145,10 @@ private enum FrontmostApp {
             let output = try decode(ScriptOutput.self, #"{"text":"85%","icon":"\#(icon)","value":0.85,"values":{"\#(source)":0.85}}"#)
             let label = widget.label(output: output, activeApp: nil, date: .now)
             let layout = try #require(widget.defaultLayout(label, output: output, appIcon: false, providerType: named ? type : nil))
-            let expected = PopupBlock(content: .row([
-                PopupBlock(content: .symbol(name: "", source: "icon")),
-                PopupBlock(content: .field("text"), hideWhenEmpty: "text", monospacedDigits: false)
-            ]), keepsLineHeight: true)
+            // Sound shows its volume only after a change, so at rest it is the icon alone.
+            let value = type == "audio" ? nil : PopupBlock(content: .field("text"), hideWhenEmpty: "text", monospacedDigits: false)
+            let expected = PopupBlock(content: .row([PopupBlock(content: .symbol(name: "", source: "icon")), value].compactMap { $0 }),
+                                      keepsLineHeight: true)
             let context = BlockContext(samples: [0.85], values: [source: 0.85], fillsWidth: false, open: { _ in }, runAction: { _, _ in })
             let drawn = try draw(PopupBlockView(block: layout, inheritedStyle: WidgetStyle(), fields: label.fields, context: context))
             let plain = try draw(PopupBlockView(block: expected, inheritedStyle: WidgetStyle(), fields: label.fields, context: context))
@@ -289,6 +289,42 @@ private enum FrontmostApp {
             #expect(drawn.width == expected.width && drawn.height == expected.height, "\(block.content) \(transition)")
             #expect(drawn.difference(from: expected) <= tolerance, "\(block.content) \(transition)")
         }
+    }
+}
+
+@Test @MainActor func theSoundWidgetShowsItsIconAndTheVolumeOnlyAfterAChange() throws {
+    let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).json"))
+    store.configuration = try decode(Configuration.self, #"""
+    {"providers":{"speakers":{"type":"audio"}},
+     "widgets":[{"id":"sound","type":"audio","position":"right"},
+                {"id":"named","type":"provider","provider":"speakers","position":"right"},
+                {"id":"icon","type":"text","text":"","icon":"speaker.wave.2","position":"right"}]}
+    """#)
+    store.preparePresentations()
+    for id in ["sound", "named"] {
+        let script = ScriptWidget()
+        script.output = try ScriptOutput.read(Data(#"""
+        {"text":"62%","icon":"speaker.wave.2","value":0.62,"values":{"volume":0.62},"fields":{"device":"Speakers","muted":"false"}}
+        """#.utf8))
+        script.samples = [0.1, 0.6, 0.35, 0.8, 0.62]
+        store.scripts[id] = script
+    }
+    let widgets = try #require(store.configuration?.widgets)
+    let style = ResolvedWidgetStyle(base: WidgetStyle()).layoutStyle(configured: false, hovered: false, open: false)
+    func drawing(_ id: String) throws -> Drawing {
+        try draw(WidgetBlocks(widget: try #require(widgets.first { $0.id == id }), store: store, style: style, runAction: { _, _ in }))
+    }
+    let iconOnly = try drawing("icon")
+    for id in ["sound", "named"] {
+        let rest = try drawing(id)
+        #expect(rest.width == iconOnly.width && rest.height == iconOnly.height, "\(id) draws no graph and no volume at rest")
+        #expect(rest.difference(from: iconOnly) <= tolerance, "\(id)")
+        let presentation = try #require(store.presentations[id])
+        presentation.show(TemporaryOutput(fields: ["changedVolume": "62%"], duration: 30), output: 1)
+        let changed = try drawing(id)
+        #expect(changed.width > rest.width && changed.height == rest.height, "\(id) shows the volume beside its icon after a change")
+        presentation.show(TemporaryOutput(fields: ["changedVolume": ""], duration: 30), output: 2)
+        #expect(try drawing(id).difference(from: iconOnly) <= tolerance, "\(id) hides the volume when muted")
     }
 }
 

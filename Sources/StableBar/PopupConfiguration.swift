@@ -95,7 +95,7 @@ struct PopupBlock: Decodable, Sendable {
     }
 
     init(content: PopupContent, role: PresentationRole? = nil, style: WidgetStyle = WidgetStyle(), hideWhenEmpty: String? = nil, monospacedDigits: Bool = true,
-         keepsLineHeight: Bool = false) {
+         keepsLineHeight: Bool = false, transition: WidgetTransition? = nil) {
         self.content = content
         self.role = role
         self.style = style
@@ -111,7 +111,7 @@ struct PopupBlock: Decodable, Sendable {
         scrollSpeed = nil
         self.monospacedDigits = monospacedDigits
         self.keepsLineHeight = keepsLineHeight
-        transition = nil
+        self.transition = transition
     }
 
     init(from decoder: Decoder) throws {
