@@ -431,9 +431,18 @@ struct WidgetView: View {
                           configuration: widget.workspace, animation: widget.animation, defaults: resolution.base,
                           modeAliases: store.configuration?.modeAliases ?? [:], widgetID: widget.id)
         case let .appMenu(expandOnHover) where widget.layout == nil:
-            AppMenuView(appMenu: store.appMenu, items: store.appMenu.items, expandOnHover: expandOnHover, hovering: hovered,
+            AppMenuView(appMenu: store.appMenu, items: store.appMenu.items, expandOnHover: expandOnHover,
+                        hovering: measuring ? store.presentations[widget.id]?.expandedAppMenuDisplays.contains(monitor) == true : hovered,
                         appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
-                        padding: padding, requestAccess: store.windowClearance.requestAccess)
+                        padding: padding, requestAccess: store.windowClearance.requestAccess) { expanded in
+                if !measuring && expandOnHover {
+                    if expanded {
+                        store.presentations[widget.id]?.expandedAppMenuDisplays.insert(monitor)
+                    } else {
+                        store.presentations[widget.id]?.expandedAppMenuDisplays.remove(monitor)
+                    }
+                }
+            }
         case .appleMenu where widget.layout == nil:
             AppMenuView(appMenu: store.appMenu, items: [store.appMenu.appleMenu].compactMap { $0 }, isAppleMenu: true,
                         appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
@@ -653,6 +662,7 @@ struct AppMenuView: View {
     let appearance: WidgetAppearance
     let padding: EdgeInsets
     let requestAccess: () -> Void
+    var expansionChanged: (Bool) -> Void = { _ in }
     @State private var hoveredItem: AppMenuItem?
     @State private var menuOpen = false
 
@@ -673,6 +683,8 @@ struct AppMenuView: View {
         }
         .fixedSize(horizontal: true, vertical: false)
         .onHover { if $0 { appMenu.refresh() } }
+        .onChange(of: hovering || menuOpen, initial: true) { _, expanded in expansionChanged(expanded) }
+        .onDisappear { expansionChanged(false) }
     }
 }
 

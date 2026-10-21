@@ -50,7 +50,7 @@ struct BarUnit: Identifiable {
                                to widths: [String: CGFloat], reduceMotion: Bool) -> Bool {
         !reduceMotion && units.contains { unit in
             previous[unit.id] != widths[unit.id] && unit.widgets.contains {
-                $0.id == AppUpdate.widgetID || ($0.content == .activeApp && measured.contains(unit.id))
+                $0.id == AppUpdate.widgetID || (($0.content == .activeApp || $0.content == .appMenu(expandOnHover: true)) && measured.contains(unit.id))
             }
         }
     }

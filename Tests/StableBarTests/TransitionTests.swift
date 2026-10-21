@@ -125,9 +125,10 @@ private func block(_ json: String) throws -> PopupBlock {
     #expect(units.map(\.transition) == [.roll, .fade, WidgetTransition.none])
 }
 
-@Test func onlyAnActiveAppThatStayedInTheBarAnimatesItsResize() throws {
+@Test(arguments: [#""type":"activeApp""#, #""type":"appMenu","expandOnHover":true"#])
+func appWidgetsThatStayedInTheBarAnimateTheirResize(content: String) throws {
     let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
-    {"widgets":[{"id":"app","type":"activeApp","position":"left"},
+    {"widgets":[{"id":"app",\#(content),"position":"left"},
                 {"id":"note","type":"text","text":"A","position":"left"}]}
     """#.utf8))
     let units = BarUnit.make(widgets: configuration.widgets, groups: configuration.groups)
