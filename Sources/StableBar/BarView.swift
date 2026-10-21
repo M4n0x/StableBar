@@ -338,7 +338,13 @@ struct WidgetView: View {
                 Button {
                     guard store.barEditing.allowsWidgetActions else { return }
                     store.popup.toggle(popup, widget: widget, defaults: popupDefaults.inheriting(defaults), store: store, anchor: popupAnchor)
-                } label: { tile }
+                } label: {
+                    if widget.id == AppUpdate.widgetID {
+                        tile.accessibilityLabel(widget.tooltip!)
+                    } else {
+                        tile
+                    }
+                }
                 .buttonStyle(.plain)
             } else if let command = output?.onClick ?? widget.onClick {
                 Button { runAction(command, sender: "mouse.clicked", button: "left") } label: { tile }
@@ -356,7 +362,8 @@ struct WidgetView: View {
                                   shape: RoundedRectangle(cornerRadius: appearance.cornerRadius)))
         .overlay {
             RoundedRectangle(cornerRadius: appearance.cornerRadius)
-                .strokeBorder(appearance.borderColor, lineWidth: appearance.borderWidth)
+                .strokeBorder(widget.id == AppUpdate.widgetID ? appearance.accent : appearance.borderColor,
+                              lineWidth: widget.id == AppUpdate.widgetID ? 1 : appearance.borderWidth)
         }
         .overlay(alignment: .topTrailing) {
             if let error = store.scripts[widget.id]?.error ?? store.actionErrors[widget.id] {

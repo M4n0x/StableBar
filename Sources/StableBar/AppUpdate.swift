@@ -16,7 +16,7 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
 
     nonisolated static let widgetID = "stablebar.update"
     static let popup: PopupConfiguration = {
-        var popup = PopupConfiguration(style: WidgetStyle(paddingHorizontal: 14, paddingVertical: 14, spacing: 10),
+        var popup = PopupConfiguration(height: 420, style: WidgetStyle(paddingHorizontal: 14, paddingVertical: 14, spacing: 10),
                                        layout: PopupBlock(content: .appUpdate))
         popup.animation = WidgetAnimation()
         return popup
@@ -26,7 +26,6 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
     /// The version on offer, nil when there is no update.
     private(set) var version: String?
     private(set) var changes: [String] = []
-    private(set) var releaseURL: URL?
     private(set) var stage = Stage.available
     private(set) var progress = 0.0
     private var downloadCheck: DownloadCheck?
@@ -89,16 +88,16 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
     }
 
     static func tile(_ stage: Stage) -> WidgetConfiguration {
-        let (icon, text) = switch stage {
-        case .available: ("arrow.down.circle.fill", "Update")
-        case .downloading: ("arrow.down.circle", "Downloading…")
-        case .extracting: ("arrow.down.circle", "Preparing…")
-        case .ready: ("arrow.clockwise.circle.fill", "Relaunch to update")
-        case .installing: ("arrow.clockwise.circle", "Installing…")
+        let (icon, tooltip) = switch stage {
+        case .available: ("arrow.down", "Download update")
+        case .downloading: ("arrow.down", "Downloading update…")
+        case .extracting: ("arrow.down", "Preparing update…")
+        case .ready: ("arrow.clockwise", "Install and relaunch")
+        case .installing: ("arrow.clockwise", "Installing update…")
         }
         return try! ConfigurationValue.object([
             "id": .string(widgetID), "position": .string("right"), "type": .string("text"),
-            "text": .string(text), "icon": .string(icon), "overflow": .string("never"),
+            "text": .string(""), "icon": .string(icon), "tooltip": .string(tooltip), "overflow": .string("never"),
             "transition": .string("fade")
         ]).decoded(WidgetConfiguration.self)
     }
@@ -152,7 +151,6 @@ final class AppUpdate: NSObject, SPUUserDriver, SPUUpdaterDelegate {
     func showUpdateFound(with appcastItem: SUAppcastItem, state: SPUUserUpdateState, reply: @escaping (SPUUserUpdateChoice) -> Void) {
         version = appcastItem.displayVersionString
         changes = Self.changes(in: appcastItem.itemDescription ?? "")
-        releaseURL = appcastItem.fullReleaseNotesURL
         stage = state.stage == .notDownloaded ? .available : .ready
         if downloadCheck == .checking {
             downloadCheck = nil
@@ -232,6 +230,8 @@ struct UpdateDetails: View {
     let update: AppUpdate
     let version: String
     let appearance: WidgetAppearance
+    @State private var releases: [UpdateRelease] = []
+    @State private var notesError = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: appearance.spacing) {
@@ -239,27 +239,31 @@ struct UpdateDetails: View {
                 Text("StableBar \(version)").fontWeight(.semibold)
                 Text("You have \(AppVersion().version!)").foregroundStyle(.secondary)
             }
-            if !update.changes.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("What's changed").fontWeight(.semibold)
-                    ForEach(Array(update.changes.enumerated()), id: \.offset) { _, change in
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text("•")
-                            Text((try? AttributedString(markdown: change)) ?? AttributedString(change))
-                                .fixedSize(horizontal: false, vertical: true)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    if releases.isEmpty {
+                        ReleaseChanges(version: version, changes: update.changes)
+                        if notesError.isEmpty {
+                            ProgressView("Loading release history…").controlSize(.small)
+                        } else {
+                            Text(notesError).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        ForEach(releases, id: \.tagName) { release in
+                            ReleaseChanges(version: String(release.tagName.dropFirst()),
+                                           changes: AppUpdate.changes(in: release.body ?? ""))
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if let url = update.releaseURL {
-                Link(destination: url) {
-                    HStack(spacing: 3) {
-                        Text("View release on GitHub")
-                        Image(systemName: "arrow.up.right")
-                    }
+            Link(destination: URL(string: "https://github.com/Seb-GRAF/StableBar/compare/v\(AppVersion().version!)...v\(version)")!) {
+                HStack(spacing: 3) {
+                    Text("View all changes on GitHub")
+                    Image(systemName: "arrow.up.right")
                 }
-                .foregroundStyle(.secondary)
             }
+            .foregroundStyle(.secondary)
             Divider()
             VStack(spacing: 8) {
                 if update.stage == .downloading || update.stage == .extracting {
@@ -288,5 +292,35 @@ struct UpdateDetails: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: AppUpdate.popup.height! - appearance.paddingVertical * 2)
+        .task(id: version) {
+            releases = []
+            notesError = ""
+            do {
+                let history = try await UpdateRelease.load(after: AppVersion().version!, through: version)
+                try Task.checkCancellation()
+                releases = history
+            } catch {
+                if !Task.isCancelled { notesError = "Earlier release notes could not be loaded." }
+            }
+        }
+    }
+}
+
+private struct ReleaseChanges: View {
+    let version: String
+    let changes: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Changes in \(version)").fontWeight(.semibold)
+            ForEach(Array(changes.enumerated()), id: \.offset) { _, change in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("•")
+                    Text((try? AttributedString(markdown: change)) ?? AttributedString(change))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
 }
