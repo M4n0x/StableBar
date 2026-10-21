@@ -324,6 +324,16 @@ struct WidgetView: View {
         default: false
         }
         let tile = content(resolution, open: isOpen, padding: padding)
+            .overlay(alignment: .topTrailing) {
+                if widget.id == AppUpdate.widgetID {
+                    Circle()
+                        .fill(appearance.accent)
+                        .frame(width: appearance.iconSize / 2, height: appearance.iconSize / 2)
+                        .overlay { Circle().strokeBorder(appearance.background, lineWidth: 1.5) }
+                        .offset(x: 2, y: -2)
+                        .accessibilityHidden(true)
+                }
+            }
             .padding(.leading, style.paddingLeading ?? appearance.paddingHorizontal)
             .padding(.trailing, style.paddingTrailing ?? appearance.paddingHorizontal)
             .padding(.top, hasCells ? 0 : padding.top)
@@ -338,7 +348,13 @@ struct WidgetView: View {
                 Button {
                     guard store.barEditing.allowsWidgetActions else { return }
                     store.popup.toggle(popup, widget: widget, defaults: popupDefaults.inheriting(defaults), store: store, anchor: popupAnchor)
-                } label: { tile }
+                } label: {
+                    if widget.id == AppUpdate.widgetID {
+                        tile.accessibilityLabel(widget.tooltip!)
+                    } else {
+                        tile
+                    }
+                }
                 .buttonStyle(.plain)
             } else if let command = output?.onClick ?? widget.onClick {
                 Button { runAction(command, sender: "mouse.clicked", button: "left") } label: { tile }

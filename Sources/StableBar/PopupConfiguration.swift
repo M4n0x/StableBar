@@ -13,8 +13,8 @@ struct PopupConfiguration: Decodable, Sendable {
 
     enum CodingKeys: String, CodingKey, CaseIterable { case height, style, layout, alignment, offset, openOnHover, dismissOnAction, dismissOnControl, animation }
 
-    init(style: WidgetStyle, layout: PopupBlock) {
-        height = nil
+    init(height: Double? = nil, style: WidgetStyle, layout: PopupBlock) {
+        self.height = height
         self.style = style
         self.layout = layout
     }

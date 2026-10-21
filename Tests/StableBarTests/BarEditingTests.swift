@@ -966,10 +966,10 @@ final class BarEditingTests: XCTestCase {
         defer { store.stop() }
         try store.setSessionEdits([])
         store.barEditing.begin()
-        try fixture.write("Installed package", to: fixture.directory.appending(path: "new-package"))
-        try await Task.sleep(for: .milliseconds(60))
+        store.scheduleReload()
+        let reload = try XCTUnwrap(store.reloadTask)
         store.barEditing.move("clock", to: .left)
-        try await Task.sleep(for: .milliseconds(250))
+        await reload.value
         XCTAssertTrue(store.barEditing.isActive)
         XCTAssertNil(store.barEditing.error)
         XCTAssertEqual(store.configuration?.widgets.first?.position, .left)
