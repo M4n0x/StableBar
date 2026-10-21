@@ -182,6 +182,55 @@ final class ThemeGallery {
         } catch { errors[key] = errorMessage(error) }
     }
 
+    func save(_ current: ThemeChoice, as name: String) async {
+        let key = current.key
+        errors[key] = nil
+        defer { configurationChanged() }
+        do {
+            var loader = ConfigurationLoader()
+            let theme = try loader.readPackage(at: current.directory, manifest: current.manifest,
+                                               settings: store.themeSettings(for: current)).values
+            let main = try store.editedMainDocument(replaying: store.customizationEdits)
+            var moved: [String: ConfigurationValue] = [:]
+            var removal: [String: ConfigurationValue] = [:]
+            for property in ["defaults", "popupDefaults", "roles", "workspaceDefaults", "groups"] where main[property] != nil {
+                moved[property] = main[property]
+                removal[property] = .null
+            }
+            let bar = try (main["bar"]?.decoded([String: ConfigurationValue].self) ?? [:]).filter {
+                ["height", "margin", "inset", "spacing", "background", "style", "notchWidth", "notchSpacing"].contains($0.key)
+            }
+            if !bar.isEmpty {
+                moved["bar"] = .object(bar)
+                removal["bar"] = .object(bar.mapValues { _ in .null })
+            }
+            let tokens = try main["tokens"]?.decoded([String: ConfigurationValue].self) ?? [:]
+            let themed = try theme["tokens"]?.decoded([String: ConfigurationValue].self) ?? [:]
+            if !tokens.isEmpty { moved["tokens"] = .object(tokens) }
+            let themeColors = tokens.filter { name, _ in themed[name] != nil || themeTokens.contains { $0.name == name } }
+            if !themeColors.isEmpty { removal["tokens"] = .object(themeColors.mapValues { _ in .null }) }
+            let id = name.folding(options: .diacriticInsensitive, locale: nil).lowercased()
+                .split { !$0.isASCII || !($0.isLetter || $0.isNumber) }.joined(separator: "-")
+            let versions = try await client.installed().filter { $0.id == id }.map(\.version)
+            var patch = 0
+            while versions.contains("1.0.\(patch)") { patch += 1 }
+            let source = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: source) }
+            try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+            try configurationData(["id": .string(id), "name": .string(name), "version": .string("1.0.\(patch)"),
+                                   "kind": .string("theme"), "entry": .string("config.json"),
+                                   "description": .string("Based on \(current.manifest.name).")])
+                .write(to: source.appending(path: "package.json"))
+            try configurationData(theme.merging(moved) { $1.overriding($0) }).write(to: source.appending(path: "config.json"))
+            let installed = try await client.install(source)
+            let choice = ThemeChoice(manifest: installed.manifest, directory: installed.directory, isBundled: false)
+            choices.append(choice)
+            perform(on: key) {
+                try store.customizationHistory.change([ConfigurationEdit(action: .unset, properties: removal), store.themeEdit(for: choice)])
+            }
+        } catch { errors[key] = errorMessage(error) }
+    }
+
     private func perform(on key: String, _ action: () throws -> Void) {
         do { try action(); errors[key] = nil }
         catch {

@@ -13,6 +13,8 @@ struct AppearanceView: View {
     @State private var advanced: AdvancedSheet?
     @State private var screen: ScreenKind?
     @State private var fontFamilies: [String] = []
+    @State private var savingTheme = false
+    @State private var themeName = ""
 
     private var store: BarStore { editor.store }
     private var kinds: [ScreenKind] { ScreenKind.allCases.filter { store.screenSetup?.kinds.contains($0) == true } }
@@ -110,6 +112,36 @@ struct AppearanceView: View {
                     }
                     .buttonStyle(.link)
                     .font(.system(size: 12))
+                }
+                if screen == nil, editor.editingProfile == nil, let choice = gallery.choices.first(where: { $0.key == gallery.selectedKey }) {
+                    Button("Save as Theme…") {
+                        themeName = choice.isBundled || choice.manifest.repository != nil ? "My \(choice.manifest.name)" : choice.manifest.name
+                        savingTheme = true
+                    }
+                    .buttonStyle(.link)
+                    .font(.system(size: 12))
+                    .sheet(isPresented: $savingTheme) {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Save as Theme").font(.headline)
+                            TextField("Name", text: $themeName).frame(width: 360)
+                            HStack {
+                                Spacer()
+                                Button("Cancel") { savingTheme = false }.keyboardShortcut(.cancelAction)
+                                Button("Save") {
+                                    Task { await gallery.save(choice, as: themeName) }
+                                    savingTheme = false
+                                }
+                                .keyboardShortcut(.defaultAction)
+                                .disabled(themeName.isEmpty)
+                            }
+                        }
+                        .padding(24)
+                    }
+                    if !choice.isBundled {
+                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([choice.directory]) }
+                            .buttonStyle(.link)
+                            .font(.system(size: 12))
+                    }
                 }
                 Spacer()
                 RevertSettingButton(title: "Appearance", property: source, reset: source.saved.map { saved in { reset(saved) } })

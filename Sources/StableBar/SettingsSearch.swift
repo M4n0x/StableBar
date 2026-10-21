@@ -29,7 +29,7 @@ enum SettingsSearchResult: String, CaseIterable, Identifiable {
         case .widgetStyle: ("Widget style", .widgets, "Bar › Widget › Style", "color gradient font size padding corners border px pt")
         case .widgetBehavior: ("Widget clicks, screens and position", .widgets, "Bar › Widget › Behavior", "click popup hover screens display position tooltip hide")
         case .addWidget: ("Add a widget", .widgets, "Bar › Add widget", "new widget clock battery calendar store package")
-        case .theme: ("Theme", .appearance, "Theme", "light dark automatic appearance browse look")
+        case .theme: ("Theme", .appearance, "Theme", "light dark automatic appearance browse look save copy duplicate")
         case .colors: ("Theme colors", .appearance, "Theme › Theme colors", "tokens accent text surface palette")
         case .glass: ("Liquid Glass", .appearance, "Theme › Liquid Glass", "transparency see-through blur")
         case .popups: ("Popup colors", .appearance, "Theme › Popups", "popover background border shadow weight")
