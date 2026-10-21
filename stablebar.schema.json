@@ -495,15 +495,7 @@
     "display": {
       "anyOf": [
         {
-          "enum": [
-            "all",
-            "active",
-            "main",
-            "builtIn",
-            "external",
-            "notched",
-            "unnotched"
-          ]
+          "$ref": "#/definitions/displayKind"
         },
         {
           "type": "array",
@@ -512,8 +504,28 @@
           }
         },
         {
+          "type": "array",
+          "description": "Screens matching any of these kinds.",
+          "items": {
+            "$ref": "#/definitions/displayKind"
+          }
+        },
+        {
           "type": "null"
         }
+      ]
+    },
+    "displayKind": {
+      "enum": [
+        "all",
+        "active",
+        "main",
+        "builtIn",
+        "external",
+        "monitor",
+        "vertical",
+        "notched",
+        "unnotched"
       ]
     },
     "glass": {

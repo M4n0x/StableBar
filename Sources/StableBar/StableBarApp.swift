@@ -199,7 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         do {
             let control = RuntimeControl { [store] in try store.handle($0) }
-            try control.start(url: store.configurationURL)
+            try control.start(url: store.sharedConfigurationURL)
             self.control = control
         } catch {
             FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
@@ -217,7 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         Task {
             try? await loadLoginShellEnvironment()
-            store.start()
+            store.start(on: ScreenSetup(NSScreen.screens.map(BarDisplay.init)))
             systemContext = SystemContext { [store] in store.refreshContext() }
             systemContext!.start()
             if !UserDefaults.standard.bool(forKey: "setupCompleted") { showSetup() }
@@ -235,6 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         themeTrial.cancel()
         store.popup.close()
         store.retainDisplays(Set(NSScreen.screens.map { BarDisplay(screen: $0).id }))
+        store.showScreenSetup(ScreenSetup(NSScreen.screens.map(BarDisplay.init)))
         store.refreshContext()
         updatePanels()
         store.workspaceStore.refreshForDisplayChange()

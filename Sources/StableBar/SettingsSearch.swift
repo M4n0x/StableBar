@@ -3,7 +3,7 @@ import Foundation
 enum SettingsSearchResult: String, CaseIterable, Identifiable {
     case widgetContent, widgetAppearance, widgetBehavior, widgetTechnical
     case theme, glass, colors, defaults, popups, roles, workspaceStyle, modeAliases, barStyle
-    case login, placement, access, connections, configuration, help, updates
+    case login, screenSetups, placement, access, connections, configuration, help, updates
     case profiles, library, status
 
     var id: String { rawValue }
@@ -26,6 +26,7 @@ enum SettingsSearchResult: String, CaseIterable, Identifiable {
         case .modeAliases: ("AeroSpace mode aliases", .appearance, "advanced mapping")
         case .barStyle: ("Bar appearance", .appearance, "background border corners height spacing inset")
         case .login: ("Open at login", .general, "startup launch")
+        case .screenSetups: ("Screen setups", .general, "laptop monitor vertical external connected own shared bar")
         case .placement: ("Displays and placement", .general, "offset margin scale monitor windows notifications clear accessibility")
         case .access: ("Access", .general, "permission calendar accessibility automation denied")
         case .connections: ("Workspace connection", .general, "aerospace yabai source reconnect")

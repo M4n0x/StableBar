@@ -224,6 +224,22 @@ final class BarEditing {
         perform(on: displayID) { try WidgetSetup(store: store).remove(id) }
     }
 
+    /// The other kinds of screen where a widget shows, which keep it when it is hidden from `kind`.
+    func otherKinds(showing widget: WidgetConfiguration, besides kind: ScreenKind) -> [ScreenKind] {
+        let displays = NSScreen.screens.map(BarDisplay.init)
+        return ScreenKind.allCases.filter { $0 != kind && $0.shows(widget.display, among: displays, activeID: store.activeDisplayID) }
+    }
+
+    func hide(_ id: String, from kind: ScreenKind, on displayID: Int) {
+        guard isActive, let widget = store.configuration?.widgets.first(where: { $0.id == id }) else { return }
+        let kinds = otherKinds(showing: widget, besides: kind)
+        perform(on: displayID) {
+            try store.customizationHistory.change(ConfigurationEdit(action: .set, id: id, properties: [
+                "display": .array(kinds.map { .string($0.selection) })
+            ]))
+        }
+    }
+
     func select(_ id: String) {
         guard isActive, store.configuration?.widgets.contains(where: { $0.id == id }) == true else { return }
         store.onCustomizeWidget?(id)

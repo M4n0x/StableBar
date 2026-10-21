@@ -390,7 +390,7 @@ func workspaceWindowFocusUsesItsIDAndReportsFailure(source: WorkspaceSource) asy
     #expect(center[2] == 910)
 }
 
-@Test func displayFilteringTracksFocusAndScreenSelectors() {
+@Test func displayFilteringTracksFocusAndScreenSelectors() throws {
     let laptop = BarDisplay(id: 2, isBuiltIn: true, isMain: false, notch: 650...870)
     let monitor = BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil)
     #expect(DisplaySelection.active.includes(laptop, activeID: 2))
@@ -400,6 +400,28 @@ func workspaceWindowFocusUsesItsIDAndReportsFailure(source: WorkspaceSource) asy
     #expect(DisplaySelection.notched.includes(laptop, activeID: 1))
     #expect(DisplaySelection.unnotched.includes(monitor, activeID: 1))
     #expect(DisplaySelection.external.includes(monitor, activeID: 2))
+    let vertical = BarDisplay(id: 3, isBuiltIn: false, isMain: false, notch: nil, isPortrait: true)
+    #expect(DisplaySelection.monitor.includes(monitor, activeID: 1))
+    #expect(!DisplaySelection.monitor.includes(vertical, activeID: 1))
+    #expect(DisplaySelection.vertical.includes(vertical, activeID: 1))
+    let kinds = try JSONDecoder().decode(DisplaySelection.self, from: Data(#"["builtIn","vertical"]"#.utf8))
+    #expect(kinds == .any([.builtIn, .vertical]))
+    #expect([laptop, monitor, vertical].map { kinds.includes($0, activeID: 1) } == [true, false, true])
+    #expect(ScreenKind.allCases.map { $0.shows(kinds, among: [laptop, monitor], activeID: 1) } == [true, false, true])
+    #expect(!ScreenKind.vertical.shows(.main, among: [laptop, monitor, vertical], activeID: 1))
+}
+
+@Test func screenSetupsNameTheirScreensAndFiles() {
+    let laptop = BarDisplay(id: 2, isBuiltIn: true, isMain: false, notch: nil)
+    let monitor = BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil)
+    let vertical = BarDisplay(id: 3, isBuiltIn: false, isMain: false, notch: nil, isPortrait: true)
+    #expect(ScreenSetup([laptop]).title == "Laptop only")
+    #expect(ScreenSetup([vertical, monitor, laptop]).title == "Laptop + monitor + vertical monitor")
+    #expect(ScreenSetup([vertical, monitor, laptop]).fileName == "setup-laptop+monitor+vertical.json")
+    #expect(ScreenSetup([monitor, monitor]).title == "2 monitors")
+    #expect(ScreenSetup(fileName: "setup-monitor+laptop.json") == ScreenSetup([laptop, monitor]))
+    #expect(ScreenSetup(fileName: "setup-laptop+projector.json") == nil)
+    #expect(ScreenSetup(fileName: "config.json") == nil)
 }
 
 @Test @MainActor func scriptRecoversAfterACommandFailure() async throws {
@@ -475,6 +497,17 @@ func workspaceWindowFocusUsesItsIDAndReportsFailure(source: WorkspaceSource) asy
     let bundledResult = try JSONDecoder().decode([String: ConfigurationValue].self, from: bundled)
     #expect(bundledResult["theme"] == .object(["id": .string("paper")]))
     #expect(bundledResult["bar"] == .object(["height": .number(48), "offset": .number(38), "notchSpacing": .number(20), "appearance": .null]))
+}
+
+@Test(arguments: SetupPreferences.Preset.allCases)
+func setupPresetsLoadWithTheBundledThemes(preset: SetupPreferences.Preset) throws {
+    let repository = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let url = repository.appending(path: "Resources/config.json")
+    let data = try preset.preferences(sets: [.system, .meetings, .workspaces(.aerospace)])
+        .applying(to: Data(contentsOf: url), menuBarHeight: 24)
+    var loader = ConfigurationLoader()
+    loader.themesDirectory = repository.appending(path: "Resources/themes")
+    _ = try loader.load(url, data: data)
 }
 
 @Test func setupPlacesChosenWidgetSetsBesideTheAppAndClockAndKeepsWidgetsWithTheSameID() throws {

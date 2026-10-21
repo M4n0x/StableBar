@@ -69,7 +69,7 @@ enum WidgetClickChoice: String, CaseIterable {
 }
 
 enum WidgetScreenChoice: String, CaseIterable {
-    case all, active, main, builtIn, external, notched, unnotched, specific
+    case all, active, main, builtIn, external, monitor, vertical, notched, unnotched, several, specific
 
     var title: String {
         switch self {
@@ -78,8 +78,11 @@ enum WidgetScreenChoice: String, CaseIterable {
         case .main: "The main screen"
         case .builtIn: "The built-in screen"
         case .external: "External screens"
+        case .monitor: "Landscape monitors"
+        case .vertical: "Vertical monitors"
         case .notched: "Screens with a notch"
         case .unnotched: "Screens without a notch"
+        case .several: "Several kinds of screens"
         case .specific: "Specific screens"
         }
     }
@@ -91,14 +94,21 @@ enum WidgetScreenChoice: String, CaseIterable {
         case .main: self = .main
         case .builtIn: self = .builtIn
         case .external: self = .external
+        case .monitor: self = .monitor
+        case .vertical: self = .vertical
         case .notched: self = .notched
         case .unnotched: self = .unnotched
+        case .any: self = .several
         case .ids: self = .specific
         }
     }
 
     var properties: [String: ConfigurationValue]? {
-        self == .specific ? nil : ["display": .string(rawValue)]
+        switch self {
+        case .specific: nil
+        case .several: ["display": .array(ScreenKind.allCases.map { .string($0.selection) })]
+        default: ["display": .string(rawValue)]
+        }
     }
 }
 

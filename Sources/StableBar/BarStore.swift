@@ -14,7 +14,11 @@ final class BarStore: NSObject {
     let appMenu = AppMenu()
     let popup: WidgetPopup
     var update: AppUpdate?
-    let configurationURL: URL
+    /// The main configuration: the shared bar of every screen setup without its own.
+    let sharedConfigurationURL: URL
+    /// The file of the bar on the screens: the shared bar, or the current screen setup's own bar.
+    private(set) var configurationURL: URL
+    private(set) var screenSetup: ScreenSetup?
     let registry: DataSourceRegistry
     var onConfigurationChange: (() -> Void)?
     var onCustomize: (() -> Void)?
@@ -66,6 +70,7 @@ final class BarStore: NSObject {
          popup: WidgetPopup = WidgetPopup(), themesDirectory: URL? = bundledThemesDirectory,
          customizationSaveDelay: Duration = .milliseconds(500)) {
         self.configurationURL = configurationURL
+        sharedConfigurationURL = configurationURL
         self.customizationSaveDelay = customizationSaveDelay
         self.registry = registry
         self.popup = popup
@@ -79,7 +84,7 @@ final class BarStore: NSObject {
         }
     }
 
-    func start() {
+    func start(on setup: ScreenSetup? = nil) {
         context = SystemContext.current()
         reloadObserver = DistributedNotificationCenter.default().addObserver(
             forName: LaunchCommand.reloadNotification, object: nil, queue: .main) { [weak self] _ in
@@ -92,19 +97,23 @@ final class BarStore: NSObject {
             send(.workspace, ["INFO": focused?.name ?? "", "SID": String(focused?.monitor ?? activeDisplayID)])
         }
         do {
-            let directory = configurationURL.deletingLastPathComponent()
+            let directory = sharedConfigurationURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            if !FileManager.default.fileExists(atPath: configurationURL.path) {
+            if !FileManager.default.fileExists(atPath: sharedConfigurationURL.path) {
                 let template = Bundle.main.url(forResource: "config", withExtension: "json")!
                 let data = try SetupPreferences(placement: .belowMenuBar).applying(
                     to: Data(contentsOf: template),
                     menuBarHeight: max(NSStatusBar.system.thickness, NSScreen.main?.safeAreaInsets.top ?? 0))
-                try writeConfiguration(data, to: configurationURL)
+                try writeConfiguration(data, to: sharedConfigurationURL)
             }
-            try migrateConfigurationFile(configurationURL)
+            try migrateConfigurationFile(sharedConfigurationURL)
             if !UserDefaults.standard.bool(forKey: "migratedEarlierColors") {
-                try migrateEarlierColors(configurationURL)
+                try migrateEarlierColors(sharedConfigurationURL)
                 UserDefaults.standard.set(true, forKey: "migratedEarlierColors")
+            }
+            if let setup {
+                screenSetup = setup
+                configurationURL = barURL(for: setup)
             }
             reloadConfiguration()
         } catch {
@@ -235,6 +244,49 @@ final class BarStore: NSObject {
         catch { sessionEdits = previous; throw error }
     }
 
+    /// The setups with their own bar, from the files beside the main configuration.
+    var screenSetupsWithOwnBars: [ScreenSetup] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: sharedConfigurationURL.deletingLastPathComponent().path)) ?? []
+        return names.sorted().compactMap(ScreenSetup.init(fileName:))
+    }
+
+    func ownBarURL(for setup: ScreenSetup) -> URL {
+        sharedConfigurationURL.deletingLastPathComponent().appending(path: setup.fileName)
+    }
+
+    private func barURL(for setup: ScreenSetup) -> URL {
+        FileManager.default.fileExists(atPath: ownBarURL(for: setup).path) ? ownBarURL(for: setup) : sharedConfigurationURL
+    }
+
+    /// Shows the bar of the screens now connected: their setup's own bar, or the shared one.
+    func showScreenSetup(_ setup: ScreenSetup) {
+        screenSetup = setup
+        showBar(at: barURL(for: setup))
+    }
+
+    /// Copies the shared bar into the current setup's own file, which the bar then shows and Customize edits.
+    func giveScreenSetupItsOwnBar() throws {
+        guard let screenSetup else { return }
+        flushCustomization()
+        try FileManager.default.copyItem(at: sharedConfigurationURL, to: ownBarURL(for: screenSetup))
+        showBar(at: ownBarURL(for: screenSetup))
+    }
+
+    /// Moves a setup's own bar to the Trash, so that setup uses the shared bar again.
+    func useSharedBar(for setup: ScreenSetup) throws {
+        if setup == screenSetup { showBar(at: sharedConfigurationURL) }
+        try FileManager.default.trashItem(at: ownBarURL(for: setup), resultingItemURL: nil)
+    }
+
+    private func showBar(at url: URL) {
+        guard url != configurationURL else { return }
+        flushCustomization()
+        sessionEdits = []
+        customizationHistory.reset()
+        configurationURL = url
+        readConfiguration(leavingEditMode: false)
+    }
+
     func customizationProfiles(includingPending: Bool = true) throws -> [ConfigurationProfile] {
         let root = try editedDocument([], replaying: includingPending ? customizationEdits : [])
         var loader = configurationLoader
@@ -328,6 +380,17 @@ final class BarStore: NSObject {
         let packages = WidgetPackageStore(directory: configurationURL.deletingLastPathComponent().appending(path: "packages"))
         let directory = try packages.directory(id: id, version: version)
         let manifest = try packages.manifest(at: directory)
+        let bars = [(sharedConfigurationURL, "The shared bar")] + screenSetupsWithOwnBars.map { (ownBarURL(for: $0), "The bar for \($0.title.lowercased())") }
+        for (url, name) in bars where url != configurationURL {
+            var other = ConfigurationLoader()
+            other.themesDirectory = themesDirectory
+            guard let document = try? other.compose(url, context: context) else { continue }
+            var used = (try? document["packages"]?.decoded([WidgetPackageSelection].self)) ?? []
+            if let theme = try? document["theme"]?.decoded(WidgetPackageSelection.self) { used.append(theme) }
+            if used.contains(where: { $0.id == id && $0.version == version && $0.enabled }) {
+                throw CommandFailure(message: "\(name) uses \(manifest.name) \(version). Remove it from that bar first.")
+            }
+        }
         var loader = ConfigurationLoader()
         flushCustomization()
         let document = try loader.compose(configurationURL, data: configurationData(
