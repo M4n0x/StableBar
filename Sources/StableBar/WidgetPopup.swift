@@ -23,10 +23,30 @@ final class PopupRevealView: NSView {
     required init?(coder: NSCoder) { fatalError("PopupRevealView is created programmatically.") }
 }
 
+/// A popup's own shadow without the popup, for a window behind the popup's.
+struct PopupShadowView: View {
+    let cornerRadius: Double
+    let color: Color
+    let radius: Double
+    let inset: CGFloat
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius)
+        shape.fill(.black)
+            .padding(inset)
+            .shadow(color: color, radius: radius, y: 1)
+            // A translucent popup would show the shape through it.
+            .mask {
+                Rectangle().overlay { shape.padding(inset).blendMode(.destinationOut) }.compositingGroup()
+            }
+    }
+}
+
 @MainActor
 final class WidgetPopup {
     private let present: (PopupPanel, Bool) -> Void
     private var panel: PopupPanel?
+    private(set) var shadowWindow: NSPanel?
     private var widgetID: String?
     private weak var store: BarStore?
     private weak var anchor: NSView?
@@ -172,22 +192,24 @@ final class WidgetPopup {
                 let height = (min(contentHeight, maximumHeight) + shadowInset * 2).rounded(.up)
                 guard abs(panel.frame.height - height) > 0.5 else { return }
                 let frame = NSRect(x: panel.frame.minX, y: panel.frame.maxY - height, width: panel.frame.width, height: height)
-                let reveal = panel.contentView!
-                reveal.subviews[0].frame = NSRect(x: 0, y: reveal.bounds.height - height, width: frame.width, height: height)
+                let windows = [panel, self?.shadowWindow].compactMap { $0 }
+                for window in windows {
+                    let reveal = window.contentView!
+                    reveal.subviews[0].frame = NSRect(x: 0, y: reveal.bounds.height - height, width: frame.width, height: height)
+                }
                 if let animation = popup.animation, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                     NSAnimationContext.runAnimationGroup { context in
                         context.duration = animation.duration
                         context.timingFunction = animation.timingFunction
-                        panel.animator().setFrame(frame, display: true)
+                        for window in windows { window.animator().setFrame(frame, display: true) }
                     } completionHandler: {
                         Task { @MainActor in panel.invalidateShadow() }
                     }
                 } else {
-                    panel.setFrame(frame, display: true)
+                    for window in windows { window.setFrame(frame, display: true) }
                     panel.invalidateShadow()
                 }
             }
-            .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
             .padding(shadowInset)
             .onHover { [weak self, weak panel] inside in
                 if panel === self?.panel { self?.hoverPopup(inside) }
@@ -208,6 +230,11 @@ final class WidgetPopup {
             .flatMap { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) }
         panel.contentView = PopupRevealView(content: host, size: panel.frame.size)
         self.panel = panel
+        // macOS outlines a window and shapes its shadow from what the window draws. In the popup's window, the popup's
+        // own shadow would get that outline near its outer edge, so it gets a window of its own behind the popup.
+        let drawsShadow = style.shadowColor.map { $0.light & 0xff > 0 || $0.dark & 0xff > 0 } ?? false
+        let shadow = drawsShadow ? makeShadowWindow(behind: panel, appearance: appearance, inset: shadowInset) : nil
+        shadowWindow = shadow
         widgetID = widget.id
         self.store = store
         store.setPopupVisibleWidget(widget.id, anchor: anchor)
@@ -237,22 +264,45 @@ final class WidgetPopup {
         }
         panel.alphaValue = 0
         present(panel, onHover)
+        if panel.isVisible { shadow?.order(.below, relativeTo: panel.windowNumber) }
+        let windows = [panel, shadow].compactMap { $0 }
         if animation.duration > 0, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            let reveal = panel.contentView!
-            let top = CATransform3DMakeTranslation(reveal.bounds.midX, reveal.bounds.maxY, 0)
-            let scale = CABasicAnimation(keyPath: "transform")
-            scale.fromValue = CATransform3DTranslate(CATransform3DScale(top, 0.97, 0.97, 1), -reveal.bounds.midX, -reveal.bounds.maxY, 0)
-            scale.duration = animation.duration
-            scale.timingFunction = animation.timingFunction
-            reveal.layer!.add(scale, forKey: "reveal")
+            for window in windows {
+                let reveal = window.contentView!
+                let top = CATransform3DMakeTranslation(reveal.bounds.midX, reveal.bounds.maxY, 0)
+                let scale = CABasicAnimation(keyPath: "transform")
+                scale.fromValue = CATransform3DTranslate(CATransform3DScale(top, 0.97, 0.97, 1), -reveal.bounds.midX, -reveal.bounds.maxY, 0)
+                scale.duration = animation.duration
+                scale.timingFunction = animation.timingFunction
+                reveal.layer!.add(scale, forKey: "reveal")
+            }
         }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = animation.duration
             context.timingFunction = animation.timingFunction
-            panel.animator().alphaValue = 1
+            for window in windows { window.animator().alphaValue = 1 }
         } completionHandler: {
             Task { @MainActor in panel.invalidateShadow() }
         }
+    }
+
+    private func makeShadowWindow(behind panel: PopupPanel, appearance: WidgetAppearance, inset: CGFloat) -> NSPanel {
+        let window = NSPanel(contentRect: panel.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        window.title = "\(panel.title) shadow"
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.hidesOnDeactivate = false
+        window.isReleasedWhenClosed = false
+        window.level = panel.level
+        window.collectionBehavior = panel.collectionBehavior
+        window.appearance = panel.appearance
+        window.alphaValue = 0
+        let host = NSHostingView(rootView: PopupShadowView(cornerRadius: appearance.cornerRadius, color: appearance.shadowColor,
+                                                           radius: appearance.shadowRadius, inset: inset))
+        window.contentView = PopupRevealView(content: host, size: panel.frame.size)
+        return window
     }
 
     func close() {
@@ -267,18 +317,20 @@ final class WidgetPopup {
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
         localMonitor = nil
         globalMonitor = nil
-        if let panel, let animation {
+        let windows = [panel, shadowWindow].compactMap { $0 }
+        if let animation {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = animation.duration
                 context.timingFunction = animation.timingFunction
-                panel.animator().alphaValue = 0
+                for window in windows { window.animator().alphaValue = 0 }
             } completionHandler: {
-                Task { @MainActor in panel.close() }
+                Task { @MainActor in windows.forEach { $0.close() } }
             }
         } else {
-            panel?.close()
+            windows.forEach { $0.close() }
         }
         panel = nil
+        shadowWindow = nil
         widgetID = nil
         anchor = nil
         animation = nil

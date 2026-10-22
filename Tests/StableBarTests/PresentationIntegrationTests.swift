@@ -267,6 +267,71 @@ func popupResizesWithItsContentAndKeepsItsWidthAndTopEdge(fixedHeight: Bool, ani
     }
 }
 
+/// macOS outlines a window and shapes its shadow from what the window draws, so a popup's own shadow, drawn in the
+/// popup's window, got an outline near its outer edge (#180). That shadow is drawn in a window behind the popup instead.
+@Test(arguments: [nil, "#00000000", "#00000059"] as [String?]) @MainActor
+func popupDrawsItsOwnShadowInAWindowBehindIt(shadowColor: String?) async throws {
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data("""
+    {"widgets":[{"id":"work","type":"text","text":"Work","position":"right","popup":{
+        "style":{"width":300,"cornerRadius":14,"background":"#202020","shadowRadius":14,
+                 "shadowColor":\(shadowColor.map { "\"\($0)\"" } ?? "null")},
+        "layout":{"type":"text","text":"Reviews"}}}]}
+    """.utf8))
+    var presented: PopupPanel?
+    let popup = WidgetPopup(present: { panel, _ in presented = panel })
+    let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), popup: popup)
+    store.configuration = configuration
+    store.preparePresentations()
+    defer { store.stop() }
+    let bar = OffscreenBar(configuration: configuration,
+                           display: BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil), width: 600, sharedStore: store)
+    defer { bar.close() }
+    await bar.settle()
+    let widget = configuration.widgets[0]
+    popup.toggle(widget.popup!, widget: widget, defaults: configuration.defaults, store: store,
+                 anchor: try #require(bar.anchors(widget.id).first))
+    let panel = try #require(presented)
+    func settle() async throws {
+        for _ in 0..<8 {
+            _ = try alpha(of: panel.contentView!, at: NSPoint(x: 1, y: 1))
+            try await Task.sleep(for: .milliseconds(25))
+        }
+    }
+    try await settle()
+    #expect(panel.hasShadow)
+    // The panel leaves 14 × 2 + 2 points around the popup. This point is 4 points left of it.
+    let beside = NSPoint(x: 26, y: panel.frame.height / 2)
+    #expect(try alpha(of: panel.contentView!, at: beside) == 0)
+    guard shadowColor == "#00000059" else {
+        #expect(popup.shadowWindow == nil)
+        popup.close()
+        return
+    }
+    let shadow = try #require(popup.shadowWindow)
+    #expect(!shadow.hasShadow)
+    #expect(shadow.ignoresMouseEvents)
+    #expect(!shadow.isVisible)
+    #expect(shadow.frame == panel.frame)
+    #expect(try alpha(of: shadow.contentView!, at: beside) > 0)
+    #expect(try alpha(of: shadow.contentView!, at: NSPoint(x: panel.frame.width / 2, y: beside.y)) == 0)
+    let opened = panel.frame
+    store.actionErrors[widget.id] = Array(repeating: "Pipeline failed", count: 5).joined(separator: "\n")
+    try await settle()
+    #expect(panel.frame.height > opened.height)
+    #expect(shadow.frame == panel.frame)
+    popup.close()
+    #expect(popup.shadowWindow == nil)
+}
+
+@MainActor private func alpha(of view: NSView, at point: NSPoint) throws -> CGFloat {
+    view.layoutSubtreeIfNeeded()
+    let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+    view.cacheDisplay(in: view.bounds, to: bitmap)
+    let scale = CGFloat(bitmap.pixelsWide) / view.bounds.width
+    // Bitmap rows run from the top.
+    return try #require(bitmap.colorAt(x: Int(point.x * scale), y: Int((view.bounds.height - point.y) * scale))).alphaComponent
+}
+
 @MainActor private final class PresentationFixtureSource: DataSource {
     let output: ScriptOutput
     var starts = 0
