@@ -50,6 +50,7 @@ private var presentationRepository: URL {
     try capturePopup(tooltip.panel, name: "hover-tooltip-after-\(long)")
     #expect(tooltip.onHover)
     #expect(tooltip.panel.ignoresMouseEvents)
+    #expect(tooltip.panel.animationBehavior == .none)
     #expect(tooltip.panel.frame.width <= 320)
     #expect(tooltip.panel.frame.height > (long ? 100 : 20))
     #expect(bar.panel.screen!.visibleFrame.contains(tooltip.panel.frame))
