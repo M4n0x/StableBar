@@ -59,6 +59,9 @@ indirect enum PopupContent: Sendable {
     case progress(source: String, height: Double)
     /// Bars that bounce while `fields[source]` is on, or always without a source.
     case equalizer(source: String?, height: Double)
+    /// A battery filled to `values[source]` or `fields[source]`, showing charging, the adapter and a
+    /// battery that needs service from the `state` and `health` fields.
+    case battery(source: String)
     /// The frontmost app's icon, drawn by an active-app widget's default layout. Configurations can't use it.
     case appIcon
     /// The update on offer and its download button, drawn by the update tile's popup. Configurations can't use it.
@@ -212,6 +215,8 @@ struct PopupBlock: Decodable, Sendable {
                 throw DecodingError.dataCorruptedError(forKey: .height, in: values, debugDescription: "An equalizer's height must be greater than zero.")
             }
             content = .equalizer(source: try values.decodeIfPresent(String.self, forKey: .source), height: height)
+        case "battery":
+            content = .battery(source: try values.decodeIfPresent(String.self, forKey: .source) ?? "percent")
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: values, debugDescription: "Unknown popup block type.")
         }

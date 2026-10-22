@@ -108,12 +108,7 @@ struct ThemeSampleBar: View {
             workspaces(active: 1)
             tile(role: .primary) { Text("Finder") }
             Spacer(minLength: 0)
-            tile(role: .value) {
-                HStack(spacing: 4) {
-                    Image(systemName: "battery.75percent")
-                    Text("82%")
-                }
-            }
+            tile(role: .value) { battery }
             tile(role: .time) { Text("9:41") }
         }
         .lineLimit(1)
@@ -185,6 +180,12 @@ struct ThemeSampleBar: View {
     func tile<Content: View>(role: PresentationRole, @ViewBuilder content: () -> Content) -> some View {
         let style = look.roleStyle(role).inheriting(look.defaults).resolved(for: StyleStates())
         return content().modifier(ThemeSampleTile(style: style))
+    }
+
+    /// The battery a battery widget draws in this look, at its value tiles' icon size.
+    var battery: some View {
+        let style = look.roleStyle(.value).inheriting(look.defaults).resolved(for: StyleStates())
+        return BatteryGlyph(level: 0.82, power: .battery, needsService: false, iconSize: WidgetAppearance(style, defaults: WidgetStyle()).iconSize)
     }
 }
 

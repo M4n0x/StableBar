@@ -46,8 +46,8 @@ struct WidgetSample: View {
                 let label = widget.label(output: output, activeApp: "Finder", date: Date(timeIntervalSince1970: 1_792_573_260))
                 let layout = widget.defaultLayout(label, output: output, appIcon: false)!
                 PopupBlockView(block: layout, inheritedStyle: WidgetStyle(), fields: label.fields,
-                               context: BlockContext(samples: (0..<60).map { [0.2, 0.35, 0.24, 0.5, 0.38, 0.24][$0 % 6] }, fillsWidth: false,
-                                                     open: { _ in }, runAction: { _, _ in }))
+                               context: BlockContext(samples: (0..<60).map { [0.2, 0.35, 0.24, 0.5, 0.38, 0.24][$0 % 6] },
+                                                     values: output.values ?? [:], fillsWidth: false, open: { _ in }, runAction: { _, _ in }))
             }
         }
         .font(.system(size: 12, weight: .medium))
@@ -58,7 +58,7 @@ struct WidgetSample: View {
 
     private var output: ScriptOutput {
         switch widget.providerName {
-        case "battery": ScriptOutput(text: "82%", icon: "battery.75percent", value: 0.82)
+        case "battery": ScriptOutput(text: "82%", icon: "battery.75percent", value: 0.82, fields: ["state": "battery"], values: ["percent": 0.82])
         case "audio": ScriptOutput(text: "45%", icon: "speaker.wave.2", value: 0.45)
         case "system": ScriptOutput(text: "24%", icon: "cpu", value: 0.24)
         case "network": ScriptOutput(text: "↓ 1.2 MB/s  ↑ 80 KB/s", icon: "network")

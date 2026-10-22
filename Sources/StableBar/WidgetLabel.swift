@@ -50,10 +50,10 @@ extension WidgetConfiguration {
     /// The blocks a widget without `layout` draws, matching the look built-in widgets had before
     /// they were drawn through blocks: its icon and text in a row at least a line of text tall, after
     /// a 40 × 16 graph for output with a `value`, or after the app's icon for the active app.
-    /// `providerType` is the type of the widget's provider, else its name is. Battery draws no graph,
-    /// and sound (`audio`) draws its icon, with the volume only while a change shows it. `appIcon`
-    /// says whether the frontmost app has one. Workspaces, spacers and scripts without output have
-    /// none.
+    /// `providerType` is the type of the widget's provider, else its name is. Battery draws only its
+    /// battery, its percentage left to the tooltip, or its icon and text on a Mac without one; sound
+    /// (`audio`) draws its icon, with the volume only while a change shows it. `appIcon` says whether
+    /// the frontmost app has one. Workspaces, spacers and scripts without output have none.
     func defaultLayout(_ label: WidgetLabel, output: ScriptOutput?, appIcon: Bool, providerType: String? = nil) -> PopupBlock? {
         let icon = label.icon.map { _ in PopupBlock(content: .symbol(name: "", source: "icon")) }
         let text = PopupBlock(content: .field("text"), hideWhenEmpty: "text")
@@ -72,6 +72,9 @@ extension WidgetConfiguration {
             let volume = PopupBlock(content: .field(field), hideWhenEmpty: field, transition: transition == nil ? .numeric : nil)
             let speaker = label.icon.map { _ in PopupBlock(content: .symbol(name: "", source: "icon"), widestSymbol: AudioMonitor.widestIcon) }
             return PopupBlock(content: .row([speaker, volume].compactMap { $0 }), keepsLineHeight: true)
+        case .provider where (providerType ?? providerName) == DataSourceType.battery.name && output?.fields?["present"] != "false":
+            guard output != nil else { return nil }
+            return PopupBlock(content: .row([PopupBlock(content: .battery(source: "percent"))]), keepsLineHeight: true)
         case .script, .provider:
             guard let output else { return nil }
             let type = providerType ?? providerName

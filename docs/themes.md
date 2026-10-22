@@ -26,7 +26,7 @@ StableBar ships with fifteen themes and the Built-in fallback. Themes follow the
 | **Handheld** | `handheld` | A framed screen in four shades of early handheld-console green, set in Silom. |
 | **Brutalist** | `brutalist` | Square boxes with heavy outlines on a concrete strip, set in bold DIN, with a blue block for the focused workspace and yellow on hover. |
 
-Choose one in setup or in **Settings → Theme**. Theme cards show the same sample bar in each theme's style: three workspaces, Finder, a battery percentage and a clock. The sample shows the theme's bar, widget tiles, fonts, colors and workspace indicator, in the light or dark appearance your bar uses now. Click a card to apply and save it immediately; a checkmark marks your choice, and **Undo** restores the previous theme. You can also select a theme that ships with StableBar by its ID:
+Choose one in setup or in **Settings → Theme**. Theme cards show the same sample bar in each theme's style: three workspaces, Finder, a battery and a clock. The sample shows the theme's bar, widget tiles, fonts, colors and workspace indicator, in the light or dark appearance your bar uses now. Click a card to apply and save it immediately; a checkmark marks your choice, and **Undo** restores the previous theme. You can also select a theme that ships with StableBar by its ID:
 
 ```json
 { "theme": { "id": "rose-pine" } }
