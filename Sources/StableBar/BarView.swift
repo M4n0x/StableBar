@@ -315,6 +315,49 @@ struct WidgetView: View {
         store.presentations[widget.id]?.style(on: screenKind) ?? ResolvedWidgetStyle(base: resolveStyle([defaults, widget.style]))
     }
 
+    /// `tile` as a button for its click action, popup or link, or as it is while the bar is being
+    /// edited, when it takes no clicks.
+    @ViewBuilder private func clickable(_ tile: some View, output: ScriptOutput?) -> some View {
+        if store.barEditing.isActive {
+            tile.allowsHitTesting(false)
+        } else if widget.id == PackageLibrary.updateWidgetID {
+            HStack(spacing: 0) {
+                Button(action: store.packageLibrary.openUpdates) { tile }
+                    .accessibilityLabel("Open package updates")
+                Button(action: store.packageLibrary.dismissUpdates) {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
+                        .padding(6)
+                }
+                .accessibilityLabel("Dismiss package update notification")
+                .help("Dismiss package update notification")
+            }
+            .buttonStyle(.plain)
+        } else if widget.hoverLayout != nil, let command = output?.onClick ?? widget.onClick {
+            Button { runAction(command, sender: "mouse.clicked", button: "left") } label: { tile }
+                .buttonStyle(.plain)
+        } else if let popup = widgetPopup(widget, store: store) {
+            Button {
+                guard store.barEditing.allowsWidgetActions else { return }
+                store.popup.toggle(popup, widget: widget, defaults: popupDefaults.inheriting(defaults), store: store, anchor: popupAnchor)
+            } label: {
+                if widget.id == AppUpdate.widgetID {
+                    tile.accessibilityLabel(widget.tooltip!)
+                } else {
+                    tile
+                }
+            }
+            .buttonStyle(.plain)
+        } else if let command = output?.onClick ?? widget.onClick {
+            Button { runAction(command, sender: "mouse.clicked", button: "left") } label: { tile }
+                .buttonStyle(.plain)
+        } else if let open = widget.open {
+            Button { if store.barEditing.allowsWidgetActions { OpenTarget(open)!.open() } } label: { tile }
+                .buttonStyle(.plain)
+        } else {
+            tile
+        }
+    }
+
     /// How the widget's text, field and symbol blocks show changes.
     private var motion: BlockMotion {
         BlockMotion(transition: widget.transition ?? defaultTransition,
@@ -364,46 +407,7 @@ struct WidgetView: View {
             .frame(width: appearance.width, height: style.height.map { CGFloat($0) })
             .frame(minWidth: style.minWidth.map { CGFloat($0) }, maxWidth: style.maxWidth.map { CGFloat($0) })
             .contentShape(Rectangle())
-        Group {
-            if store.barEditing.isActive {
-                tile.allowsHitTesting(false)
-            } else if widget.id == PackageLibrary.updateWidgetID {
-                HStack(spacing: 0) {
-                    Button(action: store.packageLibrary.openUpdates) { tile }
-                        .accessibilityLabel("Open package updates")
-                    Button(action: store.packageLibrary.dismissUpdates) {
-                        Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
-                            .padding(6)
-                    }
-                    .accessibilityLabel("Dismiss package update notification")
-                    .help("Dismiss package update notification")
-                }
-                .buttonStyle(.plain)
-            } else if widget.hoverLayout != nil, let command = output?.onClick ?? widget.onClick {
-                Button { runAction(command, sender: "mouse.clicked", button: "left") } label: { tile }
-                    .buttonStyle(.plain)
-            } else if let popup = widgetPopup(widget, store: store) {
-                Button {
-                    guard store.barEditing.allowsWidgetActions else { return }
-                    store.popup.toggle(popup, widget: widget, defaults: popupDefaults.inheriting(defaults), store: store, anchor: popupAnchor)
-                } label: {
-                    if widget.id == AppUpdate.widgetID {
-                        tile.accessibilityLabel(widget.tooltip!)
-                    } else {
-                        tile
-                    }
-                }
-                .buttonStyle(.plain)
-            } else if let command = output?.onClick ?? widget.onClick {
-                Button { runAction(command, sender: "mouse.clicked", button: "left") } label: { tile }
-                    .buttonStyle(.plain)
-            } else if let open = widget.open {
-                Button { if store.barEditing.allowsWidgetActions { OpenTarget(open)!.open() } } label: { tile }
-                    .buttonStyle(.plain)
-            } else {
-                tile
-            }
-        }
+        clickable(tile, output: output)
         .font(appearance.font)
         .foregroundStyle(appearance.foreground)
         .modifier(GlassBackground(fill: style.background, glass: store.configuration?.bar(on: screenKind).glass ?? GlassSettings(), surface: \.widgets,
