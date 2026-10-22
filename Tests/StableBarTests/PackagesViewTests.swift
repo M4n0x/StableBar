@@ -824,6 +824,44 @@ final class PackagesViewTests: XCTestCase {
         XCTAssertEqual(library.origin(of: installed.manifest), .installed)
     }
 
+    @MainActor func testStoreListsUpdatesThenInstalledThenOtherPackagesByName() async throws {
+        let fixture = try ThemeGalleryFixture()
+        defer { fixture.close() }
+        let acme = PackageSource(id: "acme", name: "Acme", url: LocalPackageIndex(fixture: fixture, folder: "acme").url)
+        for (id, name) in [("weather", "weather"), ("clock", "Clock"), ("notes", "Notes"), ("battery", "Battery"), ("agenda", "agenda")] {
+            let source = fixture.directory.appending(path: "folders/\(id)")
+            try fixture.write(#"{"id":"\#(id)","name":"\#(name)","version":"1","kind":"widgets","entry":"config.json"}"#,
+                              to: source.appending(path: "package.json"))
+            try fixture.write(#"{"widgets":[]}"#, to: source.appending(path: "config.json"))
+            _ = try id == "agenda" ? fixture.packages.install(source, record: PackageInstallRecord(acme), requestedName: "Acme")
+                : fixture.packages.install(source)
+        }
+        func index(_ url: URL, _ listed: [(String, String, String)]) throws {
+            let entries = listed.map { id, name, version in
+                #"{"id":"\#(id)","name":"\#(name)","version":"\#(version)","kind":"widgets","archive":"\#(id).tar.gz","sha256":"0","source":"https://example.com/\#(id)"}"#
+            }
+            try fixture.write(#"{"packages":[\#(entries.joined(separator: ","))]}"#, to: url)
+        }
+        let store = LocalPackageIndex(fixture: fixture).url
+        try index(store, [("zoom", "Zoom", "1"), ("notes", "Notes", "1"), ("weather", "weather", "2"),
+                          ("agenda", "agenda", "1"), ("battery", "Battery", "1"), ("clock", "Clock", "3")])
+        try index(acme.url, [("zoom", "Zoom", "1"), ("agenda", "agenda", "1")])
+        let bar = try fixture.store()
+        defer { bar.stop() }
+        let client = PackageStoreClient(packages: fixture.packages, indexURL: store)
+        await client.setPrivateSources([acme])
+        let library = PackageLibrary(store: bar, client: client)
+        defer { library.stopUpdateChecks() }
+        await library.loadInstalled()
+        await library.loadStore()
+        // The Store's agenda card says Installed from Acme, so it sorts with the installed packages; same names follow the sources.
+        XCTAssertEqual(library.storeEntries(showingThemes: nil, sourceID: nil).map(\.key), [
+            "stablebar:clock/3", "stablebar:weather/2", "stablebar:agenda/1", "acme:agenda/1",
+            "stablebar:battery/1", "stablebar:notes/1", "stablebar:zoom/1", "acme:zoom/1"
+        ])
+        XCTAssertEqual(library.storeEntries(showingThemes: nil, sourceID: "acme").map(\.key), ["acme:agenda/1", "acme:zoom/1"])
+    }
+
     @MainActor func testPackagesBrowserOpensInstalledPackageSettingsFromSelection() async throws {
         let fixture = try ThemeGalleryFixture()
         defer { fixture.close() }
