@@ -175,14 +175,7 @@ struct SetupDemo: View {
             part(1) { sample.tile(role: .primary) { app } }
             Spacer(minLength: 0)
             part(3) { sample.tile(role: .value) { cpu(accent: accent(look)) } }
-            part(4) {
-                sample.tile(role: .value) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "battery.75percent")
-                        Text("82%")
-                    }
-                }
-            }
+            part(4) { sample.tile(role: .value) { sample.battery } }
             part(5) { sample.tile(role: .time) { clock } }
         }
         .overlay {

@@ -60,6 +60,7 @@ Layout blocks:
 | `symbol` | `name` or `source` | SF Symbol; `source` reads its name from `fields`. `style.iconSize` sets its size. |
 | `progress` | `source`, `height` | A rule using `values[source]`, optionally moving toward `targets[source]`. `style.accent` is the fill and `style.background` the track. |
 | `equalizer` | — | Four bars that bounce in the text color while `source` is on, for `"true"`/`"1"` in fields or 1 in values, and settle low when it's off; without `source` they always bounce. `height` defaults to 12. Reduce Motion keeps them still. |
+| `battery` | — | A battery like the one in the macOS menu bar, sized by `style.iconSize` and drawn in the text color. Its fill shows `values[source]`, or a 0–1 number in `fields[source]`; `source` defaults to `percent`. A `state` field of `charging` adds a bolt and `charged` a plug, and a `health` field of `service` adds an orange badge. On battery power the fill turns red at 10 % or less. |
 
 Every block accepts `style` and `alignment` (`leading`, `center`, `trailing`). Fonts, text color, accent and spacing inherit from the containing block. Width, padding, background, hover background and border apply only when set on that block. Set a width on numeric fields and their headings to align columns. Blocks without a width use the available space. `minWidth` and `maxWidth` limit a block that has no fixed `width`: in the bar it takes its content's width within them, and in a popup the available space up to `maxWidth`.
 

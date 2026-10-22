@@ -108,7 +108,8 @@ enum DocsImages {
     }
 
     /// A bar whose data comes from sample files, with Finder as the active app. Its workspaces come
-    /// from a stand-in for AeroSpace, so the bar never reaches the AeroSpace running on this Mac.
+    /// from a stand-in for AeroSpace, so the bar never reaches the AeroSpace running on this Mac, and
+    /// its battery from a stand-in for the Mac's, so it draws as a battery provider does.
     private static func sampleStore(in directory: URL, theme: String?, dark: Bool,
                                     widgets: [[String: ConfigurationValue]]) throws -> BarStore {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -125,7 +126,7 @@ enum DocsImages {
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: aerospace.path)
         var configuration: [String: ConfigurationValue] = [
             "bar": .object(["offset": .number(0), "appearance": .string(dark ? "dark" : "light")]),
-            "providers": .object(Dictionary(uniqueKeysWithValues: ["system", "calendar", "battery"].map { name in
+            "providers": .object(Dictionary(uniqueKeysWithValues: ["system", "calendar"].map { name in
                 (name, .object(["type": .string("command"), "command": .string("/bin/cat \"$CONFIG_DIR/\(name).json\""),
                                 "interval": .number(3600)]))
             })),
@@ -134,7 +135,13 @@ enum DocsImages {
         if let theme { configuration["theme"] = .object(["id": .string(theme)]) }
         let url = directory.appending(path: "config.json")
         try JSONEncoder().encode(configuration).write(to: url)
-        let store = BarStore(configurationURL: url)
+        let battery = try ScriptOutput.read(Data(sampleOutput["battery"]!.utf8))
+        let registry = DataSourceRegistry(types: DataSourceRegistry.builtIn.types.map { type in
+            var type = type
+            if type.name == DataSourceType.battery.name { type.makeSource = { _, _ in PushSource(monitor: SampleBattery(output: battery)) } }
+            return type
+        })
+        let store = BarStore(configurationURL: url, registry: registry)
         store.workspaceStore.executablePath = { aerospace.path }
         store.reloadConfiguration()
         store.activeApp = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first
@@ -255,4 +262,17 @@ enum DocsImages {
     private static func widgets(_ json: String) -> [[String: ConfigurationValue]] {
         try! JSONDecoder().decode([[String: ConfigurationValue]].self, from: Data(json.utf8))
     }
+}
+
+/// A battery that always reads the same sample and never changes.
+private final class SampleBattery: ChangeMonitor {
+    let output: ScriptOutput
+
+    init(output: ScriptOutput) {
+        self.output = output
+    }
+
+    func read() throws -> ScriptOutput { output }
+    func start(changed: @escaping @Sendable () -> Void) throws {}
+    func stop() {}
 }

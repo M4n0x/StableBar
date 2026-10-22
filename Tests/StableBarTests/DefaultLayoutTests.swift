@@ -145,10 +145,11 @@ private enum FrontmostApp {
             let output = try decode(ScriptOutput.self, #"{"text":"85%","icon":"\#(icon)","value":0.85,"values":{"\#(source)":0.85}}"#)
             let label = widget.label(output: output, activeApp: nil, date: .now)
             let layout = try #require(widget.defaultLayout(label, output: output, appIcon: false, providerType: named ? type : nil))
-            // Sound shows its volume only after a change, so at rest it is the icon alone.
-            let value = type == "audio" ? nil : PopupBlock(content: .field("text"), hideWhenEmpty: "text")
-            let speaker = PopupBlock(content: .symbol(name: "", source: "icon"), widestSymbol: type == "audio" ? AudioMonitor.widestIcon : nil)
-            let expected = PopupBlock(content: .row([speaker, value].compactMap { $0 }), keepsLineHeight: true)
+            // Sound shows its volume only after a change, so at rest it is the icon alone, and battery
+            // leaves its percentage to the tooltip.
+            let icon = type == "audio" ? PopupBlock(content: .symbol(name: "", source: "icon"), widestSymbol: AudioMonitor.widestIcon)
+                : PopupBlock(content: .battery(source: "percent"))
+            let expected = PopupBlock(content: .row([icon]), keepsLineHeight: true)
             let context = BlockContext(samples: [0.85], values: [source: 0.85], fillsWidth: false, open: { _ in }, runAction: { _, _ in })
             let drawn = try draw(PopupBlockView(block: layout, inheritedStyle: WidgetStyle(), fields: label.fields, context: context))
             let plain = try draw(PopupBlockView(block: expected, inheritedStyle: WidgetStyle(), fields: label.fields, context: context))

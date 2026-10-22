@@ -388,6 +388,8 @@ struct PopupBlockView: View {
                 .frame(height: height)
         case let .equalizer(source, height):
             Equalizer(playing: source.map { fields[$0] == "true" || fields[$0] == "1" || context.values[$0] == 1 } ?? true, height: height)
+        case let .battery(source):
+            BatteryGlyph(level: context.values[source] ?? Double(fields[source] ?? "") ?? 0, fields: fields, iconSize: appearance.iconSize)
         case .appIcon:
             if let icon = context.appIcon {
                 Image(nsImage: icon).resizable().frame(width: appearance.iconSize, height: appearance.iconSize)

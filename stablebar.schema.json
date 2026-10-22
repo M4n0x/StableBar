@@ -903,7 +903,8 @@
                 "image",
                 "symbol",
                 "progress",
-                "equalizer"
+                "equalizer",
+                "battery"
               ]
             },
             {
