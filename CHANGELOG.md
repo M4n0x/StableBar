@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.7.0](https://github.com/Seb-GRAF/StableBar/compare/v0.6.0...v0.7.0) (2026-10-23)
+
+### Features
+
+* ask an agent from a popup that you can pin, resize and keep on screen ([c96664e](https://github.com/Seb-GRAF/StableBar/commit/c96664e7fe8285a4d6a90b8fa3701ac6d5d3c6ba))
+* fold common Store widgets into Essentials ([a98afdc](https://github.com/Seb-GRAF/StableBar/commit/a98afdc8b481133232dcd076523b3ffd1d10ab4e))
+* install the stablebar command from Settings ([2f2f4b8](https://github.com/Seb-GRAF/StableBar/commit/2f2f4b8f0c38ef9988f4132dd12f3094bf19329b)), closes [#255](https://github.com/Seb-GRAF/StableBar/issues/255)
+* investigate a problem or an idea with a coding agent ([cc71625](https://github.com/Seb-GRAF/StableBar/commit/cc71625e13e9854fd5b915f03a03030265186ebb)), closes [#257](https://github.com/Seb-GRAF/StableBar/issues/257)
+* move windows by dragging workspace icons ([dd23b08](https://github.com/Seb-GRAF/StableBar/commit/dd23b08d840c10b336daf50994072e1a28ec2085)), closes [#270](https://github.com/Seb-GRAF/StableBar/issues/270)
+* show OmniWM workspaces in workspace widgets ([0087096](https://github.com/Seb-GRAF/StableBar/commit/00870962171cb6a59e1d2fb9d8401e645bee3bfe)), closes [#267](https://github.com/Seb-GRAF/StableBar/issues/267)
+
+### Bug Fixes
+
+* draw a popup's shadow without blacking out its Liquid Glass ([6a1acba](https://github.com/Seb-GRAF/StableBar/commit/6a1acbaa7856455db1855c437ea2c8aec84cd108))
+* keep the glass steady when a popup morphs into another ([72f8b0e](https://github.com/Seb-GRAF/StableBar/commit/72f8b0ea5e116aa577b169f64b2be8443f57e564))
+* let ⌘V, ⌘C, ⌘X and ⌘A work in Settings text fields ([0ca55be](https://github.com/Seb-GRAF/StableBar/commit/0ca55be3240b75c3c3302d06732893a879a76059)), closes [#258](https://github.com/Seb-GRAF/StableBar/issues/258)
+* recover Essentials upgrades from official local packages ([84dda11](https://github.com/Seb-GRAF/StableBar/commit/84dda11bd45d2e67e017463897e9f69553cb21b4))
+
 ## [0.6.0](https://github.com/Seb-GRAF/StableBar/compare/v0.5.0...v0.6.0) (2026-10-23)
 
 ### Features
