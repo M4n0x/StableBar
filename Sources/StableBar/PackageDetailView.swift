@@ -156,6 +156,14 @@ struct PackageDetailView: View {
             }
             HStack {
                 Button("Show in Finder") { NSWorkspace.shared.open(draft.inspection.directory) }
+                if !reviewing, let link = library.link(for: draft) {
+                    Button("Copy link") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(link.link.absoluteString, forType: .string)
+                    }
+                    .help("Copy a link that opens \(manifest.name) in StableBar")
+                    .accessibilityLabel("Copy link to \(manifest.name)")
+                }
                 if let repository = manifest.repository { Link("Package source", destination: repository) }
             }
         } header: {

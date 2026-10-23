@@ -27,6 +27,8 @@ final class BarStore: NSObject {
     var onCustomizePackages: (() -> Void)?
     /// A `stablebar://add-source` link waiting for Settings › Packages to open its form.
     var pendingSourceLink: PackageSourceLink?
+    /// A `stablebar://package` link waiting for Settings › Packages to show its package.
+    var pendingPackageLink: PackageLink?
     var onCustomizeProfile: ((String) -> Void)?
     var onEndCustomizationEditing: (() -> Void)?
     var onTryThemes: ((Int) -> Void)?
@@ -1032,6 +1034,21 @@ final class BarStore: NSObject {
 
     func openConfiguration() {
         NSWorkspace.shared.open(configurationURL)
+    }
+
+    /// Keeps the last `stablebar://` link StableBar opens for Settings › Packages; false when none is one.
+    func receive(_ urls: [URL]) -> Bool {
+        for url in urls.reversed() {
+            if let link = PackageSourceLink(url: url) {
+                pendingSourceLink = link
+            } else if let link = PackageLink(url: url) {
+                pendingPackageLink = link
+            } else {
+                continue
+            }
+            return true
+        }
+        return false
     }
 
     func stop() {

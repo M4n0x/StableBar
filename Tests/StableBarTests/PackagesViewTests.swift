@@ -371,6 +371,150 @@ final class PackagesViewTests: XCTestCase {
         }
     }
 
+    /// The Store and Acme both list Clock; Note is installed from a folder, Weather from Acme.
+    @MainActor private func linkedLibrary(_ fixture: ThemeGalleryFixture) async throws -> (BarStore, PackageLibrary, PackageStoreClient) {
+        let index = LocalPackageIndex(fixture: fixture), acme = LocalPackageIndex(fixture: fixture, folder: "acme")
+        _ = try await index.add(id: "clock", kind: "widgets",
+                                configuration: #"{"widgets":[{"id":"clock","type":"text","position":"right","text":"Store"}]}"#, name: "Clock")
+        _ = try await acme.add(id: "clock", kind: "widgets",
+                               configuration: #"{"widgets":[{"id":"clock","type":"text","position":"right","text":"Acme"}]}"#, name: "Clock")
+        let acmeSource = PackageSource(id: "acme", name: "Acme", url: acme.url)
+        let folders = LocalPackageIndex(fixture: fixture, folder: "folders")
+        _ = try await folders.add(id: "note", kind: "widgets", configuration: #"{"widgets":[]}"#, name: "Note")
+        _ = try fixture.packages.install(fixture.directory.appending(path: "sources/note"))
+        _ = try await folders.add(id: "weather", kind: "widgets", configuration: #"{"widgets":[]}"#, name: "Weather")
+        _ = try fixture.packages.install(fixture.directory.appending(path: "sources/weather"), record: PackageInstallRecord(acmeSource))
+        let store = try fixture.store()
+        let client = PackageStoreClient(packages: fixture.packages, indexURL: index.url)
+        await client.setPrivateSources([acmeSource])
+        return (store, PackageLibrary(store: store, client: client), client)
+    }
+
+    @MainActor func testPackageLinksOpenTheInstalledCopyOrTheListingWithoutInstalling() async throws {
+        let fixture = try ThemeGalleryFixture()
+        defer { fixture.close() }
+        let (store, library, client) = try await linkedLibrary(fixture)
+        defer { store.stop(); library.stopUpdateChecks() }
+        let before = try Data(contentsOf: fixture.url)
+        // Nothing loaded yet: the link loads the installed packages and the sources itself.
+        library.search = "nothing matches"
+        await library.open(PackageLink(id: "clock", sourceID: nil))
+        XCTAssertEqual(library.search, "")
+        XCTAssertTrue(library.showingStore)
+        XCTAssertEqual(library.draft?.sourceID, PackageSource.storeID)
+        XCTAssertEqual(library.draft?.inspection.widgets.first?.content, .text("Store"))
+        XCTAssertNil(library.linkError)
+        await library.open(PackageLink(id: "clock", sourceID: "acme"))
+        XCTAssertEqual(library.draft?.sourceID, "acme")
+        XCTAssertEqual(library.draft?.inspection.widgets.first?.content, .text("Acme"))
+        // An installed package opens its installed copy, whichever source the link names.
+        await library.open(PackageLink(id: "note", sourceID: "acme"))
+        XCTAssertFalse(library.showingStore)
+        let note = try XCTUnwrap(library.draft)
+        XCTAssertNil(note.sourceID)
+        XCTAssertTrue(library.isInstalledCopy(note.inspection.directory, of: note.inspection.manifest))
+        // A package no source lists leaves the Store open with a message.
+        await library.open(PackageLink(id: "missing", sourceID: nil))
+        XCTAssertTrue(library.showingStore)
+        XCTAssertNil(library.draft)
+        XCTAssertEqual(library.linkError, "No source you have lists the package “missing”.")
+        await library.open(PackageLink(id: "missing", sourceID: "acme"))
+        XCTAssertEqual(library.linkError, "Acme doesn’t list the package “missing”.")
+        await library.open(PackageLink(id: "clock", sourceID: "team"))
+        XCTAssertNil(library.draft)
+        XCTAssertEqual(library.linkError, "The link is for a package from “team”, a source you haven’t added. Ask for its join link.")
+        // A Store widget that Essentials replaced opens Essentials, whether or not the Store still lists it.
+        await library.open(PackageLink(id: "battery-status", sourceID: nil))
+        XCTAssertFalse(library.showingStore)
+        XCTAssertNil(library.draft)
+        XCTAssertNil(library.linkError)
+        // A source that doesn't load can't say whether it lists the package.
+        await client.setPrivateSources([PackageSource(id: "down", name: "Down", url: fixture.directory.appending(path: "down/index.json"))])
+        await library.open(PackageLink(id: "clock", sourceID: "down"))
+        XCTAssertNotNil(library.sourceErrors["down"])
+        XCTAssertEqual(library.linkError, "Down is unavailable, so the package “clock” can’t be shown.")
+        library.showingStore = false
+        library.deselect()
+        XCTAssertNil(library.linkError)
+        // Opening a link never installs or adds anything.
+        XCTAssertEqual(Set(library.installed.map(\.id)), ["note", "weather"])
+        try store.customizationHistory.flush()
+        XCTAssertEqual(try Data(contentsOf: fixture.url), before)
+    }
+
+    @MainActor func testPackagesCopyALinkOnlyWhenTheirSourceListsThem() async throws {
+        let fixture = try ThemeGalleryFixture()
+        defer { fixture.close() }
+        let (store, library, client) = try await linkedLibrary(fixture)
+        defer { store.stop(); library.stopUpdateChecks() }
+        await library.loadInstalled()
+        await library.loadStore()
+        let storeClock = try XCTUnwrap(library.entries.first { $0.sourceID == PackageSource.storeID })
+        let acmeClock = try XCTUnwrap(library.entries.first { $0.sourceID == "acme" })
+        await library.selectStore(storeClock)
+        XCTAssertEqual(library.link(for: try XCTUnwrap(library.draft)), PackageLink(id: "clock", sourceID: nil))
+        await library.selectStore(acmeClock)
+        XCTAssertEqual(library.link(for: try XCTUnwrap(library.draft)), PackageLink(id: "clock", sourceID: "acme"))
+        // Note was installed from a folder, and Acme no longer lists Weather: neither has a link.
+        await library.selectPackage("note")
+        XCTAssertNil(library.link(for: try XCTUnwrap(library.draft)))
+        await library.selectPackage("weather")
+        XCTAssertEqual(library.draft?.inspection.manifest.id, "weather")
+        XCTAssertNil(library.link(for: try XCTUnwrap(library.draft)))
+        // Clock opened from a folder has no link, though both sources list it.
+        await library.select(fixture.directory.appending(path: "sources/clock"))
+        XCTAssertEqual(library.draft?.inspection.manifest.id, "clock")
+        XCTAssertNil(library.link(for: try XCTUnwrap(library.draft)))
+        // Clock installed from Acme links to Acme's listing. A fresh library, so the folder's draft isn't reused.
+        await library.selectStore(acmeClock)
+        await library.add(try XCTUnwrap(library.draft))
+        let reopened = PackageLibrary(store: store, client: client)
+        defer { reopened.stopUpdateChecks() }
+        await reopened.loadInstalled()
+        await reopened.loadStore()
+        await reopened.selectPackage("clock")
+        let installed = try XCTUnwrap(reopened.draft)
+        XCTAssertTrue(reopened.isInstalledCopy(installed.inspection.directory, of: installed.inspection.manifest))
+        XCTAssertEqual(reopened.link(for: installed), PackageLink(id: "clock", sourceID: "acme"))
+    }
+
+    @MainActor func testPackagesViewOpensAPendingPackageLink() async throws {
+        let fixture = try ThemeGalleryFixture()
+        defer { fixture.close() }
+        let (store, library, _) = try await linkedLibrary(fixture)
+        defer { store.stop(); library.stopUpdateChecks() }
+        store.packageLibrary = library
+        store.pendingPackageLink = PackageLink(id: "clock", sourceID: "acme")
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 900, height: 620),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let host = NSHostingView(rootView: PackagesView(store: store))
+        host.sizingOptions = []
+        window.contentView = host
+        for _ in 0..<100 {
+            host.layoutSubtreeIfNeeded()
+            if library.draft?.sourceID == "acme" { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNil(store.pendingPackageLink)
+        XCTAssertTrue(library.showingStore)
+        XCTAssertEqual(library.draft?.inspection.manifest.id, "clock")
+        XCTAssertEqual(library.draft?.sourceID, "acme")
+        // A link that arrives while Packages is open is taken too.
+        store.pendingPackageLink = PackageLink(id: "note", sourceID: nil)
+        for _ in 0..<100 {
+            host.layoutSubtreeIfNeeded()
+            if library.draft?.inspection.manifest.id == "note" { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNil(store.pendingPackageLink)
+        XCTAssertFalse(library.showingStore)
+        XCTAssertEqual(library.draft?.inspection.manifest.id, "note")
+        XCTAssertFalse(window.isVisible)
+    }
+
     @MainActor func testStoreCardsAndDraftsKeepSourcesApart() async throws {
         let fixture = try ThemeGalleryFixture()
         defer { fixture.close() }

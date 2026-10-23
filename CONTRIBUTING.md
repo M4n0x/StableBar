@@ -13,7 +13,7 @@ open dist/StableBar.app
 
 Local app builds show **Development** in **Settings → General → Updates**, with the source revision and a `-dirty` suffix when the checkout has changes. A local rebuild of beta source is still a development build; install the beta DMG for its published version and build number.
 
-A development build registers the same `stablebar://` link scheme as the installed app, so macOS may open a package source join link in either one.
+A development build registers the same `stablebar://` link scheme as the installed app, so macOS may open a source's join link or a package link in either one.
 
 For development checks:
 
