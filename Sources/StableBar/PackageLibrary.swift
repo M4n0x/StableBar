@@ -305,11 +305,21 @@ final class PackageLibrary {
     }
 
     /// Store entries of one kind (nil: both) and one source (nil: every source) that match the search
-    /// by name, description, ID or source name.
+    /// by name, description, ID or source name. Entries with an update come first, then installed packages,
+    /// including another source's copy, then the rest; each group by name, then in source order.
     func storeEntries(showingThemes: Bool?, sourceID: String?) -> [PackageIndex.Entry] {
-        entries.filter { entry in
+        let updated = Set(updates.compactMap { update(for: $0)?.key }), owned = Set(installed.map(\.id))
+        let sourceOrder = Dictionary(sources.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func group(_ entry: PackageIndex.Entry) -> Int { updated.contains(entry.key) ? 0 : owned.contains(entry.id) ? 1 : 2 }
+        return entries.filter { entry in
             (showingThemes == nil || showingThemes == (entry.kind == .theme)) && (sourceID == nil || entry.sourceID == sourceID)
                 && matchesSearch(entry.name, entry.description, entry.id, sourceName(entry.sourceID))
+        }.sorted {
+            if group($0) != group($1) { return group($0) < group($1) }
+            let order = $0.name.localizedStandardCompare($1.name)
+            if order != .orderedSame { return order == .orderedAscending }
+            if $0.id != $1.id { return $0.id < $1.id }
+            return sourceOrder[$0.sourceID, default: .max] < sourceOrder[$1.sourceID, default: .max]
         }
     }
 
