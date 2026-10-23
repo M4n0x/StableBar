@@ -76,6 +76,20 @@ struct PopupCanvas<Content: View>: View {
     }
 }
 
+/// A tooltip's content at the width it needs, up to `maxWidth`, and as tall as its text is once it wraps there.
+struct TooltipWidth: Layout {
+    let maxWidth: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = min(subviews[0].sizeThatFits(.unspecified).width, maxWidth)
+        return subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews[0].place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+}
+
 @MainActor @Observable
 final class PopupBackgrounds {
     var hidden = false
@@ -238,13 +252,13 @@ final class WidgetPopup {
         let style = resolveStyle([defaults, widget.style], states: StyleStates(mode: store.modePresentation(on: kind)))
         let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let shadowInset = CGFloat(appearance.shadowRadius * 2 + 2)
-        let host = NSHostingView(rootView: Text(text)
-            .font(appearance.font)
-            .foregroundStyle(appearance.foreground)
-            .padding(.horizontal, appearance.paddingHorizontal)
-            .padding(.vertical, appearance.paddingVertical)
-            .frame(maxWidth: 320 - shadowInset * 2, alignment: .leading)
-            .fixedSize()
+        let host = NSHostingView(rootView: TooltipWidth(maxWidth: 320 - shadowInset * 2) {
+                Text(text)
+                    .font(appearance.font)
+                    .foregroundStyle(appearance.foreground)
+                    .padding(.horizontal, appearance.paddingHorizontal)
+                    .padding(.vertical, appearance.paddingVertical)
+            }
             .modifier(GlassBackground(fill: style.background, glass: store.configuration?.bar(on: kind).glass ?? GlassSettings(), surface: \.popups,
                                       shape: RoundedRectangle(cornerRadius: appearance.cornerRadius)))
             .overlay {
