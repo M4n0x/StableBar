@@ -506,7 +506,7 @@ struct BarSettings: Decodable, Sendable {
     var background = BackgroundFill.color(HexColor(0x00000000))
     var motion = BarMotion.smooth
     var popupTransition: PopupTransition?
-    var morphPopups = false
+    var morphPopups = true
     var animationDuration: Double?
     var notchWidth: Double?
     var notchSpacing = 16.0
