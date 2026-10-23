@@ -34,3 +34,20 @@ jobs:
           path: site
       - id: deployment
         uses: actions/deploy-pages@v5
+      # Tells Bing and the other IndexNow search engines that the pages in the sitemap changed. The key
+      # isn't secret: they fetch site/<key>.txt to check that the request comes from the site's owner.
+      - name: Notify IndexNow
+        continue-on-error: true
+        env:
+          INDEXNOW_KEY: 4a50e92bbb290e857959cac235de9b89
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          test -f "site/$INDEXNOW_KEY.txt"
+          host=${PAGE_URL#https://}
+          host=${host%%/*}
+          urls=$(sed -n 's:.*<loc>\(.*\)</loc>.*:\1:p' site/sitemap.xml | jq -R . | jq -s .)
+          jq -n --arg host "$host" --arg key "$INDEXNOW_KEY" --arg location "$PAGE_URL$INDEXNOW_KEY.txt" \
+              --argjson urls "$urls" '{host: $host, key: $key, keyLocation: $location, urlList: $urls}' |
+            curl --silent --show-error --fail-with-body --data-binary @- \
+              --header 'Content-Type: application/json; charset=utf-8' \
+              --write-out 'IndexNow answered %{http_code}\n' https://api.indexnow.org/indexnow
