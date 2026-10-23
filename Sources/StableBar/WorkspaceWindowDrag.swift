@@ -158,6 +158,6 @@ struct WorkspaceWindowDrop: ViewModifier, DropDelegate {
         // AppKit allows one drag at a time. Only our native source creates this
         // live session; commands use its captured windows, never external data.
         guard validateDrop(info: info), let payload = store.windowDrag.active else { return false }
-        return store.moveWindows(payload, to: workspace)
+        return store.moveWindows(payload, to: workspace) != nil
     }
 }

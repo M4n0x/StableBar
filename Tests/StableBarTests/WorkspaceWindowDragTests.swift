@@ -11,11 +11,11 @@ func workspaceWindowDropMovesCapturedWindowsAndRefreshes(source: WorkspaceSource
     let windows = Array(store.workspaces[0].windows.prefix(count))
     let payload = try #require(store.windowDrag.begin(source: source, windows: windows))
     store.windowDrag.target = fixture.destination
-    #expect(store.moveWindows(payload, to: fixture.destination))
-    #expect(!store.moveWindows(payload, to: fixture.destination))
+    let move = try #require(store.moveWindows(payload, to: fixture.destination))
+    #expect(store.moveWindows(payload, to: fixture.destination) == nil)
     #expect(store.windowDrag.active == nil)
     #expect(store.windowDrag.target == nil)
-    try await fixture.waitForMove()
+    await move.value
     #expect(store.error == nil)
     #expect(store.workspaces.first(where: { $0.name == fixture.destination })?.windows.map(\.id) == Array([73, 74].prefix(count)))
     #expect(store.workspaces.first(where: { $0.name == "1" })?.windows.map(\.id) == (count == 1 ? [74, 75] : [75]))
@@ -34,8 +34,8 @@ func workspaceWindowDropRefreshesPartialMovesAndKeepsTheFailure(source: Workspac
     let fixture = try WorkspaceMoveFixture(source: source, movedIDs: [73], failureID: 74)
     defer { fixture.close() }
     let payload = try #require(fixture.store.windowDrag.begin(source: source, windows: Array(fixture.store.workspaces[0].windows.prefix(2))))
-    #expect(fixture.store.moveWindows(payload, to: fixture.destination))
-    try await fixture.waitForMove()
+    let move = try #require(fixture.store.moveWindows(payload, to: fixture.destination))
+    await move.value
     #expect(fixture.store.error == "Window no longer exists")
     #expect(fixture.store.workspaces.first(where: { $0.name == "1" })?.windows.map(\.id) == [74, 75])
     #expect(fixture.store.workspaces.first(where: { $0.name == fixture.destination })?.windows.map(\.id) == [73])
@@ -52,12 +52,12 @@ func workspaceWindowDropRefreshesPartialMovesAndKeepsTheFailure(source: Workspac
     #expect(!store.canMoveWindows(payload, to: "missing"))
     let foreign = WorkspaceWindowDragSession()
     let other = try #require(foreign.begin(source: .aerospace, windows: windows))
-    #expect(!store.moveWindows(other, to: "2"))
+    #expect(store.moveWindows(other, to: "2") == nil)
     store.workspaces[0].windows.removeFirst()
-    #expect(!store.moveWindows(payload, to: "2"))
+    #expect(store.moveWindows(payload, to: "2") == nil)
     store.source = .yabai
     #expect(store.windowDrag.active == nil)
-    #expect(!store.moveWindows(payload, to: "2"))
+    #expect(store.moveWindows(payload, to: "2") == nil)
     #expect(store.windowDrag.begin(source: .spaces, windows: windows) == nil)
     #expect(store.windowDrag.begin(source: .aerospace, windows: []) == nil)
 }
@@ -91,7 +91,7 @@ func workspaceWindowDropRefreshesPartialMovesAndKeepsTheFailure(source: Workspac
     source.endWindowDrag()
     #expect(store.windowDrag.active == nil)
     #expect(store.windowDrag.target == nil)
-    #expect(!store.moveWindows(payload, to: "2"))
+    #expect(store.moveWindows(payload, to: "2") == nil)
     #expect(store.workspaces == before)
     let newer = store.windowDrag.begin(source: .aerospace, windows: source.windows)
     source.endWindowDrag()
@@ -164,7 +164,7 @@ func workspaceWindowDragDisablesWhenTheManagerBecomesUnsupported(source: Workspa
     #expect(store.windowDrag.target == nil)
     #expect(workspaceDragSources(fixture.host).isEmpty)
     #expect(!store.canMoveWindows(payload, to: "2"))
-    #expect(!store.moveWindows(payload, to: "2"))
+    #expect(store.moveWindows(payload, to: "2") == nil)
     let unsupportedAnchor = try #require(fixture.anchors("spaces").first)
     #expect(unsupportedAnchor.bounds.width < draggingWidth)
     #expect(!fixture.panel.isVisible)
@@ -196,8 +196,8 @@ func workspaceWindowDragDisablesWhenTheManagerBecomesUnsupported(source: Workspa
     move.store.windowDrag.target = "2"
     await fixture.settle()
     try capture("workspace-window-drag-target")
-    #expect(move.store.moveWindows(payload, to: "2"))
-    try await move.waitForMove()
+    let task = try #require(move.store.moveWindows(payload, to: "2"))
+    await task.value
     await fixture.settle()
     #expect(workspaceDragSources(fixture.host).map { $0.windows.map(\.id) } == [[74], [75], [73]])
     #expect(move.store.workspaces.first(where: \.isFocused)?.name == "1")
@@ -232,14 +232,12 @@ private func workspaceMouse(_ type: NSEvent.EventType, x: CGFloat) throws -> NSE
     let store: WorkspaceStore
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     let destination: String
-    private let movedIDs: [Int]
 
     init(source: WorkspaceSource, movedIDs: [Int], failureID: Int? = nil, store: WorkspaceStore? = nil,
          destination requestedDestination: String? = nil) throws {
         _ = NSApplication.shared
         self.store = store ?? WorkspaceStore()
         destination = requestedDestination ?? (source == .aerospace ? "-two words" : "2")
-        self.movedIDs = movedIDs
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let executable = directory.appending(path: "window-manager")
         let windows = dragWorkspaces()[0].windows
@@ -288,15 +286,6 @@ private func workspaceMouse(_ type: NSEvent.EventType, x: CGFloat) throws -> NSE
         self.store.source = source
         self.store.workspaces = dragWorkspaces(destination: destination)
         self.store.executablePath = { executable.path }
-    }
-
-    func waitForMove() async throws {
-        let deadline = ContinuousClock.now + .seconds(10)
-        while ContinuousClock.now < deadline {
-            if store.workspaces.first(where: { $0.name == destination })?.windows.map(\.id) == movedIDs { return }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        throw CommandFailure(message: store.error ?? "The window move did not refresh its workspace snapshot")
     }
 
     func commands() throws -> [String] {

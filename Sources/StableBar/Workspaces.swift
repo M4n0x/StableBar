@@ -333,8 +333,8 @@ final class WorkspaceStore {
     }
 
     @discardableResult
-    func moveWindows(_ payload: WorkspaceWindowDragSession.Payload, to workspace: String) -> Bool {
-        guard windowDrag.active == payload, canMoveWindows(payload, to: workspace) else { return false }
+    func moveWindows(_ payload: WorkspaceWindowDragSession.Payload, to workspace: String) -> Task<Void, Never>? {
+        guard windowDrag.active == payload, canMoveWindows(payload, to: workspace) else { return nil }
         windowDrag.end(payload)
         moveTask = Task {
             defer { if !Task.isCancelled { moveTask = nil } }
@@ -362,7 +362,7 @@ final class WorkspaceStore {
             catch { if failure == nil { failure = error.localizedDescription } }
             if !Task.isCancelled { error = failure }
         }
-        return true
+        return moveTask
     }
 
     private func executable() throws -> String {
