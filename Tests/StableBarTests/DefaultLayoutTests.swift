@@ -249,6 +249,21 @@ private enum FrontmostApp {
             "A popup block fills the width up to its maxWidth")
 }
 
+@Test @MainActor func wrappingFieldsShowEveryLineUpToTheirMaxHeight() throws {
+    func height(_ json: String, _ text: String) throws -> Int {
+        let block = try decode(PopupBlock.self, json)
+        let renderer = ImageRenderer(content: PopupBlockView(block: block, inheritedStyle: WidgetStyle(fontSize: 13), fields: ["answer": text],
+                                                             context: BlockContext(open: { _ in }, runAction: { _, _ in })))
+        renderer.proposedSize = ProposedViewSize(width: 200, height: nil)
+        return try #require(renderer.cgImage).height
+    }
+    let answer = String(repeating: "An answer that goes on over several lines. ", count: 12)
+    let line = try height(#"{"type":"field","field":"answer"}"#, answer)
+    #expect(try height(#"{"type":"field","field":"answer","wrap":true}"#, answer) > line * 5)
+    #expect(try height(#"{"type":"field","field":"answer","wrap":true,"maxHeight":60}"#, answer) == 60)
+    #expect(try height(#"{"type":"field","field":"answer","wrap":true,"maxHeight":60}"#, "Yes.") == line)
+}
+
 /// A drawing is one frame, so this checks the still shapes: playing in the measuring copy and under
 /// Reduce Motion, and settled when the source is off.
 @Test @MainActor func equalizersDrawStillWhileMeasuredAndSettleWhenTheirSourceIsOff() throws {

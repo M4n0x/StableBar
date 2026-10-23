@@ -59,6 +59,7 @@ func workspaceWindowDropRefreshesPartialMovesAndKeepsTheFailure(source: Workspac
     #expect(store.windowDrag.active == nil)
     #expect(store.moveWindows(payload, to: "2") == nil)
     #expect(store.windowDrag.begin(source: .spaces, windows: windows) == nil)
+    #expect(store.windowDrag.begin(source: .omniwm, windows: windows) == nil)
     #expect(store.windowDrag.begin(source: .aerospace, windows: []) == nil)
 }
 
@@ -134,8 +135,8 @@ func workspaceWindowDragShowsEmptyTargetsAndKeepsWindowGrouping(windows: Bool) a
     #expect(!fixture.panel.isVisible)
 }
 
-@Test(arguments: [WorkspaceSource.aerospace, .yabai]) @MainActor
-func workspaceWindowDragDisablesWhenTheManagerBecomesUnsupported(source: WorkspaceSource) async throws {
+@Test(arguments: [WorkspaceSource.aerospace, .yabai], [WorkspaceSource.omniwm, .spaces]) @MainActor
+func workspaceWindowDragDisablesWhenTheManagerBecomesUnsupported(source: WorkspaceSource, unsupported: WorkspaceSource) async throws {
     let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
     {"bar":{"height":40},"widgets":[{"id":"spaces","type":"workspaces","position":"left",
       "workspace":{"appGlyphs":{"*":"F"}}}]}
@@ -157,12 +158,13 @@ func workspaceWindowDragDisablesWhenTheManagerBecomesUnsupported(source: Workspa
     await fixture.settle()
     let anchor = try #require(fixture.anchors("spaces").first)
     let draggingWidth = anchor.bounds.width
-    store.source = .spaces
+    store.source = unsupported
     store.workspaces = workspaces
     await fixture.settle()
     #expect(store.windowDrag.active == nil)
     #expect(store.windowDrag.target == nil)
     #expect(workspaceDragSources(fixture.host).isEmpty)
+    #expect(store.windowDrag.begin(source: unsupported, windows: item.windows) == nil)
     #expect(!store.canMoveWindows(payload, to: "2"))
     #expect(store.moveWindows(payload, to: "2") == nil)
     let unsupportedAnchor = try #require(fixture.anchors("spaces").first)

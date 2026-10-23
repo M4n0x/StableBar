@@ -291,6 +291,115 @@ func popupResizesWithItsContentAndKeepsItsWidthAndTopEdge(fixedHeight: Bool, ani
     }
 }
 
+/// A pinned popup outlives what closes the open popup, keeps resizing with its content until it's resized by hand, returns
+/// under its widget when unpinned, and goes back to where it was dragged, at its size, when pinned again or reopened after
+/// closing pinned. Dragging an open popup pins it (#89).
+@Test @MainActor func pinnedPopupsStayOnScreenAndReturnUnderTheirWidget() async throws {
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data("""
+    {"widgets":[{"id":"ask","type":"text","text":"Ask","position":"right","popup":{"pinnable":true,
+        "style":{"width":300},"layout":{"type":"text","text":"Answer"}}},
+                {"id":"other","type":"text","text":"Other","position":"right","popup":{"style":{},"layout":{"type":"text","text":"Other"}}}]}
+    """.utf8))
+    var presented: [PopupPanel] = []
+    let popup = WidgetPopup(present: { panel, _ in presented.append(panel) })
+    let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), popup: popup)
+    store.configuration = configuration
+    store.preparePresentations()
+    defer { store.stop() }
+    let bar = OffscreenBar(configuration: configuration,
+                           display: BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil), width: 600, sharedStore: store)
+    defer { bar.close() }
+    await bar.settle()
+    let (ask, other) = (configuration.widgets[0], configuration.widgets[1])
+    let anchor = try #require(bar.anchors(ask.id).first)
+    func click(_ widget: StableBar.WidgetConfiguration) throws {
+        popup.toggle(widget.popup!, widget: widget, defaults: configuration.defaults, store: store, anchor: try #require(bar.anchors(widget.id).first))
+    }
+    func layOut(_ panel: PopupPanel) async throws {
+        for _ in 0..<8 {
+            panel.contentView!.layoutSubtreeIfNeeded()
+            let host = panel.contentView!.subviews[0]
+            host.cacheDisplay(in: host.bounds, to: try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds)))
+            try await Task.sleep(for: .milliseconds(25))
+        }
+    }
+    var closed: [ObjectIdentifier] = []
+    let observer = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in
+        let window = ObjectIdentifier(note.object as AnyObject)
+        MainActor.assumeIsolated { closed.append(window) }
+    }
+    defer { NotificationCenter.default.removeObserver(observer) }
+
+    try click(ask)
+    let panel = try #require(presented.last)
+    try await layOut(panel)
+    let home = panel.frame
+    popup.pin()
+    #expect(popup.pins.ids == ["ask"])
+    #expect(!popup.isOpen)
+    #expect(panel.isMovableByWindowBackground)
+    #expect(panel.styleMask.contains(.resizable))
+    #expect(store.presentations[ask.id]?.popupAnchor == nil)
+
+    popup.close()
+    try click(other)
+    #expect(popup.isOpen)
+    store.actionErrors[ask.id] = Array(repeating: "A longer answer", count: 5).joined(separator: "\n")
+    try await layOut(panel)
+    #expect(panel.frame.height > home.height)
+    #expect(abs(panel.frame.maxY - home.maxY) < 0.5)
+    #expect(!closed.contains(ObjectIdentifier(panel)))
+
+    let dragged = NSRect(x: panel.frame.minX - 120, y: panel.frame.maxY - 80 - 420, width: 420, height: 420)
+    (panel.contentView as! PopupRevealView).viewWillStartLiveResize()
+    panel.setFrame(dragged, display: false)
+    #expect(popup.pins.resized == ["ask"])
+    store.actionErrors[ask.id] = nil
+    try await layOut(panel)
+    #expect(panel.frame == dragged)
+    #expect(panel.contentView!.subviews[0].frame == panel.contentView!.bounds)
+    popup.unpin(ask.id)
+    #expect(popup.pins.ids.isEmpty)
+    #expect(!panel.styleMask.contains(.resizable))
+    #expect(store.presentations[ask.id]?.popupAnchor == ObjectIdentifier(anchor))
+    #expect(store.presentations[other.id]?.popupAnchor == nil)
+    try await waitForPopup { panel.frame.maxY == home.maxY }
+    #expect(panel.frame.size == dragged.size && panel.frame.maxY == home.maxY)
+
+    popup.pin()
+    try await waitForPopup { panel.frame == dragged }
+    #expect(panel.frame == dragged)
+    try click(ask)
+    #expect(popup.pins.ids.isEmpty)
+    #expect(!popup.isOpen)
+    try await waitForPopup { closed.contains(ObjectIdentifier(panel)) }
+    #expect(closed.contains(ObjectIdentifier(panel)))
+
+    try click(ask)
+    let reopened = try #require(presented.last)
+    #expect(reopened !== panel)
+    #expect(popup.pins.ids == ["ask"], "A popup closed while pinned opens pinned again")
+    try await waitForPopup { reopened.frame == dragged }
+    #expect(reopened.frame == dragged)
+    reopened.sendEvent(try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                                     windowNumber: reopened.windowNumber, context: nil, characters: "\u{1b}",
+                                                     charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53)))
+    #expect(popup.pins.ids.isEmpty)
+    try await waitForPopup { closed.contains(ObjectIdentifier(reopened)) }
+    #expect(closed.contains(ObjectIdentifier(reopened)))
+
+    try click(ask)
+    let draggedAway = try #require(presented.last)
+    popup.unpin(ask.id)
+    NotificationCenter.default.post(name: NSWindow.willMoveNotification, object: draggedAway)
+    #expect(popup.pins.ids == ["ask"])
+    #expect(!popup.isOpen)
+    popup.closePinned(ask.id)
+    #expect(popup.pins.ids.isEmpty)
+    try await waitForPopup { closed.contains(ObjectIdentifier(draggedAway)) }
+    #expect(closed.contains(ObjectIdentifier(draggedAway)))
+}
+
 /// macOS outlines a window and shapes its shadow from what the window draws, so a popup's own shadow, drawn in the
 /// popup's window, got an outline near its outer edge (#180). That shadow is drawn in a window behind the popup instead.
 @Test(arguments: [nil, "#00000000", "#00000059"] as [String?]) @MainActor

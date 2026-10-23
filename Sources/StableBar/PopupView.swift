@@ -6,6 +6,7 @@ struct PopupView: View {
     let store: BarStore
     let widget: WidgetConfiguration
     @Environment(\.screenKind) private var screenKind
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var mode: ModePresentation {
         let roles = store.configuration?.look(on: screenKind).roles ?? [:]
@@ -25,8 +26,8 @@ struct PopupView: View {
         let samples = script?.samples ?? []
         let menu = script?.output.menu ?? widget.menu ?? []
         let error = script?.error ?? store.actionErrors[widget.id]
-        ScrollView {
-            VStack(alignment: .leading, spacing: appearance.spacing) {
+        let fillsHeight = store.popup.pins.resized.contains(widget.id)
+        let content = VStack(alignment: .leading, spacing: appearance.spacing) {
                 PopupBlockView(block: popup.layout, inheritedStyle: style, fields: fields,
                                context: BlockContext(lists: lists, samples: samples, menu: menu,
                                                      values: script?.output.values ?? [:], targets: script?.output.targets ?? [:],
@@ -53,6 +54,26 @@ struct PopupView: View {
             .background {
                 GeometryReader { proxy in
                     Color.clear.preference(key: PopupHeightPreference.self, value: proxy.size.height)
+                }
+            }
+            .environment(\.popupFillsHeight, fillsHeight)
+            // With an animation of its own, a popup also animates what its data changes, as it animates its height.
+            .animation(reduceMotion ? nil : popup.animation?.value, value: script?.outputNumber)
+        Group {
+            // A popup resized by hand gives its height to the fields that scroll instead of scrolling as a whole.
+            if fillsHeight {
+                content.frame(maxHeight: .infinity, alignment: .top)
+            } else {
+                ScrollView { content }
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if popup.pinnable {
+                let pinned = store.popup.pins.ids.contains(widget.id)
+                PinControls(pinned: pinned, foreground: appearance.foreground) {
+                    if pinned { store.popup.unpin(widget.id) } else { store.popup.pin() }
+                } close: {
+                    store.popup.closePinned(widget.id)
                 }
             }
         }
@@ -181,6 +202,7 @@ struct PopupBlockView: View {
     @State private var pointerInside: Bool
     @State private var query = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.popupFillsHeight) private var fillsHeight
 
     /// `pointerInside` starts the block with the pointer over it; tests use it, as drawing has no pointer.
     init(block: PopupBlock, inheritedStyle: WidgetStyle, fields: [String: String], context: BlockContext, pointerInside: Bool = false) {
@@ -205,7 +227,7 @@ struct PopupBlockView: View {
 
     private var handlesInteraction: Bool {
         switch block.content {
-        case .button, .slider, .toggle, .segmented, .search: true
+        case .button, .slider, .toggle, .segmented, .chooser, .search, .input: true
         default: false
         }
     }
@@ -264,6 +286,11 @@ struct PopupBlockView: View {
             .animation(reduceMotion ? nil : block.animation?.value, value: hovered)
     }
 
+    private func fieldText(_ text: String) -> Text {
+        guard block.markdown else { return Text(text) }
+        return Text((try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text))
+    }
+
     /// The block's content in the box its style gives it. A click anywhere in the box, including its
     /// padding and configured size, reaches the block's action, not only its glyph or text.
     private func boxed(_ content: some View, box: WidgetStyle, alignment: Alignment) -> some View {
@@ -305,6 +332,7 @@ struct PopupBlockView: View {
                         Text(text)
                     }
                 }
+                .modifier(Shimmer(active: block.shimmer))
                 .modifier(TransitioningContent(value: text, transition: transition, animation: animation))
             }
         case let .field(name):
@@ -312,12 +340,22 @@ struct PopupBlockView: View {
                 Group {
                     if let speed = block.scrollSpeed {
                         ScrollingText(text: fields[name] ?? "", font: appearance.font, fontSize: style.text.fontSize ?? 13, speed: speed)
+                    } else if let maxHeight = block.maxHeight {
+                        ScrollView {
+                            fieldText(fields[name] ?? "—").textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .modifier(FollowsGrowth())
+                        .frame(maxHeight: fillsHeight ? .infinity : maxHeight)
+                        .fixedSize(horizontal: false, vertical: !fillsHeight)
+                    } else if block.wraps {
+                        fieldText(fields[name] ?? "—").textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     } else if block.monospacedDigits {
-                        Text(fields[name] ?? "—").lineLimit(1).monospacedDigit()
+                        fieldText(fields[name] ?? "—").lineLimit(1).monospacedDigit()
                     } else {
-                        Text(fields[name] ?? "—").lineLimit(1)
+                        fieldText(fields[name] ?? "—").lineLimit(1)
                     }
                 }
+                .modifier(Shimmer(active: block.shimmer))
                 .modifier(TransitioningContent(value: fields[name] ?? "", transition: transition, animation: animation))
             }
         case let .graph(height, source, lineWidth):
@@ -347,6 +385,11 @@ struct PopupBlockView: View {
             PopupSegmented(title: title, value: fields[source] ?? options[0].value, options: options) {
                 context.runAction(command, ["VALUE": $0])
             }
+        case let .chooser(title, source, groupsSource, optionsSource, levelsSource, command):
+            PopupChooser(title: title, chosen: fields[source] ?? "", groups: context.lists[groupsSource] ?? [],
+                         options: context.lists[optionsSource] ?? [], levels: levelsSource.flatMap { context.lists[$0] } ?? []) {
+                context.runAction(command, ["VALUE": $0, "OPTION": $1, "LEVEL": $2])
+            }
         case let .search(title, source, searchFields, row):
             VStack(alignment: .leading, spacing: appearance.spacing) {
                 TextField(title, text: $query).textFieldStyle(.roundedBorder).accessibilityLabel(title)
@@ -354,6 +397,8 @@ struct PopupBlockView: View {
                     child(row, of: style, fields: fields)
                 }
             }
+        case let .input(title, placeholder, autofocus, command):
+            PopupInput(title: title, placeholder: placeholder, autofocus: autofocus) { context.runAction(command, ["VALUE": $0]) }
         case .menu:
             VStack(spacing: appearance.spacing) {
                 ForEach(Array(context.menu.enumerated()), id: \.offset) { _, item in
@@ -443,6 +488,342 @@ private struct PopupToggle: View {
         }))
         .onChange(of: value) { localValue = nil }
     }
+}
+
+private struct PopupInput: View {
+    let title: String
+    let placeholder: String?
+    let autofocus: Bool
+    let onSubmit: (String) -> Void
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField(title, text: $text, prompt: placeholder.map { Text($0) })
+            .textFieldStyle(.roundedBorder)
+            .accessibilityLabel(title)
+            .focused($focused)
+            .onAppear { focused = autofocus }
+            .onSubmit {
+                onSubmit(text)
+                text = ""
+            }
+    }
+}
+
+/// A pill naming the chosen group, option and level, that opens a panel to change them: groups on the left, and on the
+/// right the chosen group's options and a bar of its levels. Choices show at once and run `onChange` with all three.
+private struct PopupChooser: View {
+    let title: String
+    let chosen: String
+    let groups: [[String: String]]
+    let options: [[String: String]]
+    let levels: [[String: String]]
+    let onChange: (_ group: String, _ option: String, _ level: String) -> Void
+    @State private var group: String?
+    @State private var chosenOptions: [String: String] = [:]
+    @State private var chosenLevels: [String: String] = [:]
+    @State private var showsPanel = false
+    @Namespace private var highlight
+
+    private var current: String { group ?? chosen }
+    private func row(_ group: String) -> [String: String] { groups.first { $0["value"] == group } ?? [:] }
+    private func options(of group: String) -> [[String: String]] { options.filter { $0["group"] == group } }
+    private func levels(of group: String) -> [[String: String]] { levels.filter { $0["group"] == group } }
+    private func option(of group: String) -> String { chosenOptions[group] ?? row(group)["option"] ?? options(of: group).first?["value"] ?? "" }
+    private func level(of group: String) -> String { chosenLevels[group] ?? row(group)["level"] ?? levels(of: group).first?["value"] ?? "" }
+    private func title(_ value: String, in rows: [[String: String]]) -> String { rows.first { $0["value"] == value }?["title"] ?? value }
+
+    private func choose(_ group: String) {
+        self.group = group
+        onChange(group, option(of: group), level(of: group))
+    }
+
+    var body: some View {
+        Button { showsPanel.toggle() } label: {
+            HStack(spacing: 6) {
+                if let icon = row(current)["icon"] { Image(systemName: icon).contentTransition(.symbolEffect(.replace)) }
+                (Text(row(current)["title"] ?? current).fontWeight(.semibold)
+                    + Text("  ·  \(title(option(of: current), in: options(of: current)))"
+                           + (levels(of: current).isEmpty ? "" : "  ·  \(title(level(of: current), in: levels(of: current)))"))
+                    .foregroundStyle(.secondary))
+                    .lineLimit(1)
+                    .contentTransition(.interpolate)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .rotationEffect(.degrees(showsPanel ? 180 : 0))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .animation(.snappy(duration: 0.3), value: [current, option(of: current), level(of: current)])
+        .animation(.snappy(duration: 0.25), value: showsPanel)
+        // The label's width changes with the choice; the panel stays put under a fixed stretch of it.
+        .overlay(alignment: .leading) {
+            Color.clear.frame(width: 200).allowsHitTesting(false).popover(isPresented: $showsPanel, arrowEdge: .bottom) { panel }
+        }
+        .onChange(of: chosen) { group = nil }
+        .onChange(of: groups) {
+            chosenOptions = [:]
+            chosenLevels = [:]
+        }
+    }
+
+    private var panel: some View {
+        HStack(alignment: .top, spacing: 0) {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(groups.enumerated()), id: \.offset) { _, row in
+                    let value = row["value"] ?? ""
+                    ChooserRow(selected: value == current, highlight: highlight) {
+                        HStack(spacing: 9) {
+                            if let icon = row["icon"] { Image(systemName: icon).frame(width: 18) }
+                            Text(row["title"] ?? value)
+                            Spacer(minLength: 0)
+                        }
+                    } choose: {
+                        choose(value)
+                    }
+                }
+            }
+            .padding(8)
+            .frame(width: 168, alignment: .topLeading)
+            Divider()
+            details(current)
+                .id(current)
+                .transition(.asymmetric(insertion: .opacity.combined(with: .offset(x: 14)), removal: .opacity))
+                .frame(width: 300, alignment: .topLeading)
+        }
+        // A fixed size keeps the panel still as groups with more or fewer options take turns in it.
+        .frame(height: 420, alignment: .top)
+        .animation(.snappy(duration: 0.32), value: current)
+    }
+
+    private func details(_ group: String) -> some View {
+        let row = row(group)
+        let levels = levels(of: group)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                if let icon = row["icon"] {
+                    Image(systemName: icon)
+                        .font(.system(size: 15))
+                        .frame(width: 32, height: 32)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row["title"] ?? group).font(.headline)
+                    if let detail = row["detail"] { Text(detail).font(.callout).foregroundStyle(.secondary) }
+                }
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(Array(options(of: group).enumerated()), id: \.offset) { _, option in
+                        let value = option["value"] ?? ""
+                        let selected = value == self.option(of: group)
+                        ChooserRow(selected: false, highlight: highlight) {
+                            HStack(spacing: 8) {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(option["title"] ?? value)
+                                    if let detail = option["detail"] { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(.tint)
+                                    .scaleEffect(selected ? 1 : 0.4)
+                                    .opacity(selected ? 1 : 0)
+                            }
+                        } choose: {
+                            chosenOptions[group] = value
+                            choose(group)
+                        }
+                        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: selected)
+                    }
+                }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            if !levels.isEmpty {
+                let level = self.level(of: group)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(row["levelsTitle"] ?? "Level").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(title(level, in: levels)).font(.caption.weight(.semibold)).foregroundStyle(.tint).contentTransition(.interpolate)
+                    }
+                    LevelBar(title: row["levelsTitle"] ?? "Level", levels: levels, chosen: level) {
+                        chosenLevels[group] = $0
+                        choose(group)
+                    }
+                }
+                .animation(.snappy(duration: 0.25), value: level)
+            }
+        }
+        .padding(14)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+}
+
+/// A row in the chooser's panel that highlights on hover, and when `selected`, with a highlight that slides between rows.
+private struct ChooserRow<Label: View>: View {
+    let selected: Bool
+    let highlight: Namespace.ID
+    @ViewBuilder let label: Label
+    let choose: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        label
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                if selected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary).matchedGeometryEffect(id: "selection", in: highlight)
+                } else if hovered {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quinary)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: choose)
+            .onHover { hovered = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovered)
+    }
+}
+
+/// Levels side by side in a bar that fills up to the chosen one. Click or drag along it to choose; the pointer previews
+/// the level under it.
+private struct LevelBar: View {
+    let title: String
+    let levels: [[String: String]]
+    let chosen: String
+    let choose: (String) -> Void
+    @State private var dragged: Int?
+    @State private var hovered: Int?
+
+    var body: some View {
+        let index = dragged ?? levels.firstIndex { $0["value"] == chosen } ?? 0
+        GeometryReader { proxy in
+            let segment = proxy.size.width / CGFloat(levels.count)
+            let position = { (x: CGFloat) in min(max(Int(x / segment), 0), levels.count - 1) }
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.quaternary)
+                if let hovered, hovered > index {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.tint.opacity(0.22)).frame(width: segment * CGFloat(hovered + 1))
+                }
+                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.tint).frame(width: segment * CGFloat(index + 1))
+                ForEach(1..<levels.count, id: \.self) { tick in
+                    Capsule()
+                        .fill(tick <= index ? Color.white.opacity(0.45) : Color.primary.opacity(0.18))
+                        .frame(width: 2, height: 8)
+                        .offset(x: segment * CGFloat(tick) - 1)
+                }
+            }
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { dragged = position($0.location.x) }
+                .onEnded {
+                    choose(levels[position($0.location.x)]["value"] ?? "")
+                    dragged = nil
+                })
+            .onContinuousHover { phase in
+                if case let .active(point) = phase { hovered = position(point.x) } else { hovered = nil }
+            }
+        }
+        .frame(height: 22)
+        .animation(.spring(response: 0.32, dampingFraction: 0.68), value: index)
+        .animation(.easeOut(duration: 0.15), value: hovered)
+        .accessibilityElement()
+        .accessibilityLabel(title)
+        .accessibilityValue(levels[index]["title"] ?? "")
+        .accessibilityAdjustableAction { direction in
+            let next = direction == .increment ? min(index + 1, levels.count - 1) : max(index - 1, 0)
+            choose(levels[next]["value"] ?? "")
+        }
+    }
+}
+
+/// A pinnable popup's pin button, and its close button while it's pinned.
+private struct PinControls: View {
+    let pinned: Bool
+    let foreground: Color
+    let togglePin: () -> Void
+    let close: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if pinned {
+                CornerButton(symbol: "xmark", label: "Close", foreground: foreground, action: close)
+                    .transition(.scale(scale: 0.4).combined(with: .opacity))
+            }
+            CornerButton(symbol: pinned ? "pin.fill" : "pin", label: pinned ? "Unpin" : "Pin", foreground: foreground, action: togglePin)
+                .symbolEffect(.bounce, value: pinned)
+        }
+        .padding(4)
+        .animation(.snappy(duration: 0.3), value: pinned)
+    }
+}
+
+private struct CornerButton: View {
+    let symbol: String
+    let label: String
+    let foreground: Color
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .contentTransition(.symbolEffect(.replace))
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 22, height: 22)
+                .background(foreground.opacity(hovered ? 0.12 : 0), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(foreground.opacity(hovered ? 0.9 : 0.55))
+        .help(label)
+        .accessibilityLabel(label)
+        .onHover { hovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovered)
+    }
+}
+
+/// Keeps the newest lines of text that grows, such as an answer as it arrives, in view.
+private struct FollowsGrowth: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) { content.defaultScrollAnchor(.bottom, for: .sizeChanges) } else { content }
+    }
+}
+
+/// Light that sweeps across text again and again; still under Reduce Motion and in the bar's measuring copy.
+struct Shimmer: ViewModifier {
+    let active: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.measuringBarWidths) private var measuring
+
+    func body(content: Content) -> some View {
+        if active && !reduceMotion && !measuring {
+            content.overlay {
+                TimelineView(.animation) { timeline in
+                    let phase = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.8) / 1.8
+                    GeometryReader { proxy in
+                        LinearGradient(colors: [.clear, .white.opacity(0.85), .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: proxy.size.width * 0.4)
+                            .offset(x: proxy.size.width * (1.8 * phase - 0.4))
+                    }
+                }
+                .mask(content)
+                .allowsHitTesting(false)
+            }
+        } else {
+            content
+        }
+    }
+}
+
+extension EnvironmentValues {
+    /// Whether the popup was resized by hand, so fields that scroll take its height instead of their own `maxHeight`.
+    @Entry var popupFillsHeight = false
 }
 
 private struct PopupSegmented: View {

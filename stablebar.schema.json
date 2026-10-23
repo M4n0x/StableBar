@@ -155,7 +155,7 @@
     },
     "workspaceSource": {
       "type": "string",
-      "enum": ["aerospace", "yabai", "spaces"]
+      "enum": ["aerospace", "yabai", "omniwm", "spaces"]
     },
     "modeAliases": {
       "anyOf": [
@@ -904,7 +904,9 @@
                 "slider",
                 "toggle",
                 "segmented",
+                "chooser",
                 "search",
+                "input",
                 "menu",
                 "divider",
                 "image",
@@ -1042,6 +1044,44 @@
         },
         "searchFields": {
           "$ref": "#/definitions/strings"
+        },
+        "placeholder": {
+          "$ref": "#/definitions/string"
+        },
+        "onSubmit": {
+          "$ref": "#/definitions/string"
+        },
+        "autofocus": {
+          "$ref": "#/definitions/boolean",
+          "description": "For input blocks: put the cursor in the field when the popup opens."
+        },
+        "wrap": {
+          "$ref": "#/definitions/boolean",
+          "description": "For field blocks: show all of the text over as many lines as it needs, selectable."
+        },
+        "maxHeight": {
+          "$ref": "#/definitions/number",
+          "description": "For field blocks that wrap: the height past which the text scrolls."
+        },
+        "markdown": {
+          "$ref": "#/definitions/boolean",
+          "description": "For field blocks: show inline Markdown, such as bold, italics, code and links."
+        },
+        "shimmer": {
+          "$ref": "#/definitions/boolean",
+          "description": "For text and field blocks: sweep light across the text, as while something works."
+        },
+        "groupsSource": {
+          "$ref": "#/definitions/string",
+          "description": "For chooser blocks: a list of groups, whose rows have value, title, icon, detail, option, level and levelsTitle."
+        },
+        "optionsSource": {
+          "$ref": "#/definitions/string",
+          "description": "For chooser blocks: a list of options, whose rows have group, value, title and detail."
+        },
+        "levelsSource": {
+          "$ref": "#/definitions/string",
+          "description": "For chooser blocks: a list of levels, whose rows have group, value and title."
         }
       },
       "description": "A layout block for widget layouts, overlays and popups."
@@ -1083,6 +1123,10 @@
         },
         "dismissOnControl": {
           "$ref": "#/definitions/boolean"
+        },
+        "pinnable": {
+          "$ref": "#/definitions/boolean",
+          "description": "Show a pin button that keeps the popup on screen and lets it be dragged."
         },
         "animation": {
           "$ref": "#/definitions/animation"
