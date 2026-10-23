@@ -3,8 +3,37 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>StableBar, a native bar for macOS</title>
-<meta name="description" content="A native, configurable bar for macOS. Themes, widgets and popups, set up in the app or in plain JSON. Free and open source.">
+<title>StableBar: a native, customizable menu bar for macOS</title>
+<meta name="description" content="A free, open-source menu bar for macOS and an alternative to SketchyBar. Themes, widgets, popups and workspaces from AeroSpace, yabai or OmniWM.">
+<link rel="canonical" href="https://seb-graf.github.io/StableBar/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="StableBar">
+<meta property="og:url" content="https://seb-graf.github.io/StableBar/">
+<meta property="og:title" content="StableBar: a native, customizable menu bar for macOS">
+<meta property="og:description" content="Themes, widgets and popups, set up in the app or in plain JSON. Free and open source.">
+<meta property="og:image" content="https://seb-graf.github.io/StableBar/images/social-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="StableBar with the next meeting, CPU and memory use and the battery. Today's agenda is open below the meeting.">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "StableBar",
+  "description": "A native, configurable menu bar for macOS. Themes, widgets and popups, set up in the app or in plain JSON.",
+  "url": "https://seb-graf.github.io/StableBar/",
+  "image": "https://seb-graf.github.io/StableBar/images/social-card.png",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": "macOS 14 or later",
+  "processorRequirements": "Apple silicon",
+  "downloadUrl": "https://github.com/Seb-GRAF/StableBar/releases/latest",
+  "license": "https://github.com/Seb-GRAF/StableBar/blob/main/LICENSE",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "sameAs": "https://github.com/Seb-GRAF/StableBar"
+}
+</script>
 <meta name="theme-color" content="#15110d">
 <link rel="icon" href="images/icon-64.png">
 <link rel="apple-touch-icon" href="images/icon-256.png">
@@ -60,7 +89,7 @@ root.classList.add("js");
   </header>
 
   <section class="hero">
-    <h1>A native, configurable<br class="wide"> bar for macOS.</h1>
+    <h1>A native, configurable<br class="wide"> menu bar for macOS.</h1>
     <p class="lede">Themes, widgets and popups, set up in the app or in plain JSON.</p>
     <div class="get">
       <a class="cta" href="https://github.com/Seb-GRAF/StableBar/releases/latest"><svg aria-hidden="true"><use href="#i-apple"/></svg>Download for Mac</a>
@@ -180,14 +209,14 @@ root.classList.add("js");
     <h2>Configure all of it.</h2>
     <div class="body">
       <p>Every widget, style and popup is a setting, per display and per kind of screen. Use Settings, drag widgets on the bar itself, or write the JSON. StableBar applies the file when you save it, and keeps the last working bar if a change is invalid.</p>
-      <p><strong>Tiling, natively.</strong> Workspaces come straight from AeroSpace or yabai, with app icons or one item per window, and update in place instead of recreating windows.</p>
+      <p><strong>Tiling, natively.</strong> Workspaces come straight from AeroSpace, yabai or OmniWM, with app icons or one item per window, and update in place instead of recreating windows.</p>
       <a class="more-link" href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/widgets.md">Workspaces in the guide</a>
     </div>
     <div class="fig specs">
       <div>
         <h3>Window managers</h3>
         <ul>
-          <li><b>AeroSpace</b><span>Workspace, monitor, window and focus events, live. Reconnects when AeroSpace restarts.</span></li>
+          <li><b>AeroSpace and OmniWM</b><span>Workspace, monitor, window and focus events, live. Reconnects when the window manager restarts.</span></li>
           <li><b>yabai</b><span>Spaces, windows and displays, refreshed by yabai signals.</span></li>
           <li><b>One item per window</b><span>Window titles in the workspace; click one to focus it.</span></li>
           <li><b>No tiling manager</b><span>macOS Spaces, and windows kept clear of the bar.</span></li>
@@ -357,7 +386,7 @@ printf '{"text":"%s","icon":"internaldrive"}' "$used"</pre>
   </section>
 
   <footer>
-    <span>StableBar is available under the MIT License, including commercial use and redistribution.</span>
+    <span>StableBar is a free, open-source alternative to SketchyBar. It is available under the MIT License, including commercial use and redistribution.</span>
     <a href="https://github.com/Seb-GRAF/StableBar">Source on GitHub</a>
     <a href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/README.md">User guide</a>
     <a href="https://github.com/Seb-GRAF/stablebar-packages">Widget store</a>
