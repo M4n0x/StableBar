@@ -141,9 +141,7 @@ private struct WorkspaceWindowDropTarget<Content: View>: NSViewRepresentable {
     @ViewBuilder let content: () -> Content
 
     func makeNSView(context: Context) -> WorkspaceWindowDropTargetView {
-        let view = WorkspaceWindowDropTargetView(rootView: AnyView(content()))
-        view.registerForDraggedTypes([WorkspaceWindowDragSourceView.pasteboardType])
-        return view
+        WorkspaceWindowDropTargetView(rootView: AnyView(content()))
     }
 
     func updateNSView(_ view: WorkspaceWindowDropTargetView, context: Context) {
@@ -157,6 +155,8 @@ private struct WorkspaceWindowDropTarget<Content: View>: NSViewRepresentable {
     }
 }
 
+/// A workspace cell. It isn't registered for drags itself: the bar window receives them and
+/// forwards them to the cell under the pointer.
 final class WorkspaceWindowDropTargetView: WidgetHostingView {
     weak var store: WorkspaceStore?
     var workspace = ""
@@ -192,5 +192,39 @@ final class WorkspaceWindowDropTargetView: WidgetHostingView {
 
     private func clearTarget() {
         if store?.windowDrag.target == workspace { store?.windowDrag.target = nil }
+    }
+}
+
+/// AppKit looks for a drop destination by walking view frames, but SwiftUI can host a cell in a
+/// container whose frame doesn't contain it, so a registered cell may never be reached. The bar
+/// window takes the drag instead and finds the cell under the pointer by hit-testing, as clicks do.
+extension BarPanel: NSDraggingDestination {
+    func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { draggingUpdated(sender) }
+
+    func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        let target = dropTarget(at: sender.draggingLocation)
+        if target !== workspaceDropTarget { workspaceDropTarget?.draggingExited(sender) }
+        workspaceDropTarget = target
+        return target?.draggingUpdated(sender) ?? []
+    }
+
+    func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        workspaceDropTarget?.draggingExited(sender)
+        workspaceDropTarget = nil
+    }
+
+    func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        dropTarget(at: sender.draggingLocation)?.prepareForDragOperation(sender) ?? false
+    }
+
+    func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        workspaceDropTarget = nil
+        return dropTarget(at: sender.draggingLocation)?.performDragOperation(sender) ?? false
+    }
+
+    private func dropTarget(at location: NSPoint) -> WorkspaceWindowDropTargetView? {
+        guard let contentView, let frame = contentView.superview,
+              let hit = contentView.hitTest(frame.convert(location, from: nil)) else { return nil }
+        return sequence(first: hit, next: \.superview).lazy.compactMap { $0 as? WorkspaceWindowDropTargetView }.first
     }
 }

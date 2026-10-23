@@ -206,29 +206,40 @@ func workspaceWindowDropMovesIconsToTheDestination(windows: Bool) async throws {
     let item = try #require(workspaceDragSources(fixture.host).first)
     let payload = try #require(move.store.windowDrag.begin(source: .aerospace, windows: item.windows))
     await fixture.settle()
-    let target = try #require(workspaceDropTargets(fixture.host).first(where: { $0.workspace == "2" }))
-    #expect(target.registeredDraggedTypes.contains(WorkspaceWindowDragSourceView.pasteboardType))
-    for x in [target.bounds.minX + 0.5, target.bounds.midX] {
-        let point = target.convert(NSPoint(x: x, y: target.bounds.midY), to: fixture.host.superview)
-        var hit = fixture.host.hitTest(point)
-        while let view = hit, !view.registeredDraggedTypes.contains(WorkspaceWindowDragSourceView.pasteboardType) {
-            hit = view.superview
-        }
-        #expect(hit === target, "The label and cell padding must route the drag to the workspace destination")
+    // AppKit finds drop destinations by view frames, which SwiftUI leaves outside the cells'
+    // containers, so a registered cell inside the bar would be unreachable.
+    func registered(_ view: NSView) -> [NSView] {
+        (view.registeredDraggedTypes.contains(WorkspaceWindowDragSourceView.pasteboardType) ? [view] : [])
+            + view.subviews.flatMap(registered)
     }
+    #expect(registered(fixture.host).isEmpty)
+    let target = try #require(workspaceDropTargets(fixture.host).first(where: { $0.workspace == "2" }))
+    let origin = try #require(workspaceDropTargets(fixture.host).first(where: { $0.workspace == "1" }))
+    func location(_ view: NSView, x: CGFloat) -> NSPoint { view.convert(NSPoint(x: x, y: view.bounds.midY), to: nil) }
     let info = WorkspaceDraggingInfo(source: item, token: payload.token.uuidString, window: fixture.panel)
     defer { info.draggingPasteboard.releaseGlobally() }
-    let origin = try #require(workspaceDropTargets(fixture.host).first(where: { $0.workspace == "1" }))
-    #expect(origin.draggingEntered(info).isEmpty)
-    #expect(!origin.performDragOperation(info))
-    #expect(target.draggingEntered(info) == .move)
-    #expect(move.store.windowDrag.target == "2")
-    #expect(target.prepareForDragOperation(info))
+    info.draggingLocation = location(origin, x: origin.bounds.midX)
+    #expect(fixture.panel.draggingEntered(info).isEmpty)
+    #expect(!fixture.panel.performDragOperation(info))
+    for x in [target.bounds.minX + 0.5, target.bounds.midX] {
+        info.draggingLocation = location(target, x: x)
+        #expect(fixture.panel.draggingUpdated(info) == .move, "The label and cell padding must route the drag to the workspace")
+        #expect(move.store.windowDrag.target == "2")
+    }
+    info.draggingLocation = NSPoint(x: fixture.panel.frame.width - 10, y: 20)
+    #expect(fixture.panel.draggingUpdated(info).isEmpty)
+    #expect(move.store.windowDrag.target == nil)
+    info.draggingLocation = location(target, x: target.bounds.midX)
+    #expect(fixture.panel.draggingUpdated(info) == .move)
+    fixture.panel.draggingExited(info)
+    #expect(move.store.windowDrag.target == nil)
+    #expect(fixture.panel.draggingEntered(info) == .move)
+    #expect(fixture.panel.prepareForDragOperation(info))
     await fixture.settle()
     try capture("workspace-window-drag-target")
-    #expect(target.performDragOperation(info))
+    #expect(fixture.panel.performDragOperation(info))
     let task = try #require(move.store.moveTask)
-    #expect(!target.performDragOperation(info))
+    #expect(!fixture.panel.performDragOperation(info))
     await task.value
     await fixture.settle()
     #expect(workspaceDragSources(fixture.host).map { $0.windows.map(\.id) } == (windows ? [[74], [75], [73]] : [[75], [73, 74]]))
@@ -274,7 +285,7 @@ func workspaceWindowDropMovesIconsToTheDestination(windows: Bool) async throws {
     let draggingPasteboard = NSPasteboard.withUniqueName()
     let draggingSourceOperationMask: NSDragOperation = .move
     let draggingSequenceNumber = 1
-    let draggingLocation = NSPoint.zero
+    var draggingLocation = NSPoint.zero
     let draggedImageLocation = NSPoint.zero
     nonisolated var draggedImage: NSImage? { nil }
     var draggingFormation = NSDraggingFormation.none

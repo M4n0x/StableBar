@@ -123,6 +123,13 @@ class BarPanel: NSPanel {
         }
     }
     private(set) var decorationPanel: PassiveBarPanel?
+    /// The workspace cell under the current drag, which the bar takes on its cells' behalf.
+    weak var workspaceDropTarget: WorkspaceWindowDropTargetView?
+
+    override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing: NSWindow.BackingStoreType, defer flag: Bool) {
+        super.init(contentRect: contentRect, styleMask: style, backing: backing, defer: flag)
+        registerForDraggedTypes([WorkspaceWindowDragSourceView.pasteboardType])
+    }
 
     var drawingFrame: CGRect {
         guard barGeometry?.outsideExtent ?? 0 > 0 else { return frame }
