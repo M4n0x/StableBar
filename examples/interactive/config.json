@@ -46,6 +46,7 @@
       "icon": "slider.horizontal.3",
       "popup": {
         "openOnHover": true,
+        "pinnable": true,
         "height": 360,
         "dismissOnAction": false,
         "style": {
@@ -84,6 +85,13 @@
               ],
               "onChange": "/bin/zsh \"$CONFIG_DIR/controls.sh\" mode"
             },
+            {
+              "type": "input",
+              "title": "Note",
+              "placeholder": "Write a note and press Return",
+              "onSubmit": "/bin/zsh \"$CONFIG_DIR/controls.sh\" note"
+            },
+            { "type": "field", "field": "note", "wrap": true, "maxHeight": 80, "hideWhenEmpty": "note" },
             { "type": "divider" },
             {
               "type": "search",

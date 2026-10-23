@@ -1038,7 +1038,7 @@ final class BarStore: NSObject {
         endThemeTrial()
         flushCustomization()
         managesConnections = false
-        popup.close()
+        popup.closeAll()
         windowClearance.stop()
         menuBarDelay.stop()
         appMenu.read(nil)
