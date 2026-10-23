@@ -491,7 +491,8 @@ struct WidgetView: View {
                           appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
                           padding: padding, configuration: widget.workspace, animation: widget.animation ?? defaultAnimation,
                           defaults: resolution.base,
-                          modeAliases: store.configuration?.look(on: screenKind).modeAliases ?? [:], widgetID: widget.id)
+                          modeAliases: store.configuration?.look(on: screenKind).modeAliases ?? [:], widgetID: widget.id,
+                          allowsWindowDragging: store.barEditing.allowsWidgetActions)
         case let .appMenu(expandOnHover) where widget.layout == nil:
             AppMenuView(appMenu: store.appMenu, items: store.appMenu.items, expandOnHover: expandOnHover, hovering: hovered,
                         expanded: store.presentations[widget.id]?.expandedDisplays.contains(monitor) == true,
@@ -598,6 +599,7 @@ struct WorkspaceView: View {
     var defaults = WidgetStyle()
     var modeAliases: [String: String] = [:]
     var widgetID = ""
+    var allowsWindowDragging = true
     @Environment(\.measuringBarWidths) private var measuring
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
@@ -606,7 +608,9 @@ struct WorkspaceView: View {
     @State private var appIcons = WorkspaceAppIcons()
 
     var body: some View {
-        let workspaces = workspaceStore.workspaces(on: monitor, showEmpty: configuration?.showEmpty == true)
+        let workspaces = workspaceStore.workspaces(on: monitor,
+            showEmpty: configuration?.showEmpty == true
+                || (workspaceStore.source.supportsWindowMoves && workspaceStore.windowDrag.active != nil))
         let indicator = configuration?.indicator ?? .background
         HStack(spacing: appearance.spacing) {
             ForEach(workspaces) { workspace in
@@ -626,7 +630,7 @@ struct WorkspaceView: View {
                     if configuration?.showApps != false {
                         if configuration?.windows == true {
                             ForEach(workspace.windows) { window in
-                                Button { workspaceStore.focus(window) } label: {
+                                windowButton(windows: [window], action: { workspaceStore.focus(window) }) {
                                     HStack(spacing: style.spacing ?? 4) {
                                         appIcon(window.app, style: glyph)
                                         if let length = configuration?.titleLength, length > 0 {
@@ -640,7 +644,8 @@ struct WorkspaceView: View {
                             }
                         } else {
                             ForEach(workspace.apps) { app in
-                                Button { workspaceStore.select(workspace) } label: {
+                                windowButton(windows: workspace.windows.filter { $0.app.bundleID == app.bundleID },
+                                             action: { workspaceStore.select(workspace) }) {
                                     appIcon(app, style: glyph)
                                 }
                                 .help(app.name)
@@ -679,6 +684,14 @@ struct WorkspaceView: View {
                             .strokeBorder(styles.resting.borderColor?.color ?? appearance.accent, lineWidth: styles.resting.borderWidth ?? 1)
                     }
                 }
+                .overlay {
+                    if canDragWindows && workspaceStore.windowDrag.target == workspace.name {
+                        RoundedRectangle(cornerRadius: styles.resting.cornerRadius ?? max(appearance.cornerRadius - 4, 0))
+                            .strokeBorder(appearance.accent, lineWidth: 2)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .modifier(WorkspaceWindowDrop(store: workspaceStore, workspace: workspace.name, enabled: canDragWindows))
                 .anchorPreference(key: BarAnchorPreference.self, value: .bounds) { anchor in
                     guard !measuring, indicator == .underline, workspace.isVisible, styles.underline.placement == .belowBar else {
                         return BarAnchors()
@@ -699,6 +712,21 @@ struct WorkspaceView: View {
         }
         .fixedSize(horizontal: true, vertical: false)
         .animation(reduceMotion ? nil : animation.value, value: workspaces)
+    }
+
+    private var canDragWindows: Bool {
+        allowsWindowDragging && !measuring && workspaceStore.source.supportsWindowMoves
+    }
+
+    @ViewBuilder private func windowButton(windows: [WorkspaceWindow], action: @escaping () -> Void,
+                                           @ViewBuilder label: @escaping () -> some View) -> some View {
+        if canDragWindows && !windows.isEmpty {
+            WorkspaceWindowDragSource(store: workspaceStore, windows: windows, action: action) {
+                Button(action: action, label: label).buttonStyle(.plain)
+            }
+        } else {
+            Button(action: action, label: label)
+        }
     }
 
     @ViewBuilder private func appIcon(_ app: WorkspaceApp, style: WidgetStyle) -> some View {

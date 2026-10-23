@@ -72,6 +72,8 @@ struct AeroSpaceEvent: Decodable, Sendable {
 enum WorkspaceSource: String, Decodable, Sendable {
     case aerospace, yabai, omniwm, spaces
 
+    var supportsWindowMoves: Bool { self == .aerospace || self == .yabai }
+
     var title: String {
         switch self {
         case .aerospace: "AeroSpace"
@@ -127,6 +129,7 @@ final class WorkspaceStore {
         }
     }
     var workspaces: [Workspace] = []
+    let windowDrag = WorkspaceWindowDragSession()
     var error: String?
     private(set) var connectionError: String?
     var reconnectDelay = 2.0
@@ -138,6 +141,7 @@ final class WorkspaceStore {
     private(set) var tracksWorkspaces = true
     var isRunning: Bool { task != nil }
     private var refreshTask: Task<Void, Never>?
+    private var moveTask: Task<Void, Never>?
     private var refreshPending = false
     private var stopping = false
     private var task: Task<Void, Never>?
@@ -373,6 +377,48 @@ final class WorkspaceStore {
         }
     }
 
+    func canMoveWindows(_ payload: WorkspaceWindowDragSession.Payload, to workspace: String) -> Bool {
+        guard source.supportsWindowMoves, source == payload.source, moveTask == nil,
+              workspace != payload.workspace, workspaces.contains(where: { $0.name == workspace }),
+              let origin = workspaces.first(where: { $0.name == payload.workspace }), !payload.windows.isEmpty else { return false }
+        return payload.windows.allSatisfy { window in
+            origin.windows.contains { $0.id == window.id && $0.app.bundleID == window.app.bundleID }
+        }
+    }
+
+    @discardableResult
+    func moveWindows(_ payload: WorkspaceWindowDragSession.Payload, to workspace: String) -> Task<Void, Never>? {
+        guard windowDrag.active == payload, canMoveWindows(payload, to: workspace) else { return nil }
+        windowDrag.end(payload)
+        moveTask = Task {
+            defer { if !Task.isCancelled { moveTask = nil } }
+            var failure: String?
+            do {
+                let executable = try executable()
+                for window in payload.windows {
+                    try Task.checkCancellation()
+                    let arguments: [String]
+                    switch payload.source {
+                    case .aerospace:
+                        arguments = ["move-node-to-workspace", "--window-id", String(window.id), "--", workspace]
+                    case .yabai:
+                        arguments = ["-m", "window", String(window.id), "--space", workspace]
+                    default:
+                        throw CommandFailure(message: "\(payload.source.title) does not support moving windows.")
+                    }
+                    _ = try await runCommand(executable, arguments: arguments)
+                }
+            } catch { failure = error.localizedDescription }
+            guard !Task.isCancelled else { return }
+            // Refresh even after a partial move, and retain the command failure
+            // instead of letting a successful snapshot hide it.
+            do { try await refresh() }
+            catch { if failure == nil { failure = error.localizedDescription } }
+            if !Task.isCancelled { error = failure }
+        }
+        return moveTask
+    }
+
     private var screenIDs: [UInt32] {
         NSScreen.screens.map { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as! NSNumber).uint32Value }
     }
@@ -407,6 +453,9 @@ final class WorkspaceStore {
     }
 
     private func cancelConnection() {
+        if let payload = windowDrag.active { windowDrag.end(payload) }
+        moveTask?.cancel()
+        moveTask = nil
         refreshTask?.cancel()
         refreshTask = nil
         refreshPending = false
