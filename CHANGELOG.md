@@ -1,5 +1,71 @@
 # Changelog
 
+## [0.6.0](https://github.com/Seb-GRAF/StableBar/compare/v0.5.0...v0.6.0) (2026-10-23)
+
+### Features
+
+* add a delay before the native menu bar appears ([#202](https://github.com/Seb-GRAF/StableBar/issues/202)) ([d462e69](https://github.com/Seb-GRAF/StableBar/commit/d462e69bfd412eb3ad1944df239ac1df08a0dbc7))
+* add animation presets and popup transitions ([#192](https://github.com/Seb-GRAF/StableBar/issues/192)) ([22aa125](https://github.com/Seb-GRAF/StableBar/commit/22aa1250ccd1170dde2f205617ce2f11571fd208))
+* add compact battery and sound display settings ([0cb7a90](https://github.com/Seb-GRAF/StableBar/commit/0cb7a90ef1188a846146957a3349e5a23901a9d4))
+* add private package sources ([a4e6a08](https://github.com/Seb-GRAF/StableBar/commit/a4e6a08290e2870bf008dcd1bfc6fd7a51ed4501)), closes [#248](https://github.com/Seb-GRAF/StableBar/issues/248)
+* add, remove and choose screens for widgets from the Bar list ([b441fc4](https://github.com/Seb-GRAF/StableBar/commit/b441fc49628924972e71c4a18f12305b8e659c49))
+* apply Theme changes to every screen setup ([170be42](https://github.com/Seb-GRAF/StableBar/commit/170be4262b8f39c6dfcf607e3883d9514fa84b11))
+* build, demo and land the bar in the setup intro ([#178](https://github.com/Seb-GRAF/StableBar/issues/178)) ([4e23a0b](https://github.com/Seb-GRAF/StableBar/commit/4e23a0b56bbb7304af0c76fd88d607608fa312fb))
+* change the volume with a slider when hovering the Sound widget ([4a0dab0](https://github.com/Seb-GRAF/StableBar/commit/4a0dab02f53dd5861cde642feeb0b664466e2688))
+* fade popups in with a shadow and the system material ([#170](https://github.com/Seb-GRAF/StableBar/issues/170)) ([bec220b](https://github.com/Seb-GRAF/StableBar/commit/bec220b049b424739ad432719696797a0f99f178))
+* give the installer a drag-to-install layout ([#176](https://github.com/Seb-GRAF/StableBar/issues/176)) ([4d42155](https://github.com/Seb-GRAF/StableBar/commit/4d421551e8c1548a3b5b45f41d01a060d1904b46))
+* lead setup to replace the macOS menu bar ([#198](https://github.com/Seb-GRAF/StableBar/issues/198)) ([4160f7f](https://github.com/Seb-GRAF/StableBar/commit/4160f7f4c04631356b63ece8fbdbafa863313f8e))
+* list the apps using the most memory and CPU and quit them from the system monitor ([#234](https://github.com/Seb-GRAF/StableBar/issues/234)) ([1659bfb](https://github.com/Seb-GRAF/StableBar/commit/1659bfb9f9bbbeea2c678e60f8af625ce67e4ad6))
+* make the installed package list easier to scan ([#228](https://github.com/Seb-GRAF/StableBar/issues/228)) ([36a3532](https://github.com/Seb-GRAF/StableBar/commit/36a3532656556a22f349cb9d21baae256133e68b))
+* morph between popups by default ([0371fc2](https://github.com/Seb-GRAF/StableBar/commit/0371fc240156d03a8a6cdf8d8f6901e7b8880e57))
+* morph the open popup into the next one when switching widgets ([#204](https://github.com/Seb-GRAF/StableBar/issues/204)) ([e944864](https://github.com/Seb-GRAF/StableBar/commit/e944864a72653a465b2ad5e5f7996934c21db351))
+* notify about package updates in the bar ([#153](https://github.com/Seb-GRAF/StableBar/issues/153)) ([542c8dc](https://github.com/Seb-GRAF/StableBar/commit/542c8dce15c37a39a324b789d78f223fa83c5af2))
+* open and close a widget's popup from the command line ([#193](https://github.com/Seb-GRAF/StableBar/issues/193)) ([865686c](https://github.com/Seb-GRAF/StableBar/commit/865686c687ddb6df0f607e2aba6b5cbaa693ca38))
+* open the setup tour with an intro that turns into your bar ([f4cdfc5](https://github.com/Seb-GRAF/StableBar/commit/f4cdfc5266f96db1c2c99faaf952faca765ac561))
+* put new bars on the top edge and offer to hide the menu bar ([4be3235](https://github.com/Seb-GRAF/StableBar/commit/4be3235e467d8dc627a0dc6720efe2651887a280))
+* redesign Settings with per-screen bars and themes ([15ae182](https://github.com/Seb-GRAF/StableBar/commit/15ae182fc141307d1b053136b89542ae6b86f6ed))
+* refresh the app icon ([ed5070e](https://github.com/Seb-GRAF/StableBar/commit/ed5070e05a2ffe5ec02c2c861c12aea259aac241))
+* reorder bar widgets like the Dock ([#167](https://github.com/Seb-GRAF/StableBar/issues/167)) ([8fa078e](https://github.com/Seb-GRAF/StableBar/commit/8fa078ecc75e816e33f8330b58f7d921b553bbb7))
+* reveal hover controls smoothly beside widgets ([7fe3c45](https://github.com/Seb-GRAF/StableBar/commit/7fe3c45e4c246505cd6aecc764c197ef07ff8769))
+* save the current look as a theme ([aef6cdc](https://github.com/Seb-GRAF/StableBar/commit/aef6cdc14919c3521b2f81b13333f29d23bf4fe1))
+* ship ten more themes with distinct looks ([#232](https://github.com/Seb-GRAF/StableBar/issues/232)) ([8cc1e24](https://github.com/Seb-GRAF/StableBar/commit/8cc1e249ca55ec607dbcd15e66ea7156efedf62c))
+* show macOS Spaces in workspace widgets without a tiling window manager ([fbc5746](https://github.com/Seb-GRAF/StableBar/commit/fbc57466bdaa1a9a0727afe8cbac71a531216e79))
+* show previews throughout the package list ([#152](https://github.com/Seb-GRAF/StableBar/issues/152)) ([103297a](https://github.com/Seb-GRAF/StableBar/commit/103297a4036bc7c0ee9946f9c82d9590f5f036f6))
+* show Store packages with updates first, then installed ones, then the rest ([14d4441](https://github.com/Seb-GRAF/StableBar/commit/14d4441762cd8a18c9c715fc72c3a10f377adb8c)), closes [#242](https://github.com/Seb-GRAF/StableBar/issues/242)
+* show the battery's charge, power and health in its icon, with the percentage in a tooltip ([fa990a7](https://github.com/Seb-GRAF/StableBar/commit/fa990a7a223bea9911c341a70fb235f3e2a6a1e5)), closes [#237](https://github.com/Seb-GRAF/StableBar/issues/237)
+* show the Store as a grid of package cards ([#236](https://github.com/Seb-GRAF/StableBar/issues/236)) ([0c5c7ee](https://github.com/Seb-GRAF/StableBar/commit/0c5c7ee4e58a86472bb42f0e3353847e27f4332a))
+* show the volume level in the Sound widget's speaker ([4ae9c82](https://github.com/Seb-GRAF/StableBar/commit/4ae9c82341ec3cc6861d62a986020ce1a82d2b20))
+* show the volume only for a moment after it changes ([2fa27b2](https://github.com/Seb-GRAF/StableBar/commit/2fa27b2dcd0d79926b79f95578cf21da7889136d))
+* slide between app menus like the macOS menu bar ([#171](https://github.com/Seb-GRAF/StableBar/issues/171)) ([82b487b](https://github.com/Seb-GRAF/StableBar/commit/82b487be459a579d3bf30029fcbdb5261a9a248c))
+* turn setup into a tour that changes the bar live ([24ba8c0](https://github.com/Seb-GRAF/StableBar/commit/24ba8c0301464724ca8c21c90111aa90fe2f0808))
+* update packages on the bar in one click ([7f0191d](https://github.com/Seb-GRAF/StableBar/commit/7f0191dced5ca574dbb9bb0431360f13ecbd2925))
+* use the menu bar's 13pt regular font by default ([#173](https://github.com/Seb-GRAF/StableBar/issues/173)) ([d3a2b96](https://github.com/Seb-GRAF/StableBar/commit/d3a2b96783b9ffb37134992be1ed8889162a0b6c))
+
+### Bug Fixes
+
+* correct eight bugs found in the app audit ([#240](https://github.com/Seb-GRAF/StableBar/issues/240)) ([da0666d](https://github.com/Seb-GRAF/StableBar/commit/da0666d5214204150d9b8d255f0d93183e5665f6))
+* draw a popup's own shadow without an outline around it ([a9eb602](https://github.com/Seb-GRAF/StableBar/commit/a9eb602f3b29d2c2a87b64d20581105aa6aeb008)), closes [#170](https://github.com/Seb-GRAF/StableBar/issues/170) [#180](https://github.com/Seb-GRAF/StableBar/issues/180)
+* ease in and out of bar editing ([#168](https://github.com/Seb-GRAF/StableBar/issues/168)) ([86d6472](https://github.com/Seb-GRAF/StableBar/commit/86d64727cc933d5d8a9c14015f480be52c42b5ca))
+* keep number widths steady in default widget layouts ([#169](https://github.com/Seb-GRAF/StableBar/issues/169)) ([a2c34d4](https://github.com/Seb-GRAF/StableBar/commit/a2c34d4583974dac6285170d2d114f7b7103acde))
+* keep StableBar running when the setup tour ends ([#177](https://github.com/Seb-GRAF/StableBar/issues/177)) ([7528a25](https://github.com/Seb-GRAF/StableBar/commit/7528a254797f800a7844b6b9ba348886991d406b))
+* keep the Settings form the same height while saving or showing errors ([#165](https://github.com/Seb-GRAF/StableBar/issues/165)) ([0caff0c](https://github.com/Seb-GRAF/StableBar/commit/0caff0c6080fc8205f0bbce006f92b96997bac3d))
+* keep the Settings layout steady while you change it ([#163](https://github.com/Seb-GRAF/StableBar/issues/163)) ([0a18461](https://github.com/Seb-GRAF/StableBar/commit/0a18461752e13d85ef4d6d04e624ba974dabaf44))
+* move popups smoothly and at once when morphing between them ([0538bba](https://github.com/Seb-GRAF/StableBar/commit/0538bba93139c800296d127d3f82b96c3c1b37a9))
+* open tooltips at their size instead of zooming in ([431ee36](https://github.com/Seb-GRAF/StableBar/commit/431ee3617f189b20652b0838255cb7dbc48bf0ea)), closes [#244](https://github.com/Seb-GRAF/StableBar/issues/244)
+* remember where the Settings window was ([#166](https://github.com/Seb-GRAF/StableBar/issues/166)) ([f1f5281](https://github.com/Seb-GRAF/StableBar/commit/f1f52814926347fef7726cdf0d43141705bf34c2))
+* save typed numbers in Settings without pressing Return ([#230](https://github.com/Seb-GRAF/StableBar/issues/230)) ([d37bfd2](https://github.com/Seb-GRAF/StableBar/commit/d37bfd2d60a5880c04fd6cba966845024d1bf923))
+* show a Dock icon while Settings is open ([#200](https://github.com/Seb-GRAF/StableBar/issues/200)) ([bee1d3f](https://github.com/Seb-GRAF/StableBar/commit/bee1d3f4b46107c192f1bbe8e312638e0def8425))
+* show hover highlights at once and fade them out quickly ([#172](https://github.com/Seb-GRAF/StableBar/issues/172)) ([d92a292](https://github.com/Seb-GRAF/StableBar/commit/d92a292fc596e5e080ce8654af2c4218af2c6086))
+* show hover, cursor and haptic feedback while editing the bar ([#175](https://github.com/Seb-GRAF/StableBar/issues/175)) ([7ec767d](https://github.com/Seb-GRAF/StableBar/commit/7ec767d9ba633f0a1fe73e7533b675fb0a94bb62))
+* show only the macOS prompt when asking for Accessibility ([#197](https://github.com/Seb-GRAF/StableBar/issues/197)) ([607958a](https://github.com/Seb-GRAF/StableBar/commit/607958a23822ee259a7b840fc2070c82489d849e))
+
+### Performance Improvements
+
+* keep Settings responsive while changing the bar ([#161](https://github.com/Seb-GRAF/StableBar/issues/161)) ([39035a7](https://github.com/Seb-GRAF/StableBar/commit/39035a734bc084fe9b6d52a820135a9a24b6d481))
+* keep the bar smooth while reading app menus and scrolling text ([#174](https://github.com/Seb-GRAF/StableBar/issues/174)) ([22b4972](https://github.com/Seb-GRAF/StableBar/commit/22b49721d443432cda195aeda0d59399ed834cb5))
+* reduce CPU use while text scrolls ([#246](https://github.com/Seb-GRAF/StableBar/issues/246)) ([e10a962](https://github.com/Seb-GRAF/StableBar/commit/e10a962506c3e509bae25cc1db196d4ed67729bd))
+* update the bar after a pause while typing in the inspector ([#164](https://github.com/Seb-GRAF/StableBar/issues/164)) ([215c051](https://github.com/Seb-GRAF/StableBar/commit/215c051514c24891eba82ff0df6c1f07632db868))
+
 ## [0.5.0](https://github.com/Seb-GRAF/StableBar/compare/v0.4.0...v0.5.0) (2026-10-21)
 
 ### Features
