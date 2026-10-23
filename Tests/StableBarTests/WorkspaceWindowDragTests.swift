@@ -264,8 +264,10 @@ private func workspaceMouse(_ type: NSEvent.EventType, x: CGFloat) throws -> NSE
         try Data("""
         #!/bin/sh
         cd '\(directory.path)' || exit 1
-        printf '<%s>' "$@" >> calls
-        printf '\\n' >> calls
+        {
+            printf '<%s>' "$@"
+            printf '\\n'
+        } > "calls.$$"
         if [ "$1" = move-node-to-workspace ] || [ "$2" = window ]; then
             if [ "$3" = '\(failureID ?? -1)' ]; then
                 echo 'Window no longer exists' >&2
@@ -291,7 +293,10 @@ private func workspaceMouse(_ type: NSEvent.EventType, x: CGFloat) throws -> NSE
     }
 
     func commands() throws -> [String] {
-        try String(contentsOf: directory.appending(path: "calls"), encoding: .utf8).split(separator: "\n").map(String.init)
+        // Snapshot queries run concurrently, so each process writes its own record.
+        try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("calls.") }
+            .map { try String(contentsOf: $0, encoding: .utf8).trimmingCharacters(in: .newlines) }
     }
 
     func close() {
