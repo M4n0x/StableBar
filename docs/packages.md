@@ -127,7 +127,7 @@ A source's row has **Copy join link**, which copies a `stablebar://add-source` l
 
 ### Tokens
 
-Each member uses their own token: a GitLab personal access token with the `read_api` scope, or a GitHub fine-grained token with **Contents: read** on the repository. Enter it in the source's form. StableBar keeps it in the login Keychain, never in a configuration file, and Settings only shows whether one is saved. As with package secrets, macOS may ask whether StableBar may use it after an update; choose **Always Allow**. Removing a source keeps its token, so Undo brings the source back working.
+Each member uses their own token: a GitLab personal access token with the `read_api` scope, or a GitHub token that can read the repository. Use a fine-grained token with **Contents: read** when the repository belongs to you or to an organization you're in, and a classic token with the `repo` scope when it belongs to another person's account: a fine-grained token can't read that repository, and GitHub answers 404. Enter it in the source's form. StableBar keeps it in the login Keychain, never in a configuration file, and Settings only shows whether one is saved. As with package secrets, macOS may ask whether StableBar may use it after an update; choose **Always Allow**. Removing a source keeps its token, so Undo brings the source back working.
 
 A token is sent only to the scheme, host and port of the index URL it was saved for: to the index, its archives and screenshots on that host. A redirect to another host drops it. If a source's URL moves to another host, the token isn't sent there; enter it again. For a URL whose path starts with `/api/v4/`, as on GitLab, it goes in a `PRIVATE-TOKEN` header; otherwise in `Authorization: Bearer`. Configuration and package commands can't read a source token.
 
@@ -137,7 +137,7 @@ When a source fails, Packages names it and the reason, such as a refused token f
 
 A source is an `index.json` in the same format as the Store's in [stablebar-packages](https://github.com/Seb-GRAF/stablebar-packages), with the archives it lists. Archive paths are relative to the index and must stay on its host. Each package's `source` repository URL is optional in a private index. Host it in one of these places:
 
-- **A private GitHub repository:** commit the index and archives to a branch and use `https://raw.githubusercontent.com/OWNER/REPO/BRANCH/index.json`, with a fine-grained token. GitHub serves a private repository's release assets only through its API, so release assets don't work.
+- **A private GitHub repository:** commit the index and archives to a branch and use `https://raw.githubusercontent.com/OWNER/REPO/BRANCH/index.json`, with a token that can read the repository (see [Tokens](#tokens)). GitHub serves a private repository's release assets only through its API, so release assets don't work.
 - **GitLab's generic package registry:** upload the index and archives to one package version and use `https://<host>/api/v4/projects/<id>/packages/generic/<name>/<version>/index.json`, with a `read_api` token.
 - **Any HTTPS server** that serves the files, with or without a bearer token.
 
@@ -155,7 +155,7 @@ StableBar --build-source ./packages ./dist --previous ./previous/index.json --ur
 
 It lists the packages in the index and the new files, and with `--url` and `--name` prints a `stablebar://add-source` [join link](#joining-with-a-link) for your team. `--url` is the address the index will have, an `https` URL without a user name, password, `?query` or `#fragment`. Upload the new files in `dist` and the new `index.json`. A package's `screenshot` is copied as `<id>-<version>-<file name>`.
 
-**GitHub, private repository:** a workflow on a macOS runner can build the source and keep it on a `store` branch. Members read `https://raw.githubusercontent.com/OWNER/REPO/store/index.json` with a fine-grained token.
+**GitHub, private repository:** a workflow on a macOS runner can build the source and keep it on a `store` branch. Members read `https://raw.githubusercontent.com/OWNER/REPO/store/index.json` with a token that can read the repository.
 
 ```yaml
 name: Publish packages
