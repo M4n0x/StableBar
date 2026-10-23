@@ -42,30 +42,9 @@ struct PopupShadowView: View {
     }
 }
 
-struct PopupMorphView: View {
-    let from: PopupView
-    let to: PopupView
-    let fromBox: CGRect
-    let toBox: CGRect
-    let glass: GlassSettings
-    let animation: WidgetAnimation
-    let finished: () -> Void
-    @State private var moved = false
-
-    var body: some View {
-        let box = moved ? toBox : fromBox
-        ZStack(alignment: .top) {
-            from.frame(width: fromBox.width, height: fromBox.height).opacity(moved ? 0 : 1)
-            to.frame(width: toBox.width, height: toBox.height).opacity(moved ? 1 : 0)
-        }
-        .frame(width: box.width, height: box.height, alignment: .top)
-        .modifier(PopupBackground(style: moved ? to.style : from.style, glass: glass))
-        .offset(x: box.minX, y: box.minY)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear {
-            withAnimation(animation.value, completionCriteria: .removed) { moved = true } completion: { finished() }
-        }
-    }
+@MainActor @Observable
+final class PopupBackgrounds {
+    var hidden = false
 }
 
 extension PopupTransition {
@@ -123,8 +102,9 @@ final class WidgetPopup {
     private var pointerInPopup = false
     private var pinned = false
     private var closesAfterClick = false
-    private var shown: (view: PopupView, inset: CGFloat)?
-    private var morph: (panel: PopupPanel, link: CADisplayLink)?
+    private var shown: (inset: CGFloat, cornerRadius: CGFloat)?
+    private var morph: (panel: PopupPanel, link: CADisplayLink, from: PopupPanel)?
+    let backgrounds = PopupBackgrounds()
 
     init(present: @escaping (PopupPanel, Bool) -> Void = { panel, onHover in
         if onHover { panel.orderFront(nil) } else { panel.makeKeyAndOrderFront(nil) }
@@ -237,10 +217,10 @@ final class WidgetPopup {
         let screen = window.screen!
         let bar = store.configuration!.bar(on: ScreenKind(BarDisplay(screen: screen)))
         let animation = popup.animation ?? bar.motion.popupAnimation
-        var from: (view: PopupView, box: NSRect, windows: [NSPanel])?
+        var from: (panel: PopupPanel, shadow: NSPanel?, box: NSRect, cornerRadius: CGFloat)?
         if let shown, let panel, bar.morphPopups, self.anchor?.window === window, animation.duration > 0,
            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            from = (shown.view, panel.frame.insetBy(dx: shown.inset, dy: shown.inset), [panel, shadowWindow].compactMap { $0 })
+            from = (panel, shadowWindow, panel.frame.insetBy(dx: shown.inset, dy: shown.inset), shown.cornerRadius)
             self.panel = nil
             shadowWindow = nil
         }
@@ -263,8 +243,7 @@ final class WidgetPopup {
         let panel = PopupPanel(contentRect: NSRect(x: x - shadowInset, y: popupTop - popup.offset + shadowInset,
                                                   width: width + shadowInset * 2, height: 0),
                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        let view = PopupView(popup: popup, style: style, store: store, widget: widget)
-        let host = NSHostingView(rootView: view
+        let host = NSHostingView(rootView: PopupView(popup: popup, style: style, store: store, widget: widget)
             .environment(\.screenKind, ScreenKind(BarDisplay(screen: screen)))
             .frame(width: width)
             .onPreferenceChange(PopupHeightPreference.self) { [weak self, weak panel] contentHeight in
@@ -310,7 +289,7 @@ final class WidgetPopup {
             .flatMap { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) }
         panel.contentView = PopupRevealView(content: host, size: panel.frame.size)
         self.panel = panel
-        shown = (view, shadowInset)
+        shown = (shadowInset, CGFloat(appearance.cornerRadius))
         // macOS outlines a window and shapes its shadow from what the window draws. In the popup's window, the popup's
         // own shadow would get that outline near its outer edge, so it gets a window of its own behind the popup.
         let drawsShadow = style.shadowColor.map { $0.light & 0xff > 0 || $0.dark & 0xff > 0 } ?? false
@@ -356,9 +335,6 @@ final class WidgetPopup {
         if let from {
             let toBox = panel.frame.insetBy(dx: shadowInset, dy: shadowInset)
             let union = from.box.union(toBox)
-            func local(_ box: NSRect) -> CGRect {
-                CGRect(x: box.minX - union.minX, y: union.maxY - box.maxY, width: box.width, height: box.height)
-            }
             let morph = PopupPanel(contentRect: union, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             morph.title = "\(widget.id) popup morph"
             morph.isOpaque = false
@@ -370,23 +346,74 @@ final class WidgetPopup {
             morph.level = panel.level
             morph.collectionBehavior = panel.collectionBehavior
             morph.appearance = panel.appearance
-            var fromView = from.view
-            var toView = view
-            fromView.drawsBackground = false
-            toView.drawsBackground = false
-            morph.contentView = NSHostingView(rootView: PopupMorphView(from: fromView, to: toView, fromBox: local(from.box), toBox: local(toBox),
-                                                                       glass: bar.glass, animation: animation) { [weak self, weak morph] in
-                if let morph, morph === self?.morph?.panel { self?.finishMorph() }
+            morph.contentView = PopupRevealView(content: NSHostingView(rootView: Color.clear.modifier(
+                GlassBackground(fill: style.background, glass: bar.glass, surface: \.popups, shape: Rectangle()))), size: union.size)
+            let outline = CALayer()
+            outline.borderWidth = appearance.borderWidth
+            panel.effectiveAppearance.performAsCurrentDrawingAppearance { outline.borderColor = NSColor(appearance.borderColor).cgColor }
+            let cards = [morph, from.panel, panel].map { window in (CALayer(), window) } + [(outline, morph)]
+            for (card, window) in cards {
+                card.anchorPoint = .zero
+                card.frame = from.box.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY)
+                card.cornerCurve = .continuous
+                card.cornerRadius = from.cornerRadius
+                if card === outline {
+                    window.contentView!.layer!.addSublayer(card)
+                } else {
+                    card.backgroundColor = .black
+                    window.contentView!.layer!.mask = card
+                }
             }
-            .environment(\.screenKind, ScreenKind(BarDisplay(screen: screen))))
             let link = morph.displayLink(target: morph, selector: #selector(NSWindow.invalidateShadow))
             link.add(to: .main, forMode: .common)
-            self.morph = (morph, link)
-            present(morph, true)
-            Task { @MainActor in from.windows.forEach { $0.close() } }
-            for window in windows { window.alphaValue = 0 }
+            self.morph = (morph, link, from.panel)
+            backgrounds.hidden = true
+            from.shadow?.close()
+            from.panel.hasShadow = false
+            from.panel.ignoresMouseEvents = true
+            panel.hasShadow = false
+            panel.contentView!.alphaValue = 0
             present(panel, onHover)
-            if panel.isVisible { shadow?.order(.below, relativeTo: panel.windowNumber) }
+            if panel.isVisible {
+                shadow?.order(.below, relativeTo: panel.windowNumber)
+                morph.order(.below, relativeTo: from.panel.windowNumber)
+            }
+            for window in [morph, from.panel, panel] { window.displayIfNeeded() }
+            let start = CACurrentMediaTime()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            CATransaction.setCompletionBlock { [weak self, weak morph] in
+                if let morph, morph === self?.morph?.panel { self?.finishMorph() }
+            }
+            for (card, window) in cards {
+                let target = toBox.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY)
+                let changes: [(String, Any, Any)] = [("position", NSValue(point: card.position), NSValue(point: target.origin)),
+                                                     ("bounds.size", NSValue(size: card.bounds.size), NSValue(size: target.size)),
+                                                     ("cornerRadius", card.cornerRadius, appearance.cornerRadius)]
+                card.frame = target
+                card.cornerRadius = appearance.cornerRadius
+                for (keyPath, fromValue, toValue) in changes {
+                    let change = animation.layerAnimation(keyPath: keyPath)
+                    change.fromValue = fromValue
+                    change.toValue = toValue
+                    change.beginTime = start
+                    change.fillMode = .backwards
+                    card.add(change, forKey: keyPath)
+                }
+            }
+            for (view, opacity, delay, duration) in [(from.panel.contentView!, 0.0, 0.0, 0.4), (panel.contentView!, 1, 0.2, 0.6)] {
+                let change = CABasicAnimation(keyPath: "opacity")
+                change.fromValue = 1 - opacity
+                change.toValue = opacity
+                change.beginTime = start + animation.duration * delay
+                change.duration = animation.duration * duration
+                change.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                change.fillMode = .backwards
+                view.alphaValue = opacity
+                view.layer!.add(change, forKey: "opacity")
+            }
+            CATransaction.commit()
+            CATransaction.flush()
             return
         }
         panel.alphaValue = 0
@@ -415,11 +442,21 @@ final class WidgetPopup {
 
     private func finishMorph() {
         guard let morph else { return }
-        for window in [panel, shadowWindow].compactMap({ $0 }) { window.alphaValue = 1 }
+        backgrounds.hidden = false
+        if let panel {
+            panel.contentView!.layer!.mask = nil
+            panel.displayIfNeeded()
+        }
+        shadowWindow?.alphaValue = 1
+        CATransaction.flush()
+        panel?.hasShadow = true
         panel?.invalidateShadow()
         morph.link.invalidate()
-        morph.panel.close()
         self.morph = nil
+        Task { @MainActor in
+            morph.panel.close()
+            morph.from.close()
+        }
     }
 
     private func makeShadowWindow(behind panel: PopupPanel, appearance: WidgetAppearance, inset: CGFloat) -> NSPanel {
