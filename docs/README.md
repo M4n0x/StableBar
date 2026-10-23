@@ -15,6 +15,6 @@ StableBar reads one JSON configuration, by default `~/.config/stablebar/config.j
 | [Displays and layout](layout.md) | Notch placement, screen setups, overflow and groups |
 | [Packages and the store](packages.md) | Installing, reviewing, writing and publishing packages |
 | [Settings](settings.md) | Each section of the Settings window |
-| [Command-line controls](command-line.md) | Querying and editing the running bar, and sending events |
+| [Command-line controls](command-line.md) | Querying and editing the running bar, sending events, and triage with a coding agent |
 
 The [examples](../examples) folder holds working setups, and [stablebar.schema.json](../stablebar.schema.json) describes every configuration property.

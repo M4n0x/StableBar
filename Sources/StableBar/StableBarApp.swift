@@ -74,6 +74,8 @@ struct StableBarApp {
                     exit(0)
                 }
                 NSApplication.shared.run()
+            case let .triage(url, agent, model):
+                try Triage.run(configuration: url, agent: agent, model: model)
             case .help:
                 print(LaunchCommand.usage)
             case let .run(url):

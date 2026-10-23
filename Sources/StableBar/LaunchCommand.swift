@@ -10,6 +10,7 @@ enum LaunchCommand {
     case installFromStore(URL, String, String?)
     case buildSource(packages: URL, output: URL, previous: URL?, url: URL?, name: String?)
     case renderDocsImages(URL)
+    case triage(URL, agent: TriageAgent?, model: String?)
     case help
 
     static let configurationURL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/stablebar/config.json")
@@ -30,6 +31,7 @@ enum LaunchCommand {
            StableBar --build-source PACKAGES OUT [--previous FILE] [--url URL --name NAME]
            StableBar [--config PATH] --enable-package ID VERSION [--persist]
            StableBar [--config PATH] --uninstall-package ID VERSION
+           StableBar [--config PATH] triage [--agent claude|codex] [--model MODEL]
            StableBar --help
     """
 
@@ -110,6 +112,8 @@ enum LaunchCommand {
             self = targeted ? .control(url, RuntimeRequest(action: .reload)) : .reload
         case "--render-docs-images" where arguments.count == 2:
             self = .renderDocsImages(URL(filePath: (arguments[1] as NSString).expandingTildeInPath))
+        case "triage":
+            self = try Self.triage(url, Array(arguments.dropFirst()))
         case "--help" where arguments.count == 1:
             self = .help
         default:
@@ -120,6 +124,23 @@ enum LaunchCommand {
                 throw CommandFailure(message: "--persist requires a configuration edit.")
             }
         }
+    }
+
+    /// `--agent` and `--model`, each at most once, in any order.
+    private static func triage(_ url: URL, _ arguments: [String]) throws -> LaunchCommand {
+        var options: [String: String] = [:]
+        var rest = arguments[...]
+        while let flag = rest.popFirst() {
+            guard ["--agent", "--model"].contains(flag), options[flag] == nil, let value = rest.popFirst() else {
+                throw CommandFailure(message: Self.usage)
+            }
+            options[flag] = value
+        }
+        let agent = try options["--agent"].map { name in
+            guard let agent = TriageAgent(rawValue: name) else { throw CommandFailure(message: "--agent takes claude or codex.") }
+            return agent
+        }
+        return .triage(url, agent: agent, model: options["--model"])
     }
 
     /// `PACKAGES OUT`, then `--previous FILE`, `--url URL` and `--name NAME` in any order. A join link needs both `--url` and `--name`.
