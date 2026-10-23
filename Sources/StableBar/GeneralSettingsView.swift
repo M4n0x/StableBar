@@ -33,6 +33,17 @@ struct GeneralSettingsView: View {
                                    hint: "macOS 26 and later")
                     }
                     .id(SettingsSearchResult.windows.id)
+                    SettingsGroup("Hover") {
+                        let bar = StyleFields(store: store, path: "bar",
+                            values: (try? store.effectiveDocument["bar"]?.decoded([String: ConfigurationValue].self)) ?? [:],
+                            set: { editor.change(ConfigurationEdit(action: .bar, properties: $0)) },
+                            unset: { editor.change(ConfigurationEdit(action: .unset, properties: ["bar": .object($0)])) })
+                        bar.number("Delay", "hoverDelay", default: 400, in: 0...2000, step: 50, unit: "ms",
+                                   hint: "Wait before tooltips, hover controls and hover popups open. Once one shows, the next widget's opens at once.")
+                        bar.toggle("Open hover controls inline", "inlineHoverControls", default: false,
+                                   hint: "Hovering a slider widget, such as Sound, widens it in the bar instead of opening a tooltip.")
+                    }
+                    .id(SettingsSearchResult.hover.id)
                     SettingsGroup("Workspaces") {
                         let source = store.configuration?.workspaceSource ?? .aerospace
                         SettingRow(title: "Workspace manager") {

@@ -508,12 +508,14 @@ struct BarSettings: Decodable, Sendable {
     var keepWindowsClear = false
     var keepNotificationsClear = false
     var menuBarRevealDelay = 0.0
+    var hoverDelay = 400.0
     var inset = 12.0
     var spacing = 8.0
     var background = BackgroundFill.color(HexColor(0x00000000))
     var motion = BarMotion.smooth
     var popupTransition: PopupTransition?
     var morphPopups = true
+    var inlineHoverControls = false
     var animationDuration: Double?
     var notchWidth: Double?
     var notchSpacing = 16.0
@@ -522,7 +524,7 @@ struct BarSettings: Decodable, Sendable {
     var glass = GlassSettings()
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case height, displayScale, offset, margin, keepWindowsClear, keepNotificationsClear, menuBarRevealDelay, inset, spacing, background, motion, popupTransition, morphPopups, animationDuration, notchWidth, notchSpacing, style, appearance, glass
+        case height, displayScale, offset, margin, keepWindowsClear, keepNotificationsClear, menuBarRevealDelay, hoverDelay, inset, spacing, background, motion, popupTransition, morphPopups, inlineHoverControls, animationDuration, notchWidth, notchSpacing, style, appearance, glass
     }
 
     init() {}
@@ -540,12 +542,14 @@ struct BarSettings: Decodable, Sendable {
         keepWindowsClear = try values.decodeIfPresent(Bool.self, forKey: .keepWindowsClear) ?? keepWindowsClear
         keepNotificationsClear = try values.decodeIfPresent(Bool.self, forKey: .keepNotificationsClear) ?? keepNotificationsClear
         menuBarRevealDelay = try values.decodeIfPresent(Double.self, forKey: .menuBarRevealDelay) ?? menuBarRevealDelay
+        hoverDelay = try values.decodeIfPresent(Double.self, forKey: .hoverDelay) ?? hoverDelay
         inset = try values.decodeIfPresent(Double.self, forKey: .inset) ?? inset
         spacing = try values.decodeIfPresent(Double.self, forKey: .spacing) ?? spacing
         background = try values.decodeIfPresent(BackgroundFill.self, forKey: .background) ?? background
         motion = try values.decodeIfPresent(BarMotion.self, forKey: .motion) ?? motion
         popupTransition = try values.decodeIfPresent(PopupTransition.self, forKey: .popupTransition)
         morphPopups = try values.decodeIfPresent(Bool.self, forKey: .morphPopups) ?? morphPopups
+        inlineHoverControls = try values.decodeIfPresent(Bool.self, forKey: .inlineHoverControls) ?? inlineHoverControls
         animationDuration = try values.decodeIfPresent(Double.self, forKey: .animationDuration)
         notchWidth = try values.decodeIfPresent(Double.self, forKey: .notchWidth)
         notchSpacing = try values.decodeIfPresent(Double.self, forKey: .notchSpacing) ?? notchSpacing

@@ -319,6 +319,10 @@ struct WidgetView: View {
         store.presentations[widget.id]?.style(on: screenKind) ?? ResolvedWidgetStyle(base: resolveStyle([defaults, widget.style]))
     }
 
+    private var inlineHoverControls: Bool { store.configuration?.bar.inlineHoverControls == true }
+
+    private var isSound: Bool { widget.layout == nil && store.configuration?.providerType(of: widget) == DataSourceType.audio.name }
+
     /// `tile` as a button for its click action, popup or link, or as it is while the bar is being
     /// edited, when it takes no clicks.
     @ViewBuilder private func clickable(_ tile: some View, output: ScriptOutput?) -> some View {
@@ -384,7 +388,7 @@ struct WidgetView: View {
         default: false
         }
         let tile = Group {
-            if let layout = widget.hoverLayout {
+            if let layout = widget.hoverLayout, inlineHoverControls {
                 HoverLayoutView(widget: widget, layout: layout, store: store, monitor: monitor,
                                 style: resolution.layoutStyle(configured: true, hovered: hovered, open: isOpen),
                                 hovered: hovered, motion: motion, runAction: blockAction) {
@@ -461,6 +465,11 @@ struct WidgetView: View {
                     store.popup.open(popup, widget: widget, defaults: popupDefaults.inheriting(defaults),
                                      store: store, anchor: popupAnchor, onHover: true)
                 }
+            } else if !inlineHoverControls, widget.hoverLayout != nil || (isSound && output?.values?["volume"] != nil) {
+                store.popup.hover(inside, store: store, anchor: popupAnchor) {
+                    store.popup.showControls(widget: widget, defaults: popupDefaults.inheriting(defaults), store: store,
+                                             anchor: popupAnchor) { style in hoverControls(style) }
+                }
             } else if widget.hoverLayout == nil, let tooltip, !tooltip.isEmpty {
                 store.popup.hover(inside, store: store, anchor: popupAnchor) {
                     store.popup.showTooltip(tooltip, widget: widget, defaults: popupDefaults.inheriting(defaults),
@@ -506,7 +515,7 @@ struct WidgetView: View {
             AppMenuView(appMenu: store.appMenu, items: [store.appMenu.appleMenu].compactMap { $0 }, isAppleMenu: true,
                         appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
                         padding: padding, requestAccess: store.windowClearance.requestAccess)
-        case .provider where widget.layout == nil && store.configuration?.providerType(of: widget) == DataSourceType.audio.name:
+        case .provider where isSound && inlineHoverControls:
             SoundWidgetView(widget: widget, store: store, monitor: monitor,
                             style: resolution.layoutStyle(configured: false, hovered: hovered, open: open),
                             hovered: hovered, motion: motion, runAction: blockAction)
@@ -525,6 +534,20 @@ struct WidgetView: View {
         } else {
             content(.now)
         }
+    }
+
+    private func hoverControls(_ style: WidgetStyle) -> some View {
+        Group {
+            if let layout = widget.hoverLayout {
+                WidgetBlocks(widget: widget, store: store,
+                             style: LayoutStyle(inherited: style, states: resolution.blockStates(open: false), tracksHover: true),
+                             block: layout, motion: motion, runAction: blockAction)
+            } else {
+                VolumeSlider(widget: widget, store: store, appearance: WidgetAppearance(style, defaults: WidgetStyle()), width: 120)
+            }
+        }
+        .controlSize(.small)
+        .labelsHidden()
     }
 
     private func blocks(_ resolution: ResolvedWidgetStyle, open: Bool, date: Date) -> some View {

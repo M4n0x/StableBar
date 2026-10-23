@@ -156,7 +156,8 @@ private var presentationRepository: URL {
     hover(false)
     hover(true, 1)
     popup.hoverPopup(false)
-    try await waitForPopup { store.presentations["second"]?.popupAnchor != nil }
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(store.presentations["second"]?.popupAnchor != nil, "The next widget's popup opens without waiting again")
     #expect(popup.isOpen)
     #expect(store.presentations["first"]?.popupAnchor == nil)
     #expect(store.presentations["second"]?.popupAnchor == ObjectIdentifier(anchors[1]))
