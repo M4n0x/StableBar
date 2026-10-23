@@ -1,14 +1,23 @@
 import AppKit
 @preconcurrency import ApplicationServices
 import Observation
+import SwiftUI
 
 struct AppMenuItem: Hashable {
     let title: String
     let element: AXUIElement
 }
 
+struct AppMenuEntry {
+    let title: String
+    let element: AXUIElement
+    let isEnabled: Bool
+    let isChecked: Bool
+    let hasSubmenu: Bool
+}
+
 @MainActor @Observable
-final class AppMenu: NSObject, NSMenuDelegate {
+final class AppMenu: NSObject {
     private(set) var appleMenu: AppMenuItem?
     private(set) var items: [AppMenuItem] = []
     private(set) var isTrusted: Bool
@@ -16,8 +25,7 @@ final class AppMenu: NSObject, NSMenuDelegate {
     @ObservationIgnored private let readAttribute: @Sendable (String, AXUIElement) -> CFTypeRef?
     @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
     @ObservationIgnored private var app: NSRunningApplication?
-    @ObservationIgnored private var menus: [NSMenu: AXUIElement] = [:]
-    @ObservationIgnored private var nextTitle: Int?
+    @ObservationIgnored private var submenus: [PopupPanel] = []
     @ObservationIgnored private(set) var readTask: Task<Void, Never>?
 
     init(checkAccess: @escaping () -> Bool = { AXIsProcessTrusted() },
@@ -81,65 +89,69 @@ final class AppMenu: NSObject, NSMenuDelegate {
         read(app)
     }
 
-    func open(_ item: AppMenuItem, at location: NSPoint, in view: NSView?) {
+    func popup(for item: AppMenuItem) -> PopupConfiguration? {
         var pid: pid_t = 0
         AXUIElementGetPid(item.element, &pid)
-        guard pid == app?.processIdentifier else { return }
-        let menu = NSMenu()
-        menu.delegate = self
-        menus = [menu: item.element]
-        menu.popUp(positioning: nil, at: location, in: view)
-        menus = [:]
+        guard pid == app?.processIdentifier else { return nil }
+        return popup(entries(of: item.element))
     }
 
-    func open(_ index: Int, of items: [AppMenuItem], at anchors: [NSView], opened: (Int) -> Void) {
-        let window = anchors[index].window!
-        let frames = anchors.map { window.convertToScreen($0.convert($0.bounds, to: nil)) }
-        let top = popupAttachmentTop(anchor: frames[index], window: window.frame, geometry: (window as? BarPanel)?.barGeometry)
-        nextTitle = index
-        while let index = nextTitle {
-            nextTitle = nil
-            opened(index)
-            let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self, let title = frames.firstIndex(where: { $0.contains(NSEvent.mouseLocation) }), title != index else { return }
-                    self.nextTitle = title
-                    for menu in self.menus.keys { menu.cancelTrackingWithoutAnimation() }
-                }
-            }
-            RunLoop.main.add(timer, forMode: .eventTracking)
-            open(items[index], at: anchors[index].convert(window.convertPoint(fromScreen: NSPoint(x: frames[index].minX, y: top)), from: nil),
-                 in: anchors[index])
-            timer.invalidate()
+    private func popup(_ entries: [AppMenuEntry]) -> PopupConfiguration {
+        var popup = PopupConfiguration(style: WidgetStyle(paddingHorizontal: 5, paddingVertical: 5, spacing: 0, width: 260),
+                                       layout: PopupBlock(content: .appMenu(entries)))
+        popup.alignment = .leading
+        return popup
+    }
+
+    private func entries(of element: AXUIElement) -> [AppMenuEntry] {
+        guard let menu = children(of: element).first else { return [] }
+        return children(of: menu).map { child in
+            AppMenuEntry(title: attribute(kAXTitleAttribute, of: child) as? String ?? "", element: child,
+                         isEnabled: attribute(kAXEnabledAttribute, of: child) as? Bool == true,
+                         isChecked: attribute(kAXMenuItemMarkCharAttribute, of: child) as? String != nil,
+                         hasSubmenu: !children(of: child).isEmpty)
         }
     }
 
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        guard let element = menus[menu], let source = children(of: element).first else { return }
-        menu.removeAllItems()
-        menu.autoenablesItems = false
-        for child in children(of: source) {
-            guard let title = attribute(kAXTitleAttribute, of: child) as? String, !title.isEmpty else {
-                menu.addItem(.separator())
-                continue
-            }
-            let item = NSMenuItem(title: title, action: #selector(press), keyEquivalent: "")
-            item.target = self
-            item.representedObject = child
-            item.isEnabled = attribute(kAXEnabledAttribute, of: child) as? Bool == true
-            item.state = attribute(kAXMenuItemMarkCharAttribute, of: child) as? String == nil ? .off : .on
-            if !children(of: child).isEmpty {
-                let submenu = NSMenu()
-                submenu.delegate = self
-                menus[submenu] = child
-                item.submenu = submenu
-            }
-            menu.addItem(item)
-        }
+    func openSubmenu<Content: View>(_ element: AXUIElement?, beside row: NSView, content: (PopupConfiguration) -> Content) {
+        let window = row.window!
+        closeSubmenus(after: window)
+        guard let element else { return }
+        let popup = popup(entries(of: element))
+        let host = NSHostingView(rootView: content(popup).frame(width: popup.style.width!))
+        let frame = window.convertToScreen(row.convert(row.bounds, to: nil))
+        let screen = window.screen!.visibleFrame
+        let size = NSSize(width: popup.style.width!, height: min(host.fittingSize.height, screen.height - 16))
+        let gap = popup.style.paddingHorizontal! + 4
+        let x = frame.maxX + gap + size.width <= screen.maxX ? frame.maxX + gap : frame.minX - gap - size.width
+        let panel = PopupPanel(contentRect: NSRect(x: x, y: max(frame.maxY + popup.style.paddingVertical! - size.height, screen.minY + 8),
+                                                   width: size.width, height: size.height),
+                               styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.title = "App submenu"
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.animationBehavior = .none
+        panel.level = window.level
+        panel.collectionBehavior = window.collectionBehavior
+        panel.appearance = window.appearance
+        panel.contentView = host
+        (submenus.first?.parent ?? window).addChildWindow(panel, ordered: .above)
+        submenus.append(panel)
     }
 
-    @objc private func press(_ sender: NSMenuItem) {
-        let element = sender.representedObject as! AXUIElement
+    func closeSubmenus(after window: NSWindow?) {
+        let kept = submenus.firstIndex { $0 === window }.map { $0 + 1 } ?? 0
+        for panel in submenus[kept...] {
+            panel.parent?.removeChildWindow(panel)
+            panel.close()
+        }
+        submenus.removeSubrange(kept...)
+    }
+
+    func press(_ element: AXUIElement) {
         Task.detached { AXUIElementPerformAction(element, kAXPressAction as CFString) }
     }
 

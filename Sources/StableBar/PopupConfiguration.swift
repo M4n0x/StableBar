@@ -72,6 +72,8 @@ indirect enum PopupContent: Sendable {
     case appIcon
     /// The update on offer and its download button, drawn by the update tile's popup. Configurations can't use it.
     case appUpdate
+    /// An app's menu, drawn by an app menu widget's popup. Configurations can't use it.
+    case appMenu([AppMenuEntry])
     case essentials(EssentialsPopup, timeZone: String?)
 }
 
