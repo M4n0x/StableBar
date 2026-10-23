@@ -1,10 +1,27 @@
 const THEMES = [
   ["built-in", "Built-in", "ws-fill"],
   ["blueprint", "Blueprint", "ws-under"],
+  ["broadsheet", "Broadsheet", "ws-under"],
+  ["brutalist", "Brutalist", "ws-fill"],
+  ["catppuccin", "Catppuccin", "ws-fill"],
   ["everforest", "Everforest", "ws-under"],
-  ["leman", "Léman", "ws-tint"],
+  ["graphite", "Graphite", "ws-fill"],
+  ["gruvbox", "Gruvbox", "ws-text"],
+  ["handheld", "Handheld", "ws-fill"],
+  ["island", "Island", "ws-fill"],
+  ["kanagawa", "Kanagawa", "ws-fill"],
+  ["leman", "Léman", "ws-fill"],
+  ["menu-bar", "Menu Bar", "ws-fill"],
+  ["minimal", "Minimal", "ws-fill"],
+  ["nord", "Nord", "ws-under"],
   ["notch", "Notch", "ws-text"],
+  ["paper", "Paper", "ws-fill"],
+  ["phosphor", "Phosphor", "ws-fill"],
+  ["platinum", "Platinum", "ws-fill"],
   ["rose-pine", "Rosé Pine", "ws-fill"],
+  ["slate", "Slate", "ws-fill"],
+  ["synthwave", "Synthwave", "ws-under"],
+  ["terminal", "Terminal", "ws-fill"],
 ];
 const desk = document.getElementById("desk");
 const dock = document.getElementById("dock");
@@ -12,10 +29,22 @@ const bar = document.getElementById("bar");
 const gl = document.getElementById("gl");
 const gr = document.getElementById("gr");
 const more = bar.querySelector(".more");
-const menu = document.getElementById("pop-more");
+const pop = document.getElementById("pop");
+const panes = [...pop.querySelectorAll(".pane")];
+const menu = pop.querySelector('[data-id="more"]');
 const reduce = matchMedia("(prefers-reduced-motion: reduce)");
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 let openId = null;
+
+/* Now playing: the track moves on while it plays */
+const track = { at: 87, length: 243, playing: true };
+const trackAt = document.getElementById("np-at");
+const trackBar = document.getElementById("np-bar");
+document.getElementById("np-play").addEventListener("click", e => {
+  track.playing = !track.playing;
+  dock.classList.toggle("paused", !track.playing);
+  e.currentTarget.setAttribute("aria-label", track.playing ? "Pause" : "Play");
+});
 
 /* Clocks show the visitor's real time */
 function tick() {
@@ -23,10 +52,13 @@ function tick() {
   const hm = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   const day = `${d.toLocaleDateString("en-GB", { weekday: "short" })} ${d.getDate()} ${d.toLocaleDateString("en-GB", { month: "short" })}`;
   for (const c of document.querySelectorAll(".clock")) {
-    if (c.dataset.format === "full") c.innerHTML = `${day}&nbsp;&nbsp;${hm}`;
+    if (c.dataset.format === "full") c.innerHTML = `<span class="day">${day}&nbsp;&nbsp;</span>${hm}`;
     else if (c.dataset.format === "seconds") c.textContent = d.toLocaleTimeString("en-GB");
     else c.textContent = hm;
   }
+  if (track.playing) track.at = (track.at + 1) % track.length;
+  trackAt.textContent = `${Math.floor(track.at / 60)}:${String(track.at % 60).padStart(2, "0")}`;
+  trackBar.style.width = `${track.at / track.length * 100}%`;
 }
 tick();
 setInterval(tick, 1000);
@@ -38,11 +70,18 @@ function mini() {
     <div class="g"><span class="t"><svg style="width:17px;height:14px"><use href="#i-bat"/></svg>82%</span><span class="t num">9:41</span></div></div>`;
 }
 const cards = document.getElementById("cards");
-const board = document.getElementById("board");
+const store = document.querySelector("#board .store");
 for (const [id, name, ws] of THEMES) {
-  cards.insertAdjacentHTML("beforeend", `<button class="card" data-theme-pick="${id}"><div class="shot ${ws}" data-theme="${id}">${mini()}</div><div class="nm">${name}<svg viewBox="0 0 12 12"><use href="#p-check"/></svg></div></button>`);
-  board.insertAdjacentHTML("beforeend", `<button class="trow" data-theme-pick="${id}"><span class="name"><i></i>${name}</span><div class="sample ${ws}" data-theme="${id}">${mini()}</div></button>`);
+  const card = `<button class="card" data-theme-pick="${id}"><div class="shot ${ws}" data-theme="${id}">${mini()}</div><div class="nm">${name}<svg viewBox="0 0 12 12"><use href="#p-check"/></svg></div></button>`;
+  cards.insertAdjacentHTML("beforeend", card);
+  store.insertAdjacentHTML("beforebegin", card);
 }
+const showAll = document.getElementById("show-all");
+showAll.textContent = `Show all ${THEMES.length} themes`;
+showAll.addEventListener("click", () => {
+  document.getElementById("board").classList.add("all");
+  showAll.remove();
+});
 
 function setTheme(id) {
   desk.dataset.theme = id;
@@ -78,6 +117,7 @@ function fit() {
     b.classList.toggle("over-off", !bar.querySelector(`[data-key="${b.dataset.for}"]`).classList.contains("over"));
   }
   place();
+  slide();
 }
 
 /* Popups open below their widget, or from More widgets when the widget is hidden */
@@ -87,35 +127,52 @@ function anchorFor(id) {
   return w.classList.contains("over") ? more : w;
 }
 function place() {
+  if (!openId) return;
+  const pane = panes.find(p => p.dataset.id === openId);
   const dr = dock.getBoundingClientRect();
-  for (const id of ["more", "agenda", "system", "controls"]) {
-    const pop = document.getElementById(`pop-${id}`);
-    const a = anchorFor(id).getBoundingClientRect();
-    let left = a.left - dr.left + a.width / 2 - pop.offsetWidth / 2;
-    if (id !== "more" && anchorFor(id) === more) left = a.right - dr.left - pop.offsetWidth;
-    pop.style.left = `${clamp(left, 8, dr.width - pop.offsetWidth - 8)}px`;
-    pop.style.top = `${a.bottom - dr.top + 8}px`;
-  }
+  const a = anchorFor(openId).getBoundingClientRect();
+  let left = a.left - dr.left + a.width / 2 - pane.offsetWidth / 2;
+  if (openId !== "more" && anchorFor(openId) === more) left = a.right - dr.left - pane.offsetWidth;
+  pop.style.left = `${clamp(left, 8, dr.width - pane.offsetWidth - 8)}px`;
+  pop.style.top = `${a.bottom - dr.top + 8}px`;
+  pop.style.width = `${pane.offsetWidth}px`;
+  pop.style.height = `${pane.offsetHeight}px`;
 }
+/* Opening another widget's popup morphs the open one into it, as the app does */
 function open(id) {
+  const from = openId;
   openId = openId === id ? null : id;
-  for (const p of dock.querySelectorAll(":scope > .pop")) p.classList.toggle("open", p.id === `pop-${openId}`);
+  pop.classList.toggle("morph", Boolean(from && openId));
+  pop.classList.toggle("open", Boolean(openId));
+  for (const p of panes) p.classList.toggle("on", p.dataset.id === openId);
   for (const w of bar.querySelectorAll("[data-pop]")) w.classList.toggle("open", w.dataset.pop === openId || (openId && anchorFor(openId) === w));
   place();
 }
-for (const w of bar.querySelectorAll("[data-pop]")) w.addEventListener("click", e => { e.stopPropagation(); open(w.dataset.pop); });
+for (const w of bar.querySelectorAll("[data-pop]")) w.addEventListener("click", e => {
+  if (e.target.closest("a")) return;
+  e.stopPropagation();
+  open(w.dataset.pop);
+});
 for (const b of menu.querySelectorAll("[data-open]")) b.addEventListener("click", e => { e.stopPropagation(); open(b.dataset.open); });
-document.addEventListener("click", e => { if (openId && !e.target.closest(".pop, .win, .trow, .w")) open(openId); });
+document.addEventListener("click", e => { if (openId && !e.target.closest(".pop, .win, .card, .w")) open(openId); });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && openId) open(openId); });
 
-/* Workspaces and app menus */
+/* Workspaces: the focus highlight slides to the one you click, as on the real bar */
+const ind = bar.querySelector(".ind");
+function slide() {
+  const on = bar.querySelector(".wsi.on");
+  ind.style.setProperty("--x", `${on.offsetLeft}px`);
+  ind.style.setProperty("--w", `${on.offsetWidth}px`);
+}
 for (const el of bar.querySelectorAll(".wsi")) el.addEventListener("click", () => {
   bar.querySelectorAll(".wsi").forEach(e => e.classList.toggle("on", e === el));
+  slide();
 });
+
+/* The app's menus open on hover when the bar has room for them */
 const finder = bar.querySelector(".finder");
 finder.addEventListener("mouseenter", () => {
-  finder.classList.add("expand");
-  if (needed() > bar.clientWidth) finder.classList.remove("expand");
+  if (needed() + finder.querySelector(".menus > span").scrollWidth <= bar.clientWidth) finder.classList.add("expand");
   setTimeout(place, 320);
 });
 finder.addEventListener("mouseleave", () => { finder.classList.remove("expand"); setTimeout(place, 320); });
@@ -127,6 +184,7 @@ for (const seg of document.querySelectorAll(".seg")) for (const b of seg.querySe
 for (const s of document.querySelectorAll(".search")) s.addEventListener("input", () => {
   const q = s.value.toLowerCase();
   s.nextElementSibling.querySelectorAll("div").forEach(d => d.hidden = !d.textContent.toLowerCase().includes(q));
+  place();
 });
 
 /* The terminal runs its commands against the bar */
@@ -162,22 +220,15 @@ function dockState() {
   setTimeout(fit, 450);
 }
 
-/* Windows drift a little while scrolling */
-const layers = [...desk.querySelectorAll(".layer")];
-function drift() {
-  if (reduce.matches) return;
-  const r = desk.getBoundingClientRect();
-  const offset = r.top + r.height / 2 - innerHeight / 2;
-  for (const el of layers) el.style.setProperty("--drift", `${clamp(offset * -el.dataset.depth, -36, 36)}px`);
-}
 let queued = false;
 addEventListener("scroll", () => {
   if (queued) return;
   queued = true;
-  requestAnimationFrame(() => { queued = false; drift(); dockState(); });
+  requestAnimationFrame(() => { queued = false; dockState(); });
 }, { passive: true });
 
 /* Drag a window by its title bar. It leans into the motion and glides when let go. */
+const layers = [...desk.querySelectorAll(".layer")];
 const px = (el, name) => parseFloat(el.style.getPropertyValue(name)) || 0;
 function bounds(layer) {
   return {
@@ -282,16 +333,13 @@ ico.addEventListener("pointerup", e => {
 });
 ico.addEventListener("pointercancel", () => { grab = null; ico.classList.remove("dragging"); ico.style.transform = ""; });
 
-/* Sections ease in as they scroll into view: selector and delay */
+/* The product pictures ease in as they scroll into view */
 const io = new IntersectionObserver(entries => {
   for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
 }, { rootMargin: "0px 0px -10% 0px" });
-for (const [sel, delay] of [[".stop h2", 0], [".stop .body", .06], [".stop .fig, .setup", .12], [".install .copy", 0], [".dmg", .12]]) {
-  for (const el of document.querySelectorAll(sel)) {
-    el.classList.add("reveal");
-    el.style.setProperty("--d", `${delay}s`);
-    io.observe(el);
-  }
+for (const el of document.querySelectorAll(".pops, .board, .scripts, .setup, .install .desktop")) {
+  el.classList.add("reveal");
+  io.observe(el);
 }
 
 /* Light and dark: starts from the system setting, remembers the visitor's choice */
@@ -308,11 +356,10 @@ document.getElementById("mode").addEventListener("click", () => {
   else setMode(mode);
 });
 
-addEventListener("resize", () => { fit(); drift(); dockState(); });
+addEventListener("resize", () => { fit(); dockState(); });
 document.fonts.ready.then(fit);
 setTheme("built-in");
 fit();
-drift();
 dockState();
 
 /* Arrival: the headline settles, the bar's widgets come in from the left, then the windows and the agenda */
