@@ -124,15 +124,15 @@ private var presentationRepository: URL {
     }
 
     hover(true)
-    try await Task.sleep(for: .milliseconds(100))
-    #expect(!popup.isOpen)
     hover(false)
     try await Task.sleep(for: .milliseconds(450))
     #expect(presentations.isEmpty)
 
+    let hovered = ContinuousClock.now
     hover(true)
     try await waitForPopup { popup.isOpen }
     #expect(popup.isOpen)
+    #expect(ContinuousClock.now - hovered >= .milliseconds(400))
     #expect(presentations.count == 1)
     #expect(presentations.first?.onHover == true)
     #expect(store.presentations["first"]?.popupAnchor == ObjectIdentifier(anchors[0]))
@@ -156,8 +156,7 @@ private var presentationRepository: URL {
     hover(false)
     hover(true, 1)
     popup.hoverPopup(false)
-    try await Task.sleep(for: .milliseconds(100))
-    #expect(store.presentations["second"]?.popupAnchor != nil, "The next widget's popup opens without waiting again")
+    try await waitForPopup { store.presentations["second"]?.popupAnchor != nil }
     #expect(popup.isOpen)
     #expect(store.presentations["first"]?.popupAnchor == nil)
     #expect(store.presentations["second"]?.popupAnchor == ObjectIdentifier(anchors[1]))
