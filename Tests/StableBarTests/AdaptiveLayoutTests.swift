@@ -144,7 +144,7 @@ func menuBarDelayReleasesAStationaryPointerAfterTheFullWait(milliseconds: Double
     #expect(firstBanner(in: 0, kind: { panelKinds[$0] ?? .other }, children: { panel[$0] ?? [] }) == nil)
 }
 
-@Test func notificationClearanceLooksAtEachAccessibilityElementOnce() {
+@Test func notificationClearanceLooksAtEachAccessibilityElementOnceAndStopsAnEndlessTree() {
     let cyclic = [0: [1, 2], 1: [0, 2], 2: [0, 1]]
     var looked: [Int] = []
     var expansions = 0
@@ -154,17 +154,14 @@ func menuBarDelayReleasesAStationaryPointerAfterTheFullWait(milliseconds: Double
     })
     #expect(banner == nil)
     #expect(looked == [0, 1, 2])
-}
-
-@Test func notificationClearanceStopsSearchingAnEndlessAccessibilityTree() {
-    var looked = 0
-    var expansions = 0
-    let banner = firstBanner(in: 0, limit: 50, kind: { _ in looked += 1; return .other }, children: {
+    var lookedInEndless = 0
+    expansions = 0
+    let endless = firstBanner(in: 0, limit: 50, kind: { _ in lookedInEndless += 1; return .other }, children: {
         expansions += 1
         return expansions > 1_000 ? [] : [$0 * 2 + 1, $0 * 2 + 2]
     })
-    #expect(banner == nil)
-    #expect(looked == 50)
+    #expect(endless == nil)
+    #expect(lookedInEndless == 50)
 }
 
 @Test func adaptiveLayoutKeepsHighPriorityWidgetsAndReservesOverflowSpace() {
@@ -263,29 +260,7 @@ func menuBarDelayReleasesAStationaryPointerAfterTheFullWait(milliseconds: Double
     #expect(searchPopupRows(rows, query: "PLAYER", fields: nil) == [rows[0], rows[2]])
 }
 
-@Test func inheritedWidthConstraintsAreCheckedAfterWidgetOverrides() throws {
-    let data = Data(#"""
-    {"defaults":{"minWidth":200},"widgets":[
-      {"id":"title","type":"text","text":"Title","position":"left","style":{"maxWidth":100}}
-    ]}
-    """#.utf8)
-    #expect(throws: CommandFailure.self) { try JSONDecoder().decode(Configuration.self, from: data) }
-    let overridden = Data(#"""
-    {"defaults":{"minWidth":200},"widgets":[
-      {"id":"title","type":"text","text":"Title","position":"left","style":{"minWidth":80,"maxWidth":100}}
-    ]}
-    """#.utf8)
-    let config = try JSONDecoder().decode(Configuration.self, from: overridden)
-    #expect(config.widgets[0].style.inheriting(config.defaults).minWidth == 80)
-    let negative = Data(#"""
-    {"defaults":{"maxWidth":-1},"widgets":[
-      {"id":"title","type":"text","text":"Title","position":"left"}
-    ]}
-    """#.utf8)
-    #expect(throws: CommandFailure.self) { try JSONDecoder().decode(Configuration.self, from: negative) }
-}
-
-@Test func widthConstraintsInsideStatesAreCheckedOverTheBaseStyle() throws {
+@Test func inheritedAndStateWidthConstraintsAreCheckedOverTheWidgetsOwnStyle() throws {
     func decode(defaults: String = "{}", style: String) throws -> Configuration {
         try JSONDecoder().decode(Configuration.self, from: Data(#"""
         {"defaults":\#(defaults),"widgets":[{"id":"title","type":"text","text":"Title","position":"left","style":\#(style)}]}
@@ -297,11 +272,15 @@ func menuBarDelayReleasesAStationaryPointerAfterTheFullWait(milliseconds: Double
         ("{}", #"{"minWidth":100,"states":{"warning":{"maxWidth":40}}}"#, order),
         (#"{"states":{"hover":{"maxWidth":40}}}"#, #"{"minWidth":100}"#, order),
         ("{}", #"{"states":{"hover":{"minWidth":-5}}}"#, "minWidth must be nonnegative."),
-        ("{}", #"{"states":{"open":{"maxWidth":-1}}}"#, "maxWidth must be nonnegative.")
+        ("{}", #"{"states":{"open":{"maxWidth":-1}}}"#, "maxWidth must be nonnegative."),
+        (#"{"minWidth":200}"#, #"{"maxWidth":100}"#, order),
+        (#"{"maxWidth":-1}"#, "{}", "maxWidth must be nonnegative.")
     ] {
         let error = #expect(throws: CommandFailure.self) { try decode(defaults: defaults, style: style) }
         #expect(error?.message == message, "\(style)")
     }
     let valid = try decode(style: #"{"minWidth":50,"maxWidth":100,"states":{"hover":{"minWidth":60,"maxWidth":90},"warning":{"maxWidth":70}}}"#)
     #expect(valid.widgets[0].style.states?["hover"]?.minWidth == 60)
+    let overridden = try decode(defaults: #"{"minWidth":200}"#, style: #"{"minWidth":80,"maxWidth":100}"#)
+    #expect(overridden.widgets[0].style.inheriting(overridden.defaults).minWidth == 80)
 }

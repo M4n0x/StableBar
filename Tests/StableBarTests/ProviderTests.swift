@@ -231,7 +231,7 @@ private func provider(_ command: String, type: String = "stream", interval: Doub
     #expect(counters[3]?.sent == 2_000)
 }
 
-@Test func meetingPhasesChangeAtTheirLeadTimesAndUpdatesLandOnTheBoundaries() {
+@Test func meetingPhasesChangeAtTheirLeadTimesAndTheCountdownShrinksBeforeAndDuringTheMeeting() {
     let start = Date(timeIntervalSinceReferenceDate: 3_600)
     let end = start.addingTimeInterval(1_800)
     let countdown = { (offset: Double) in meetingCountdown(start: start, end: end, at: start.addingTimeInterval(offset), soon: 15, now: 5) }
@@ -241,12 +241,6 @@ private func provider(_ command: String, type: String = "stream", interval: Doub
     #expect(countdown(-600).delay == 60)
     #expect(countdown(1_790).minutes == 1)
     #expect(countdown(1_790).delay == 10)
-}
-
-@Test func meetingCountdownShrinksBeforeTheStartAndDuringTheMeeting() {
-    let start = Date(timeIntervalSinceReferenceDate: 3_600)
-    let end = start.addingTimeInterval(1_800)
-    let countdown = { (offset: Double) in meetingCountdown(start: start, end: end, at: start.addingTimeInterval(offset), soon: 15, now: 5) }
     #expect(countdown(-3_600).remaining == 1)
     #expect(countdown(-3_600).target == 1)
     #expect(countdown(-600).remaining == 600.0 / 900)

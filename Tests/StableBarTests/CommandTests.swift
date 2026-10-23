@@ -230,16 +230,11 @@ func stoppedCommandCannotEscapeByChangingItsProcessGroup(timeout: Bool) async th
     #expect(plainPrevious == nil && plainURL == nil && plainName == nil)
 }
 
-@Test func buildSourceNeedsBothURLAndNameOrNeither() {
-    #expect(throws: CommandFailure.self) {
-        try LaunchCommand(arguments: ["--build-source", "p", "o", "--url", "https://example.com/index.json"])
-    }
-    #expect(throws: CommandFailure.self) { try LaunchCommand(arguments: ["--build-source", "p", "o", "--name", "Acme"]) }
-}
-
-@Test func buildSourceRefusesBadFlagsAndURLs() {
+@Test func buildSourceRefusesBadFlagsAndURLsAndAURLOrNameAlone() {
     for arguments in [
         ["--build-source", "p"],
+        ["--build-source", "p", "o", "--url", "https://example.com/index.json"],
+        ["--build-source", "p", "o", "--name", "Acme"],
         ["--build-source", "p", "o", "--previous"],
         ["--build-source", "p", "o", "--other", "x"],
         ["--build-source", "p", "o", "--previous", "a", "--previous", "b"],

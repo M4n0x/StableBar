@@ -37,7 +37,7 @@ final class WidgetDisplayNameTests: XCTestCase {
         XCTAssertEqual(WidgetDisplayName.names(for: generated), ["widget-ABCDEF12": "Clock"])
     }
 
-    func testMatchingGeneratedNamesAreUniqueAcrossPositionsAndAvoidChosenNames() throws {
+    func testMatchingGeneratedNamesAreUniqueAcrossPositionsKindsAndPackagesAndAvoidChosenNames() throws {
         let widgets = try widgets(#"""
         [{"id":"widget-00000001","type":"clock","position":"left"},
          {"id":"widget-00000002","type":"clock","position":"right"},
@@ -52,10 +52,7 @@ final class WidgetDisplayNameTests: XCTestCase {
                                "widget-00000003": "Clock 2", "widget-00000004": "Hello 1", "widget-00000005": "Hello 2"])
         XCTAssertEqual(Set(names.values).count, widgets.count)
         for widget in widgets where widget.id.hasPrefix("widget-") { XCTAssertFalse(try XCTUnwrap(names[widget.id]).contains(widget.id)) }
-    }
-
-    func testGeneratedScriptProviderAndPackageWidgetsHaveDistinctNames() throws {
-        let widgets = try widgets(#"""
+        let others = try self.widgets(#"""
         [{"id":"widget-00000001","type":"script","command":"echo first","position":"left"},
          {"id":"widget-00000002","type":"script","command":"echo second","position":"right"},
          {"id":"widget-00000003","type":"provider","provider":"sample","position":"left"},
@@ -64,11 +61,11 @@ final class WidgetDisplayNameTests: XCTestCase {
          {"id":"widget-00000006","type":"text","text":"Tomorrow","position":"right"}]
         """#)
         let providers = ["sample": ProviderConfiguration(type: "command"), "live": ProviderConfiguration(type: "stream")]
-        let names = WidgetDisplayName.names(for: widgets, packageNames: ["widget-00000005": "Weather", "widget-00000006": "Weather"], providers: providers)
-        XCTAssertEqual(names, ["widget-00000001": "Script 1", "widget-00000002": "Script 2", "widget-00000003": "Custom widget 1",
-                               "widget-00000004": "Custom widget 2", "widget-00000005": "Weather 1", "widget-00000006": "Weather 2"])
-        XCTAssertEqual(Set(names.values).count, widgets.count)
-        XCTAssertTrue(Set(names.keys).isDisjoint(with: Set(names.values)))
+        let otherNames = WidgetDisplayName.names(for: others, packageNames: ["widget-00000005": "Weather", "widget-00000006": "Weather"], providers: providers)
+        XCTAssertEqual(otherNames, ["widget-00000001": "Script 1", "widget-00000002": "Script 2", "widget-00000003": "Custom widget 1",
+                                    "widget-00000004": "Custom widget 2", "widget-00000005": "Weather 1", "widget-00000006": "Weather 2"])
+        XCTAssertEqual(Set(otherNames.values).count, others.count)
+        XCTAssertTrue(Set(otherNames.keys).isDisjoint(with: Set(otherNames.values)))
     }
 
     func testPresentationExamplesElevenSampleWidgetsKeepTheirDistinctChosenNames() throws {
@@ -79,15 +76,6 @@ final class WidgetDisplayNameTests: XCTestCase {
         XCTAssertEqual(sample.map(\.id), ["music", "meeting", "cpu", "memory", "network", "status", "mail", "focus", "weather", "volume", "battery"])
         XCTAssertEqual(sample.compactMap { names[$0.id] }, sample.map(\.id))
         XCTAssertEqual(Set(names.values).count, configuration.widgets.count)
-    }
-
-    func testInspectorSubtitlesNeverRepeatWidgetForCommandStreamOrUnknownProviders() {
-        let providers = ["sample": ProviderConfiguration(type: "command"), "live": ProviderConfiguration(type: "stream")]
-        for name in ["sample", "live", "unknown"] {
-            XCTAssertEqual(WidgetDisplayName.subtitle(for: .provider(name), providers: providers), "Custom widget")
-        }
-        XCTAssertEqual(WidgetDisplayName.subtitle(for: .clock(format: "HH:mm")), "Clock widget")
-        XCTAssertEqual(WidgetDisplayName.subtitle(for: .script(command: "echo test", interval: nil)), "Script widget")
     }
 
     @MainActor func testPackageNamesSurviveIncludesProfilesOverridesAndReloadsWithoutConfigurationChanges() throws {

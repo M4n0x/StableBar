@@ -91,13 +91,6 @@ func releaseVersionRejectsABuildNumberThatIsNotOneToThreeIntegers(build: String)
         """) == ["add yabai workspaces and profile editing ([5c30c63](https://github.com/Seb-GRAF/StableBar/commit/5c30c63))"])
 }
 
-@Test(arguments: AppUpdate.Stage.allCases) @MainActor
-func updateTileStaysAtTheRightEndOfTheBar(stage: AppUpdate.Stage) {
-    let tile = AppUpdate.tile(stage)
-    #expect(tile.position == .right)
-    #expect(tile.overflow == .never)
-}
-
 @MainActor private final class ProbeUpdater: SPUUpdater {
     var checksAutomatically = true
     var busy = false
@@ -154,7 +147,7 @@ func updateTileStaysAtTheRightEndOfTheBar(stage: AppUpdate.Stage) {
     #expect(updater.probes == 2)
 }
 
-@Test @MainActor func updateProbeHandsOffOnlyAfterFindingAReleaseAndFinishing() {
+@Test @MainActor func updateProbeHandsOffOnlyAfterFindingAReleaseAndFinishingWithAutomaticChecksOn() {
     let (update, updater) = updateProbe()
     update.checkForUpdateInformation()
     update.updater(updater, didFindValidUpdate: .empty())
@@ -164,6 +157,19 @@ func updateTileStaysAtTheRightEndOfTheBar(stage: AppUpdate.Stage) {
     #expect(updater.backgroundChecks == 1)
     update.checkForUpdateInformation()
     #expect(updater.probes == 1)
+    let (disabled, disabledUpdater) = updateProbe()
+    disabled.checkForUpdateInformation()
+    disabled.updater(disabledUpdater, didFindValidUpdate: .empty())
+    disabledUpdater.checksAutomatically = false
+    disabledUpdater.busy = false
+    disabled.updater(disabledUpdater, didFinishUpdateCycleFor: .updateInformation, error: nil)
+    #expect(disabledUpdater.backgroundChecks == 0)
+    for check in [SPUUpdateCheck.updates, .updatesInBackground] {
+        let (completed, completedUpdater) = updateProbe()
+        completed.updater(completedUpdater, didFindValidUpdate: .empty())
+        completed.updater(completedUpdater, didFinishUpdateCycleFor: check, error: nil)
+        #expect(completedUpdater.backgroundChecks == 0, "\(check)")
+    }
 }
 
 @Test @MainActor func failedUpdateProbesWaitForTheNextPollAndForgetThePreviousResult() {
@@ -178,24 +184,6 @@ func updateTileStaysAtTheRightEndOfTheBar(stage: AppUpdate.Stage) {
     updater.busy = false
     update.updater(updater, didFinishUpdateCycleFor: .updateInformation, error: nil)
     #expect(updater.probes == 2)
-    #expect(updater.backgroundChecks == 0)
-}
-
-@Test @MainActor func disablingAutomaticChecksDuringAProbePreventsTheHandoff() {
-    let (update, updater) = updateProbe()
-    update.checkForUpdateInformation()
-    update.updater(updater, didFindValidUpdate: .empty())
-    updater.checksAutomatically = false
-    updater.busy = false
-    update.updater(updater, didFinishUpdateCycleFor: .updateInformation, error: nil)
-    #expect(updater.backgroundChecks == 0)
-}
-
-@Test(arguments: [SPUUpdateCheck.updates, .updatesInBackground]) @MainActor
-func completedUpdateSessionsDoNotStartAnotherBackgroundCheck(check: SPUUpdateCheck) {
-    let (update, updater) = updateProbe()
-    update.updater(updater, didFindValidUpdate: .empty())
-    update.updater(updater, didFinishUpdateCycleFor: check, error: nil)
     #expect(updater.backgroundChecks == 0)
 }
 

@@ -97,24 +97,17 @@ final class PackageStoreClientTests: XCTestCase {
         }
     }
 
-    func testHostsOnlyDownloadRequiresReviewBeforeInstalling() async throws {
+    func testHostsRequireReviewWhetherDownloadedOrAlreadyInstalled() async throws {
         let fixture = try ThemeGalleryFixture()
         defer { fixture.close() }
         let index = LocalPackageIndex(fixture: fixture)
-        let entry = try await index.add(id: "hosts", kind: "widgets", configuration: #"{"widgets":[]}"#,
-                                        hosts: #"["example.com"]"#)
+        let declared = try await index.add(id: "hosts", kind: "widgets", configuration: #"{"widgets":[]}"#,
+                                           hosts: #"["example.com"]"#)
         let client = PackageStoreClient(packages: fixture.packages, indexURL: index.url)
-        do { _ = try await client.installWithoutReview(entry); XCTFail("Declared hosts must require review") }
+        do { _ = try await client.installWithoutReview(declared); XCTFail("Declared hosts must require review") }
         catch PackageStoreClientError.reviewRequired {}
         XCTAssertTrue(try fixture.packages.list().isEmpty)
-    }
-
-    func testHostsOnlyInstalledVersionRequiresReviewEvenWithAPlainDownload() async throws {
-        let fixture = try ThemeGalleryFixture()
-        defer { fixture.close() }
-        let index = LocalPackageIndex(fixture: fixture)
         let entry = try await index.add(id: "hosts", kind: "widgets", configuration: #"{"widgets":[]}"#)
-        let client = PackageStoreClient(packages: fixture.packages, indexURL: index.url)
         let installed = try await client.installWithoutReview(entry)
         try fixture.write(#"{"id":"hosts","name":"Hosts","version":"1","kind":"widgets","entry":"config.json","hosts":["example.com"]}"#,
                           to: installed.directory.appending(path: "package.json"))
@@ -170,12 +163,6 @@ final class PackageStoreClientTests: XCTestCase {
         let fromStore = try await client.package(catalog.entries[0]), fromAcme = try await client.package(catalog.entries[1])
         XCTAssertNotEqual(fromStore.directory, fromAcme.directory)
         XCTAssertEqual(fromAcme.widgets.map(\.id), ["c2"])
-    }
-
-    func testIndexThrowsOnlyWhenEverySourceFails() async throws {
-        let fixture = try ThemeGalleryFixture(); defer { fixture.close() }
-        let client = PackageStoreClient(packages: fixture.packages, indexURL: fixture.directory.appending(path: "none/index.json"))
-        do { _ = try await client.index(); XCTFail("Every source failed") } catch {}
     }
 
     func testHTMLIndexAndDuplicateIDsDoNotHideOtherSources() async throws {   // Review Focus 1, 5

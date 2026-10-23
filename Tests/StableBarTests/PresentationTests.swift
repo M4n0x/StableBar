@@ -255,52 +255,30 @@ private func output(_ json: String) throws -> ScriptOutput {
     #expect(first.style.state == nil)
 }
 
-@Test @MainActor func snapshotsReportTheDataState() async throws {
+@Test(arguments: [("warning", ConfigurationValue.string("warning")), ("", .null)])
+@MainActor func snapshotsReportTheDataStateAndNoStateForAnEmptyOne(state: String, reported: ConfigurationValue) async throws {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let url = directory.appending(path: "config.json")
     try Data(#"""
     {"widgets":[{"id":"power","type":"script","position":"right","interval":null,
-      "command":"printf '{\"text\":\"Low\",\"state\":\"warning\"}'"}]}
+      "command":"printf '{\"text\":\"Low\",\"state\":\"\#(state)\"}'"}]}
     """#.utf8).write(to: url)
     let store = BarStore(configurationURL: url)
     defer { store.stop() }
     store.reloadConfiguration()
     for _ in 0..<100 {
-        if store.presentations["power"]?.style.state == "warning" { break }
+        if store.scripts["power"]?.output.text == "Low" { break }
         try await Task.sleep(for: .milliseconds(20))
     }
+    #expect(store.scripts["power"]?.output.text == "Low")
+    #expect(store.presentations["power"]?.style.state == (state.isEmpty ? nil : state))
     guard case let .object(snapshot) = try store.snapshot(id: "power") else {
         Issue.record("Expected an object snapshot")
         return
     }
-    #expect(snapshot["state"] == .string("warning"))
-}
-
-@Test @MainActor func snapshotsReportNoStateForAnEmptyOutputState() async throws {
-    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let url = directory.appending(path: "config.json")
-    try Data(#"""
-    {"widgets":[{"id":"power","type":"script","position":"right","interval":null,
-      "command":"printf '{\"text\":\"Idle\",\"state\":\"\"}'"}]}
-    """#.utf8).write(to: url)
-    let store = BarStore(configurationURL: url)
-    defer { store.stop() }
-    store.reloadConfiguration()
-    for _ in 0..<100 {
-        if store.scripts["power"]?.output.text == "Idle" { break }
-        try await Task.sleep(for: .milliseconds(20))
-    }
-    #expect(store.scripts["power"]?.output.text == "Idle")
-    #expect(store.presentations["power"]?.style.state == nil)
-    guard case let .object(snapshot) = try store.snapshot(id: "power") else {
-        Issue.record("Expected an object snapshot")
-        return
-    }
-    #expect(snapshot["state"] == .null)
+    #expect(snapshot["state"] == reported)
 }
 
 @Test @MainActor func rulesRunWhenOutputArrivesForEachWidgetOfASharedProvider() async throws {
@@ -428,16 +406,13 @@ private func output(_ json: String) throws -> ScriptOutput {
     return first.expiry == expiry
 }
 
-@Test @MainActor func theSameTemporaryOutputWhileItShowsDoesNotStartOver() throws {
+@Test @MainActor func onlyADifferentTemporaryOutputStartsOverWhileItShows() throws {
     #expect(try keepsItsExpiry { store in
         try store.scripts["a"]?.accept(output(#"{"text":"","temporary":{"fields":{"text":"62"},"duration":30}}"#))
     })
     #expect(try !keepsItsExpiry { store in
         try store.scripts["a"]?.accept(output(#"{"text":"","temporary":{"fields":{"text":"62"},"duration":31}}"#))
     }, "A different one starts over")
-}
-
-@Test @MainActor func anotherWidgetsUpdateDoesNotStartATemporaryOutputOver() throws {
     #expect(try keepsItsExpiry { store in try store.scripts["b"]?.accept(output(#"{"text":"B"}"#)) })
 }
 
