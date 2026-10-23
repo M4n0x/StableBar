@@ -76,6 +76,8 @@ final class PackageLibrary {
     private(set) var updateAdditions: [String] = []
     var storeError: String? { sourceErrors[PackageSource.storeID] }
     var error: String?
+    /// Why the last `stablebar://package` link found no package, shown above the Store.
+    var linkError: String?
     var search = ""
     var showingStore = false
 
@@ -442,6 +444,53 @@ final class PackageLibrary {
         }
     }
 
+    /// Opens a `stablebar://package` link: the installed copy, or else the package's page in the source the link names,
+    /// or in the first source that lists it. It installs nothing; when no source lists the package, `linkError` says why.
+    func open(_ link: PackageLink) async {
+        search = ""
+        await loadInstalled()
+        if installedPackages.contains(where: { $0.id == link.id }) {
+            showingStore = false
+            linkError = nil
+            await selectPackage(link.id)
+            return
+        }
+        // Essentials replaced some Store widgets: their links open Essentials, even once the Store stops listing them.
+        if link.sourceID == nil || link.sourceID == PackageSource.storeID,
+           WidgetAddCatalog.builtIns.contains(where: { $0.replacesPackage == link.id }) {
+            showingStore = false
+            deselect()
+            return
+        }
+        showingStore = true
+        deselect()
+        await loadStore()
+        if let entry = entries.first(where: { $0.id == link.id && (link.sourceID == nil || $0.sourceID == link.sourceID) }) {
+            await selectStore(entry)
+        } else if let sourceID = link.sourceID, !sources.contains(where: { $0.id == sourceID }) {
+            linkError = "The link is for a package from “\(sourceID)”, a source you haven’t added. Ask for its join link."
+        } else if let sourceID = link.sourceID, sourceErrors[sourceID] != nil {
+            linkError = "\(sourceName(sourceID)) is unavailable, so the package “\(link.id)” can’t be shown."
+        } else if let sourceID = link.sourceID {
+            linkError = "\(sourceName(sourceID)) doesn’t list the package “\(link.id)”."
+        } else {
+            linkError = "No source you have lists the package “\(link.id)”."
+        }
+    }
+
+    /// The link to a package that its source lists: the source of a Store draft, or the one that installed the copy.
+    /// Nil for a folder, and for a package its source doesn't list.
+    func link(for draft: PackageDraft) -> PackageLink? {
+        let manifest = draft.inspection.manifest
+        var sourceID = draft.sourceID
+        if sourceID == nil, isInstalledCopy(draft.inspection.directory, of: manifest),
+           records[manifest.id]?.isLocal(version: manifest.version) != true {
+            sourceID = updateSourceID(for: manifest)
+        }
+        guard let sourceID, entries.contains(where: { $0.sourceID == sourceID && $0.id == manifest.id }) else { return nil }
+        return PackageLink(id: manifest.id, sourceID: sourceID == PackageSource.storeID ? nil : sourceID)
+    }
+
     func selectInstalled(_ manifest: WidgetPackageManifest) async {
         requestedID = manifest.id
         if let saved = drafts[manifest.versionKey] {
@@ -513,6 +562,7 @@ final class PackageLibrary {
         draft = nil
         requestedID = nil
         loading = false
+        linkError = nil
     }
 
     func get(_ entry: PackageIndex.Entry) async {

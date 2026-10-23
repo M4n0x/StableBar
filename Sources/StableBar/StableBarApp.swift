@@ -448,10 +448,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     @objc private func quit() { NSApp.terminate(nil) }
 
-    /// `stablebar://add-source` opens Settings › Packages with the Add source form filled in; nothing is added until the user confirms.
+    /// `stablebar://add-source` opens Settings › Packages with the Add source form filled in, and `stablebar://package`
+    /// opens it on a package; nothing is added until the user confirms.
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let link = urls.compactMap({ PackageSourceLink(url: $0) }).last else { return }
-        store.pendingSourceLink = link
+        guard store.receive(urls) else { return }
         customization.show(store: store, section: .packages)
     }
 
