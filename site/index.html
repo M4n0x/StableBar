@@ -31,6 +31,16 @@ root.classList.add("js");
   <symbol id="i-down" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M8 4.2v6.6M5.2 8.2 8 11l2.8-2.8" fill="none" stroke="var(--amber)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-apple" viewBox="0 0 15 18"><path d="M12.5 9.6c0-2 1.6-2.9 1.7-3a3.7 3.7 0 0 0-2.9-1.6c-1.2-.1-2.4.7-3 .7-.6 0-1.6-.7-2.6-.7A3.9 3.9 0 0 0 2.4 7c-1.4 2.4-.4 6 1 7.9.7 1 1.4 2 2.4 2 1 0 1.3-.6 2.5-.6s1.5.6 2.5.6c1 0 1.7-1 2.3-1.9.7-1 1-2 1-2.1 0 0-2-.8-2-3.3ZM10.6 3.6c.5-.7.9-1.6.8-2.6-.8 0-1.8.5-2.4 1.2-.5.6-1 1.6-.8 2.5.9.1 1.8-.5 2.4-1.1Z"/></symbol>
 
+  <symbol id="i-note" viewBox="0 0 16 16"><path d="M6 12.2V3.6l7-1.6v8.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="4.4" cy="12.2" r="1.9" fill="currentColor"/><circle cx="11.4" cy="10.4" r="1.9" fill="currentColor"/></symbol>
+  <symbol id="i-open" viewBox="0 0 16 16"><path d="M5 11 11 5M6 4.6h5.4V10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 16 16"><path d="M1.5 4.5h2.6c3.4 0 4.4 7 7.8 7h2.6M1.5 11.5h2.6c1.4 0 2.3-1.2 3-2.6M8.9 7.1c.7-1.4 1.6-2.6 3-2.6h2.6M12.6 2.8l1.9 1.7-1.9 1.7M12.6 9.8l1.9 1.7-1.9 1.7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 16 16"><path d="M2.5 8V6.8a2.3 2.3 0 0 1 2.3-2.3h8.5M11.4 2.6l1.9 1.9-1.9 1.9M13.5 8v1.2a2.3 2.3 0 0 1-2.3 2.3H2.7M4.6 13.4l-1.9-1.9 1.9-1.9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 16 16"><path d="M8 8 14.5 3.5v9zM1.5 8 8 3.5v9z" fill="currentColor"/></symbol>
+  <symbol id="i-next" viewBox="0 0 16 16"><path d="M8 8 1.5 3.5v9zM14.5 8 8 3.5v9z" fill="currentColor"/></symbol>
+  <symbol id="i-play" viewBox="0 0 16 16"><path d="M4.5 2.8v10.4L13 8z" fill="currentColor"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 16 16"><rect x="3.8" y="2.8" width="3" height="10.4" rx=".8" fill="currentColor"/><rect x="9.2" y="2.8" width="3" height="10.4" rx=".8" fill="currentColor"/></symbol>
+  <symbol id="i-vol" viewBox="0 0 16 16"><path d="M2.5 6h2.4L8.5 3v10L4.9 10H2.5z" fill="currentColor"/></symbol>
+
   <symbol id="p-check" viewBox="0 0 12 12"><path d="m2 6.4 2.6 2.6L10 3.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 </svg>
 
@@ -65,16 +75,18 @@ root.classList.add("js");
           <div class="g" id="gl">
             <div class="w apple" data-key="apple" data-pri="1" aria-label="Apple menu"><svg style="width:13px;height:15px;fill:currentColor"><use href="#i-apple"/></svg></div>
             <div class="w ws" data-key="ws" data-pri="never">
+              <span class="ind"></span>
               <span class="wsi" data-ws="1">1 <i class="ai c1"></i></span>
               <span class="wsi on" data-ws="2">2 <i class="ai c2"></i><i class="ai c3"></i></span>
               <span class="wsi" data-ws="3">3 <i class="ai c4"></i><i class="ai c5"></i></span>
               <span class="wsi" data-ws="4">4 <i class="ai c6"></i></span>
             </div>
             <div class="w app finder" data-key="app" data-pri="2"><i class="ai c7"></i><span class="name">Finder</span><span class="menus"><span><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span></span></span></div>
-            <div class="w app site" data-key="site" data-pri="8"><img src="images/icon-64.png" alt=""><span class="name">StableBar</span><span class="menus"><span><a href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/README.md">Guide</a><a href="https://github.com/Seb-GRAF/stablebar-packages">Store</a><a href="https://github.com/Seb-GRAF/StableBar/tree/main/examples">Examples</a><a href="https://github.com/Seb-GRAF/StableBar">GitHub</a></span></span></div>
+            <div class="w app site" data-key="site" data-pri="8" data-pop="site"><img src="images/icon-64.png" alt=""><span class="name">StableBar</span><span class="menus"><span><a href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/README.md">Guide</a><a href="https://github.com/Seb-GRAF/stablebar-packages">Store</a><a href="https://github.com/Seb-GRAF/StableBar/tree/main/examples">Examples</a><a href="https://github.com/Seb-GRAF/StableBar">GitHub</a></span></span></div>
           </div>
           <div class="g" id="gr">
             <button class="w more" data-key="more" data-pop="more" aria-label="More widgets" hidden>•••</button>
+            <button class="w np" data-key="np" data-pri="3" data-pop="np" aria-label="Now playing"><i class="art"></i><span class="track">Midnight City · M83</span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
             <button class="w" data-key="meeting" data-pri="1" data-pop="agenda"><svg><use href="#i-cal"/></svg>Design review&nbsp;&nbsp;10:30</button>
             <button class="w" data-key="system" data-pri="0" data-pop="system"><svg><use href="#i-cpu"/></svg>18%&nbsp;&nbsp;<svg><use href="#i-mem"/></svg>54%</button>
             <button class="w" data-key="sound" data-pri="0" data-pop="controls" aria-label="Sound"><svg><use href="#i-snd"/></svg></button>
@@ -84,54 +96,78 @@ root.classList.add("js");
           </div>
         </div>
 
-        <div class="pop menu" id="pop-more" role="menu">
-          <p>More widgets</p>
-          <button data-for="meeting" data-open="agenda"><svg><use href="#i-cal"/></svg>Design review&nbsp;&nbsp;10:30</button>
-          <button data-for="system" data-open="system"><svg><use href="#i-cpu"/></svg>CPU 18%&nbsp;&nbsp;Memory 54%</button>
-          <button data-for="sound" data-open="controls"><svg><use href="#i-snd"/></svg>Sound</button>
-          <button data-for="battery"><svg><use href="#i-bat"/></svg>Battery 82%</button>
-          <button data-for="clock" class="clock" data-format="full">Thu 22 Oct&nbsp;&nbsp;09:41</button>
-          <button data-for="app"><i class="ai c7"></i>Finder</button>
-          <button data-for="apple">Apple menu</button>
-        </div>
-        <div class="pop" id="pop-agenda">
-          <h4>Today</h4>
-          <div class="row"><span>09:15</span><span>Standup</span></div>
-          <div class="row"><span>10:30</span><span>Design review</span></div>
-          <div class="row"><span>12:30</span><span>Lunch with Ana</span></div>
-          <div class="row"><span>15:00</span><span>1:1 with Sam</span></div>
-          <div class="row"><span>16:30</span><span>Release planning</span></div>
-          <div class="sep"></div>
-          <div>Calendar</div>
-        </div>
-        <div class="pop" id="pop-system" style="width:260px">
-          <h4>System</h4>
-          <svg class="graph" viewBox="0 0 220 44" preserveAspectRatio="none"><polyline points="0,30 14,27 28,31 42,24 56,26 70,22 84,29 98,25 112,27 126,18 140,23 154,13 168,28 182,24 196,26 210,20 220,22"/></svg>
-          <div class="kv"><span>CPU</span><span>18 %</span></div>
-          <div class="meter"><i style="width:18%"></i></div>
-          <div class="kv"><span>Memory</span><span>54 %</span></div>
-          <div class="meter"><i style="width:54%"></i></div>
-          <div class="sep"></div>
-          <div>Activity Monitor</div>
-        </div>
-        <div class="pop" id="pop-controls" style="width:290px">
-          <h4>Controls</h4>
-          <label class="ctl"><span>Level</span><input type="range" min="0" max="100" value="38" aria-label="Level"></label>
-          <label class="check"><input type="checkbox" checked>Enabled</label>
-          <div class="ctl"><span>Mode</span><div class="seg"><button>Quiet</button><button class="on">Balanced</button><button>Focus</button></div></div>
-          <div class="sep"></div>
-          <input class="search" placeholder="Find an app" aria-label="Find an app">
-          <div class="apps"><div>Finder</div><div>Calendar</div><div>Activity Monitor</div><div>Terminal</div></div>
+        <div class="pop" id="pop">
+          <div class="pane menu" data-id="more" role="menu">
+            <p>More widgets</p>
+            <button data-for="np" data-open="np"><i class="art"></i>Midnight City · M83</button>
+            <button data-for="meeting" data-open="agenda"><svg><use href="#i-cal"/></svg>Design review&nbsp;&nbsp;10:30</button>
+            <button data-for="system" data-open="system"><svg><use href="#i-cpu"/></svg>CPU 18%&nbsp;&nbsp;Memory 54%</button>
+            <button data-for="sound" data-open="controls"><svg><use href="#i-snd"/></svg>Sound</button>
+            <button data-for="battery"><svg><use href="#i-bat"/></svg>Battery 82%</button>
+            <button data-for="clock" class="clock" data-format="full">Thu 22 Oct&nbsp;&nbsp;09:41</button>
+            <button data-for="app"><i class="ai c7"></i>Finder</button>
+            <button data-for="apple">Apple menu</button>
+          </div>
+          <div class="pane menu" data-id="site" role="menu">
+            <a href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/README.md">User guide</a>
+            <a href="https://github.com/Seb-GRAF/stablebar-packages">Widget store</a>
+            <a href="https://github.com/Seb-GRAF/StableBar/tree/main/examples">Examples</a>
+            <a href="https://github.com/Seb-GRAF/StableBar/releases">Releases</a>
+            <a href="https://github.com/Seb-GRAF/StableBar">Source on GitHub</a>
+          </div>
+          <div class="pane np-pop" data-id="np">
+            <div class="src"><svg><use href="#i-note"/></svg>Music<svg class="go"><use href="#i-open"/></svg></div>
+            <div class="now"><i class="art"></i><div><b>Midnight City</b><b>M83</b><span>Hurry Up, We’re Dreaming</span></div></div>
+            <div class="meter"><i id="np-bar"></i></div>
+            <div class="times num"><span id="np-at">1:27</span><span>4:03</span></div>
+            <div class="ctrl">
+              <button aria-label="Shuffle"><svg><use href="#i-shuffle"/></svg></button>
+              <button aria-label="Previous"><svg><use href="#i-prev"/></svg></button>
+              <button class="play" id="np-play" aria-label="Pause"><svg class="pause"><use href="#i-pause"/></svg><svg class="resume"><use href="#i-play"/></svg></button>
+              <button aria-label="Next"><svg><use href="#i-next"/></svg></button>
+              <button aria-label="Repeat"><svg><use href="#i-repeat"/></svg></button>
+            </div>
+            <label class="vol"><svg><use href="#i-vol"/></svg><input type="range" min="0" max="100" value="64" aria-label="Volume"><svg><use href="#i-snd"/></svg></label>
+          </div>
+          <div class="pane" data-id="agenda">
+            <h4>Today</h4>
+            <div class="row"><span>09:15</span><span>Standup</span></div>
+            <div class="row"><span>10:30</span><span>Design review</span></div>
+            <div class="row"><span>12:30</span><span>Lunch with Ana</span></div>
+            <div class="row"><span>15:00</span><span>1:1 with Sam</span></div>
+            <div class="row"><span>16:30</span><span>Release planning</span></div>
+            <div class="sep"></div>
+            <div>Calendar</div>
+          </div>
+          <div class="pane" data-id="system" style="width:260px">
+            <h4>System</h4>
+            <svg class="graph" viewBox="0 0 220 44" preserveAspectRatio="none"><polyline points="0,30 14,27 28,31 42,24 56,26 70,22 84,29 98,25 112,27 126,18 140,23 154,13 168,28 182,24 196,26 210,20 220,22"/></svg>
+            <div class="kv"><span>CPU</span><span>18 %</span></div>
+            <div class="meter"><i style="width:18%"></i></div>
+            <div class="kv"><span>Memory</span><span>54 %</span></div>
+            <div class="meter"><i style="width:54%"></i></div>
+            <div class="sep"></div>
+            <div>Activity Monitor</div>
+          </div>
+          <div class="pane" data-id="controls" style="width:290px">
+            <h4>Controls</h4>
+            <label class="ctl"><span>Level</span><input type="range" min="0" max="100" value="38" aria-label="Level"></label>
+            <label class="check"><input type="checkbox" checked>Enabled</label>
+            <div class="ctl"><span>Mode</span><div class="seg"><button>Quiet</button><button class="on">Balanced</button><button>Focus</button></div></div>
+            <div class="sep"></div>
+            <input class="search" placeholder="Find an app" aria-label="Find an app">
+            <div class="apps"><div>Finder</div><div>Calendar</div><div>Activity Monitor</div><div>Terminal</div></div>
+          </div>
         </div>
       </div>
 
-      <div class="layer theme-layer" data-depth="0.09">
+      <div class="layer theme-layer">
         <div class="win theme-win">
           <div class="tb"><span class="tl"><i></i><i></i><i></i></span><b>Theme</b><span class="save">Save as Theme…</span></div>
           <div class="cards" id="cards"></div>
         </div>
       </div>
-      <div class="layer term-layer" data-depth="0.035">
+      <div class="layer term-layer">
         <div class="win term">
           <div class="tb"><span class="tl"><i></i><i></i><i></i></span><span class="title">zsh</span></div>
           <pre><button data-run="popup"><span class="p">%</span> StableBar --popup agenda</button><button data-run="seconds"><span class="p">%</span> StableBar --set clock '{"format":"HH:mm:ss"}'</button><div class="out" id="out">Click a line to run it on the bar above.</div></pre>
@@ -217,7 +253,10 @@ root.classList.add("js");
       <p>Pick one here and the bar at the top changes with it.</p>
       <a class="more-link" href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/themes.md">Themes in the guide</a>
     </div>
-    <div class="fig board" id="board"></div>
+    <div class="fig">
+      <div class="board" id="board"><a class="card store" href="https://github.com/Seb-GRAF/stablebar-packages">More themes in the store<svg><use href="#i-open"/></svg></a></div>
+      <button class="show-all" id="show-all">Show all themes</button>
+    </div>
   </section>
 
   <section class="stop">
@@ -260,7 +299,7 @@ printf '{"text":"%s","icon":"internaldrive"}' "$used"</pre>
             <div class="w app"><i class="ai c7"></i><span class="name">Finder</span></div>
           </div>
           <div class="g">
-            <div class="w"><svg><use href="#i-cal"/></svg>Design review&nbsp;&nbsp;10:30</div>
+            <div class="w meeting"><svg><use href="#i-cal"/></svg>Design review&nbsp;&nbsp;10:30</div>
             <div class="w cpu open"><svg><use href="#i-cpu"/></svg>18%&nbsp;&nbsp;<svg><use href="#i-mem"/></svg>54%</div>
             <div class="w num clock" data-format="full">Thu 22 Oct&nbsp;&nbsp;09:41</div>
           </div>
@@ -303,14 +342,17 @@ printf '{"text":"%s","icon":"internaldrive"}' "$used"</pre>
         <p class="req">macOS 14 or later on Apple silicon.<br>Releases update themselves.</p>
       </div>
     </div>
-    <div class="win dmg" id="dmg">
-      <div class="tb"><span class="tl"><i></i><i></i><i></i></span><span class="title">StableBar</span></div>
-      <div class="stage">
-        <div class="slot"><div class="ico"><img class="app-ico" id="app-ico" src="images/icon-256.png" alt="StableBar" draggable="false"></div>StableBar</div>
-        <div class="arrow"><svg viewBox="0 0 72 14" aria-hidden="true"><path d="M1 7h68M63 1.5 69 7l-6 5.5"/></svg>Drag to install</div>
-        <div class="slot"><div class="ico"><svg class="folder" id="folder" viewBox="0 0 80 64" aria-hidden="true"><path d="M4 12a6 6 0 0 1 6-6h18l6 6h36a6 6 0 0 1 6 6v36a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6z" fill="#3b8ee8"/><path d="M4 22a6 6 0 0 1 6-6h60a6 6 0 0 1 6 6v32a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6z" fill="#62adf5"/><path d="M33 47h14M40 30v13M35 38l5 5 5-5" fill="none" stroke="#2f7dd6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>Applications</div>
+    <div class="desktop">
+      <div class="wall"></div>
+      <div class="win dmg" id="dmg">
+        <div class="tb"><span class="tl"><i></i><i></i><i></i></span><span class="title">StableBar</span></div>
+        <div class="stage">
+          <div class="slot"><div class="ico"><img class="app-ico" id="app-ico" src="images/icon-256.png" alt="StableBar" draggable="false"></div>StableBar</div>
+          <div class="arrow"><svg viewBox="0 0 72 14" aria-hidden="true"><path d="M1 7h68M63 1.5 69 7l-6 5.5"/></svg>Drag to install</div>
+          <div class="slot"><div class="ico"><svg class="folder" id="folder" viewBox="0 0 80 64" aria-hidden="true"><path d="M4 12a6 6 0 0 1 6-6h18l6 6h36a6 6 0 0 1 6 6v36a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6z" fill="#3b8ee8"/><path d="M4 22a6 6 0 0 1 6-6h60a6 6 0 0 1 6 6v32a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6z" fill="#62adf5"/><path d="M33 47h14M40 30v13M35 38l5 5 5-5" fill="none" stroke="#2f7dd6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>Applications</div>
+        </div>
+        <p class="foot">Then open StableBar from Applications.</p>
       </div>
-      <p class="foot">Then open StableBar from Applications.</p>
     </div>
   </section>
 
