@@ -178,7 +178,9 @@ Your own `tokens.appGlyphs` merges into the module's map, so `{ "tokens": { "app
 
 Set a widget's `tooltip` to show text when the pointer rests on it. It works without a popup and keeps the widget's click action. For example, add `"tooltip": "Will not sleep for 1 hour"` to an Amphetamine widget. You can also edit **Tooltip** in the widget’s **Settings → Bar → Behavior** inspector.
 
-Tooltips inherit `defaults`, `popupDefaults`, and the widget's explicit `style`, using the same colors, font, border, corners, shadow, and glass treatment as popups. Their size fits the text.
+Tooltips inherit `defaults`, `popupDefaults`, and the widget's explicit `style`, using the same colors, font, border, corners, shadow, and glass treatment as popups. Their size fits the text. They open and close with the bar's popup [motion and transition](create-a-widget.md#animation), like the [hover controls](create-a-widget.md#controls-on-hover) of Sound and other widgets.
+
+A tooltip opens once the pointer has rested on its widget for `bar.hoverDelay` milliseconds, 400 by default, the same wait as hover controls and popups that open on hover. Change it under **Delay** in **Settings → General → Hover**. While one of them is open, moving to another widget opens that widget's at once, as macOS does, and with **Morph between popups** the open one moves into it.
 
 A configured tooltip overrides the script's tooltip. To show changing information, such as the remaining awake time, leave the widget's `tooltip` unset and return `tooltip` in the script's JSON output:
 

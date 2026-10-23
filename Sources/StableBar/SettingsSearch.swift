@@ -1,7 +1,7 @@
 import Foundation
 
 enum SettingsSearchResult: String, CaseIterable, Identifiable {
-    case login, menuBar, windows, workspaces, access, configuration, commandLine, updates, help
+    case login, menuBar, windows, hover, workspaces, access, configuration, commandLine, updates, help
     case barSize, barLook, barPlacement, screenSetups, everyWidget, widgetContent, widgetStyle, widgetBehavior, addWidget
     case theme, colors, glass, popups, animation, roles, workspaceStyle, modeAliases
     case profiles, library, store, packageSources, status
@@ -16,6 +16,7 @@ enum SettingsSearchResult: String, CaseIterable, Identifiable {
         case .login: ("Open at login", .general, "General", "startup launch")
         case .menuBar: ("Native menu bar reveal delay", .general, "General › Native menu bar", "macOS hide hover throttle wait seconds milliseconds accessibility")
         case .windows: ("Keep windows clear of the bar", .general, "General", "windows notifications overlap clearance accessibility")
+        case .hover: ("Hover delay and controls", .general, "General › Hover", "tooltip wait milliseconds popup inline slider volume")
         case .workspaces: ("Workspace manager", .general, "General", "aerospace yabai omniwm spaces mission control desktops source reconnect connection")
         case .access: ("Permissions", .general, "General", "access accessibility calendar location automation denied")
         case .configuration: ("Configuration file", .general, "General", "json path reload finder temporary")

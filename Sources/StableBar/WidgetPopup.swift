@@ -76,6 +76,20 @@ struct PopupCanvas<Content: View>: View {
     }
 }
 
+/// A tooltip's content at the width it needs, up to `maxWidth`, and as tall as its text is once it wraps there.
+struct TooltipWidth: Layout {
+    let maxWidth: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = min(subviews[0].sizeThatFits(.unspecified).width, maxWidth)
+        return subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews[0].place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
+    }
+}
+
 @MainActor @Observable
 final class PopupBackgrounds {
     var hidden = false
@@ -159,10 +173,12 @@ final class WidgetPopup {
     private var hoverTask: Task<Void, Never>?
     private weak var hoveredAnchor: NSView?
     private var pointerInPopup = false
+    private var editingControls = false
     private var pinned = false
     private var closesAfterClick = false
     private var shown: (inset: CGFloat, cornerRadius: CGFloat)?
     private var morph: (panel: PopupPanel, link: CADisplayLink, from: PopupPanel)?
+    private typealias MorphSource = (panel: PopupPanel, shadow: NSPanel?, box: NSRect, cornerRadius: CGFloat)
     private var morphPopups = false
     private var pinnedPopups: [String: PinnedPopup] = [:]
     /// Where each widget's popup was last pinned, whether it was resized there, and whether it closed pinned, so it pins
@@ -195,8 +211,10 @@ final class WidgetPopup {
             hoverTask?.cancel()
             hoveredAnchor = anchor
             guard self.anchor !== anchor else { return }
+            // Moving from one widget to the next while something opened on hover shows the next one at once.
+            let delay = panel == nil ? store.configuration!.bar.hoverDelay : 0
             hoverTask = Task {
-                do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+                do { try await Task.sleep(for: .milliseconds(delay)) } catch { return }
                 guard store.barEditing.allowsWidgetActions else { return }
                 show()
             }
@@ -213,7 +231,7 @@ final class WidgetPopup {
     }
 
     private func closeAfterHover() {
-        guard !pinned, panel != nil, hoveredAnchor == nil, !pointerInPopup else { return }
+        guard !pinned, panel != nil, hoveredAnchor == nil, !pointerInPopup, !editingControls else { return }
         hoverTask?.cancel()
         hoverTask = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
@@ -227,53 +245,96 @@ final class WidgetPopup {
         panel?.makeKey()
     }
 
+    /// The open popup or tooltip, when the next one on the same bar `window` morphs out of it. Its windows are taken
+    /// from the popup so `close()` leaves them.
+    private func morphSource(on window: NSWindow, bar: BarSettings, animation: WidgetAnimation) -> MorphSource? {
+        guard let shown, let panel, bar.morphPopups, anchor?.window === window, animation.duration > 0,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return nil }
+        let source = (panel, shadowWindow, panel.frame.insetBy(dx: shown.inset, dy: shown.inset), shown.cornerRadius)
+        self.panel = nil
+        shadowWindow = nil
+        return source
+    }
+
     func showTooltip(_ text: String, widget: WidgetConfiguration, defaults: WidgetStyle,
                      store: BarStore, anchor: NSView) {
-        close()
+        openTooltip(widget: widget, defaults: defaults, store: store, anchor: anchor, ignoresMouseEvents: true) { _ in Text(text) }
+    }
+
+    /// Shows a widget's hover controls in a tooltip under it, drawn in the tooltip's style. The pointer can move into
+    /// it, and it stays open while a control in it is dragged.
+    func showControls(widget: WidgetConfiguration, defaults: WidgetStyle, store: BarStore, anchor: NSView,
+                      @ViewBuilder controls: (WidgetStyle) -> some View) {
+        openTooltip(widget: widget, defaults: defaults, store: store, anchor: anchor, ignoresMouseEvents: false) { style in
+            controls(style)
+                .onPreferenceChange(ControlEditingPreference.self) { [weak self] editing in self?.editControls(editing) }
+        }
+    }
+
+    /// Keeps hover controls open while they're dragged, even with the pointer outside them, and closes them after.
+    private func editControls(_ editing: Bool) {
+        editingControls = editing
+        if editing { hoverTask?.cancel() } else { closeAfterHover() }
+    }
+
+    /// Shows `content` in a tooltip under `anchor`, drawn in the widget's popup style, which opens and closes with the
+    /// bar's popup motion.
+    private func openTooltip(widget: WidgetConfiguration, defaults: WidgetStyle, store: BarStore, anchor: NSView,
+                             ignoresMouseEvents: Bool, @ViewBuilder content: (WidgetStyle) -> some View) {
         let window = anchor.window!
         let screen = window.screen!
+        let kind = ScreenKind(BarDisplay(screen: screen))
+        let bar = store.configuration!.bar(on: kind)
+        let animation = bar.motion.popupAnimation
+        let from = morphSource(on: window, bar: bar, animation: animation)
+        close()
         let frame = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
         let top = popupAttachmentTop(anchor: frame, window: window.frame, geometry: (window as? BarPanel)?.barGeometry)
-        let kind = ScreenKind(BarDisplay(screen: screen))
         let style = resolveStyle([defaults, widget.style], states: StyleStates(mode: store.modePresentation(on: kind)))
         let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let shadowInset = CGFloat(appearance.shadowRadius * 2 + 2)
-        let host = NSHostingView(rootView: Text(text)
-            .font(appearance.font)
-            .foregroundStyle(appearance.foreground)
-            .padding(.horizontal, appearance.paddingHorizontal)
-            .padding(.vertical, appearance.paddingVertical)
-            .frame(maxWidth: 320 - shadowInset * 2, alignment: .leading)
-            .fixedSize()
-            .modifier(GlassBackground(fill: style.background, glass: store.configuration?.bar(on: kind).glass ?? GlassSettings(), surface: \.popups,
-                                      shape: RoundedRectangle(cornerRadius: appearance.cornerRadius)))
-            .overlay {
-                RoundedRectangle(cornerRadius: appearance.cornerRadius)
-                    .strokeBorder(appearance.borderColor, lineWidth: appearance.borderWidth)
+        let panel = PopupPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: TooltipWidth(maxWidth: 320 - shadowInset * 2) {
+                content(style)
+                    .font(appearance.font)
+                    .foregroundStyle(appearance.foreground)
+                    .padding(.horizontal, appearance.paddingHorizontal)
+                    .padding(.vertical, appearance.paddingVertical)
             }
-            .shadow(color: appearance.shadowColor, radius: appearance.shadowRadius, y: 1)
-            .padding(shadowInset))
+            .modifier(PopupBackground(style: style, glass: bar.glass, backgrounds: backgrounds))
+            .padding(shadowInset)
+            .onHover { [weak self, weak panel] inside in
+                if panel === self?.panel { self?.hoverPopup(inside) }
+            })
         let size = host.fittingSize
         let x = min(max(frame.midX - size.width / 2, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - size.width - 8)
-        let panel = PopupPanel(contentRect: NSRect(x: x, y: top - size.height - 6 + shadowInset, width: size.width, height: size.height),
-                               styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.title = "Widget tooltip"
+        panel.setFrame(NSRect(x: x, y: top - size.height - 6 + shadowInset, width: size.width, height: size.height), display: false)
+        panel.title = "\(widget.id) tooltip"
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = false
+        panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.ignoresMouseEvents = true
-        // A tooltip appears at full opacity, so the system's zoom-in would show it shrunken and blurred at first.
+        panel.ignoresMouseEvents = ignoresMouseEvents
         panel.animationBehavior = .none
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
         panel.appearance = window.appearance
-        panel.contentView = host
+        panel.contentView = PopupRevealView(content: host, size: size)
+        let shadow = makeShadowWindow(behind: panel, style: style, inset: shadowInset)
         self.panel = panel
+        shadowWindow = shadow
+        shown = (shadowInset, CGFloat(appearance.cornerRadius))
         self.anchor = anchor
         hoveredAnchor = anchor
-        present(panel, true)
+        self.animation = animation
+        transition = bar.popupTransition ?? bar.motion.popupTransition
+        source = frame.midX - x
+        if let from {
+            morph(from, into: panel, inset: shadowInset, shadow: shadow, style: style, glass: bar.glass, animation: animation, onHover: true)
+        } else {
+            reveal(panel, shadow: shadow, onHover: true, with: animation)
+        }
     }
 
     func open(_ popup: PopupConfiguration, widget: WidgetConfiguration, defaults: WidgetStyle,
@@ -287,13 +348,7 @@ final class WidgetPopup {
         let bar = store.configuration!.bar(on: ScreenKind(BarDisplay(screen: screen)))
         let animation = popup.animation ?? bar.motion.popupAnimation
         let pinsAgain = !onHover && spots[widget.id]?.pinned == true
-        var from: (panel: PopupPanel, shadow: NSPanel?, box: NSRect, cornerRadius: CGFloat)?
-        if let shown, let panel, bar.morphPopups, !pinsAgain, self.anchor?.window === window, animation.duration > 0,
-           !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            from = (panel, shadowWindow, panel.frame.insetBy(dx: shown.inset, dy: shown.inset), shown.cornerRadius)
-            self.panel = nil
-            shadowWindow = nil
-        }
+        let from = pinsAgain ? nil : morphSource(on: window, bar: bar, animation: animation)
         close()
         pinned = !onHover
         hoveredAnchor = onHover ? anchor : nil
@@ -356,10 +411,7 @@ final class WidgetPopup {
         panel.contentView = PopupRevealView(content: host, size: panel.frame.size)
         self.panel = panel
         shown = (shadowInset, CGFloat(appearance.cornerRadius))
-        // macOS outlines a window and shapes its shadow from what the window draws. In the popup's window, the popup's
-        // own shadow would get that outline near its outer edge, so it gets a window of its own behind the popup.
-        let drawsShadow = style.shadowColor.map { $0.light & 0xff > 0 || $0.dark & 0xff > 0 } ?? false
-        let shadow = drawsShadow ? makeShadowWindow(behind: panel, appearance: appearance, inset: shadowInset) : nil
+        let shadow = makeShadowWindow(behind: panel, style: style, inset: shadowInset)
         shadowWindow = shadow
         widgetID = widget.id
         self.store = store
@@ -370,92 +422,106 @@ final class WidgetPopup {
         source = frame.midX - panel.frame.minX
         morphPopups = bar.morphPopups
         watchEvents(anchor: anchor, pinnable: popup.pinnable)
-        let windows = [panel, shadow].compactMap { $0 }
         if let from {
-            let toBox = panel.frame.insetBy(dx: shadowInset, dy: shadowInset)
-            let union = from.box.union(toBox)
-            let morph = PopupPanel(contentRect: union, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-            morph.title = "\(widget.id) popup morph"
-            morph.isOpaque = false
-            morph.backgroundColor = .clear
-            morph.hasShadow = true
-            morph.ignoresMouseEvents = true
-            morph.hidesOnDeactivate = false
-            morph.isReleasedWhenClosed = false
-            morph.animationBehavior = .none
-            morph.level = panel.level
-            morph.collectionBehavior = panel.collectionBehavior
-            morph.appearance = panel.appearance
-            morph.contentView = PopupRevealView(content: NSHostingView(rootView: Color.clear.modifier(
-                GlassBackground(fill: style.background, glass: bar.glass, surface: \.popups, shape: Rectangle()))), size: union.size)
-            let outline = CALayer()
-            outline.borderWidth = appearance.borderWidth
-            panel.effectiveAppearance.performAsCurrentDrawingAppearance { outline.borderColor = NSColor(appearance.borderColor).cgColor }
-            let cards = [morph, from.panel, panel].map { window in (CALayer(), window) } + [(outline, morph)]
-            for (card, window) in cards {
-                card.anchorPoint = .zero
-                card.frame = from.box.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY)
-                card.cornerCurve = .continuous
-                card.cornerRadius = from.cornerRadius
-                if card === outline {
-                    window.contentView!.layer!.addSublayer(card)
-                } else {
-                    card.backgroundColor = .black
-                    window.contentView!.layer!.mask = card
-                }
-            }
-            let link = morph.displayLink(target: morph, selector: #selector(NSWindow.invalidateShadow))
-            link.add(to: .main, forMode: .common)
-            self.morph = (morph, link, from.panel)
-            backgrounds.hidden = true
-            from.shadow?.close()
-            from.panel.hasShadow = false
-            from.panel.ignoresMouseEvents = true
-            panel.hasShadow = false
-            panel.contentView!.alphaValue = 0
-            present(panel, onHover)
-            if panel.isVisible {
-                shadow?.order(.below, relativeTo: panel.windowNumber)
-                morph.order(.below, relativeTo: from.panel.windowNumber)
-            }
-            for window in [morph, from.panel, panel] { window.displayIfNeeded() }
-            let start = CACurrentMediaTime()
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            CATransaction.setCompletionBlock { [weak self, weak morph] in
-                if let morph, morph === self?.morph?.panel { self?.finishMorph() }
-            }
-            for (card, window) in cards {
-                let target = toBox.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY)
-                let changes: [(String, Any, Any)] = [("position", NSValue(point: card.position), NSValue(point: target.origin)),
-                                                     ("bounds.size", NSValue(size: card.bounds.size), NSValue(size: target.size)),
-                                                     ("cornerRadius", card.cornerRadius, appearance.cornerRadius)]
-                card.frame = target
-                card.cornerRadius = appearance.cornerRadius
-                for (keyPath, fromValue, toValue) in changes {
-                    let change = animation.layerAnimation(keyPath: keyPath)
-                    change.fromValue = fromValue
-                    change.toValue = toValue
-                    change.beginTime = start
-                    change.fillMode = .backwards
-                    card.add(change, forKey: keyPath)
-                }
-            }
-            for (view, opacity, delay, duration) in [(from.panel.contentView!, 0.0, 0.0, 0.4), (panel.contentView!, 1, 0.2, 0.6)] {
-                let change = CABasicAnimation(keyPath: "opacity")
-                change.fromValue = 1 - opacity
-                change.toValue = opacity
-                change.beginTime = start + animation.duration * delay
-                change.duration = animation.duration * duration
-                change.timingFunction = animation.timingFunction
-                change.fillMode = .backwards
-                view.alphaValue = opacity
-                view.layer!.add(change, forKey: "opacity")
-            }
-            CATransaction.commit()
-            CATransaction.flush()
-            return
+            morph(from, into: panel, inset: shadowInset, shadow: shadow, style: style, glass: bar.glass, animation: animation, onHover: onHover)
+        } else {
+            reveal(panel, shadow: shadow, onHover: onHover, with: animation)
         }
+        if pinsAgain { pin() }
+    }
+
+    /// Moves and reshapes the open popup or tooltip `from` into `panel`, the next one on the same bar: a card with the
+    /// next one's background travels between their places while their contents cross-fade.
+    private func morph(_ from: MorphSource, into panel: PopupPanel, inset: CGFloat, shadow: NSPanel?, style: WidgetStyle,
+                       glass: GlassSettings, animation: WidgetAnimation, onHover: Bool) {
+        let appearance = WidgetAppearance(style, defaults: WidgetStyle())
+        let toBox = panel.frame.insetBy(dx: inset, dy: inset)
+        let union = from.box.union(toBox)
+        let morph = PopupPanel(contentRect: union, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        morph.title = "\(panel.title) morph"
+        morph.isOpaque = false
+        morph.backgroundColor = .clear
+        morph.hasShadow = true
+        morph.ignoresMouseEvents = true
+        morph.hidesOnDeactivate = false
+        morph.isReleasedWhenClosed = false
+        morph.animationBehavior = .none
+        morph.level = panel.level
+        morph.collectionBehavior = panel.collectionBehavior
+        morph.appearance = panel.appearance
+        morph.contentView = PopupRevealView(content: NSHostingView(rootView: Color.clear.modifier(
+            GlassBackground(fill: style.background, glass: glass, surface: \.popups, shape: Rectangle()))), size: union.size)
+        let outline = CALayer()
+        outline.borderWidth = appearance.borderWidth
+        panel.effectiveAppearance.performAsCurrentDrawingAppearance { outline.borderColor = NSColor(appearance.borderColor).cgColor }
+        let cards = [morph, from.panel, panel].map { window in (CALayer(), window) } + [(outline, morph)]
+        for (card, window) in cards {
+            card.anchorPoint = .zero
+            card.frame = from.box.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY)
+            card.cornerCurve = .continuous
+            card.cornerRadius = from.cornerRadius
+            if card === outline {
+                window.contentView!.layer!.addSublayer(card)
+            } else {
+                card.backgroundColor = .black
+                window.contentView!.layer!.mask = card
+            }
+        }
+        let link = morph.displayLink(target: morph, selector: #selector(NSWindow.invalidateShadow))
+        link.add(to: .main, forMode: .common)
+        self.morph = (morph, link, from.panel)
+        backgrounds.hidden = true
+        from.shadow?.close()
+        from.panel.hasShadow = false
+        from.panel.ignoresMouseEvents = true
+        panel.hasShadow = false
+        panel.contentView!.alphaValue = 0
+        present(panel, onHover)
+        if panel.isVisible {
+            shadow?.order(.below, relativeTo: panel.windowNumber)
+            morph.order(.below, relativeTo: from.panel.windowNumber)
+        }
+        for window in [morph, from.panel, panel] { window.displayIfNeeded() }
+        let start = CACurrentMediaTime()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        CATransaction.setCompletionBlock { [weak self, weak morph] in
+            if let morph, morph === self?.morph?.panel { self?.finishMorph() }
+        }
+        for (card, window) in cards {
+            let target = toBox.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY)
+            let changes: [(String, Any, Any)] = [("position", NSValue(point: card.position), NSValue(point: target.origin)),
+                                                 ("bounds.size", NSValue(size: card.bounds.size), NSValue(size: target.size)),
+                                                 ("cornerRadius", card.cornerRadius, appearance.cornerRadius)]
+            card.frame = target
+            card.cornerRadius = appearance.cornerRadius
+            for (keyPath, fromValue, toValue) in changes {
+                let change = animation.layerAnimation(keyPath: keyPath)
+                change.fromValue = fromValue
+                change.toValue = toValue
+                change.beginTime = start
+                change.fillMode = .backwards
+                card.add(change, forKey: keyPath)
+            }
+        }
+        for (view, opacity, delay, duration) in [(from.panel.contentView!, 0.0, 0.0, 0.4), (panel.contentView!, 1, 0.2, 0.6)] {
+            let change = CABasicAnimation(keyPath: "opacity")
+            change.fromValue = 1 - opacity
+            change.toValue = opacity
+            change.beginTime = start + animation.duration * delay
+            change.duration = animation.duration * duration
+            change.timingFunction = animation.timingFunction
+            change.fillMode = .backwards
+            view.alphaValue = opacity
+            view.layer!.add(change, forKey: "opacity")
+        }
+        CATransaction.commit()
+        CATransaction.flush()
+    }
+
+    /// Presents `panel` and its shadow's window, fading them in with the popup's transition.
+    private func reveal(_ panel: PopupPanel, shadow: NSPanel?, onHover: Bool, with animation: WidgetAnimation) {
+        let windows = [panel, shadow].compactMap { $0 }
         panel.alphaValue = 0
         present(panel, onHover)
         if panel.isVisible { shadow?.order(.below, relativeTo: panel.windowNumber) }
@@ -478,7 +544,6 @@ final class WidgetPopup {
         } completionHandler: {
             Task { @MainActor in panel.invalidateShadow() }
         }
-        if pinsAgain { pin() }
     }
 
     private func watchEvents(anchor: NSView, pinnable: Bool) {
@@ -525,6 +590,7 @@ final class WidgetPopup {
         hoverTask = nil
         hoveredAnchor = nil
         pointerInPopup = false
+        editingControls = false
         pinned = false
         closesAfterClick = false
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
@@ -676,7 +742,12 @@ final class WidgetPopup {
         }
     }
 
-    private func makeShadowWindow(behind panel: PopupPanel, appearance: WidgetAppearance, inset: CGFloat) -> NSPanel {
+    /// A window behind `panel` for its style's shadow, if it has one. macOS outlines a window and shapes its shadow from
+    /// what the window draws. In the popup's window, the popup's own shadow would get that outline near its outer edge,
+    /// so it gets a window of its own behind the popup.
+    private func makeShadowWindow(behind panel: PopupPanel, style: WidgetStyle, inset: CGFloat) -> NSPanel? {
+        guard style.shadowColor.map({ $0.light & 0xff > 0 || $0.dark & 0xff > 0 }) == true else { return nil }
+        let appearance = WidgetAppearance(style, defaults: WidgetStyle())
         let window = NSPanel(contentRect: panel.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         window.title = "\(panel.title) shadow"
         window.isOpaque = false

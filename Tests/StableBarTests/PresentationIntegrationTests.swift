@@ -36,7 +36,7 @@ private var presentationRepository: URL {
     _ = try bar.bitmap(name: "hover-tooltip-before-\(long)")
     let widget = configuration.widgets[0]
     let anchor = try #require(bar.anchors(widget.id).first)
-    let text = long ? Array(repeating: "Will not sleep for 1 hour", count: 10).joined(separator: "\n") : "Will not sleep for 1 hour"
+    let text = long ? Array(repeating: "Will not sleep for 1 hour", count: 20).joined(separator: " ") : "Will not sleep for 1 hour"
     func hover(_ inside: Bool) {
         popup.hover(inside, store: store, anchor: anchor) {
             popup.showTooltip(text, widget: widget, defaults: configuration.popupDefaults.inheriting(configuration.defaults),
@@ -156,7 +156,8 @@ private var presentationRepository: URL {
     hover(false)
     hover(true, 1)
     popup.hoverPopup(false)
-    try await waitForPopup { store.presentations["second"]?.popupAnchor != nil }
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(store.presentations["second"]?.popupAnchor != nil, "The next widget's popup opens without waiting again")
     #expect(popup.isOpen)
     #expect(store.presentations["first"]?.popupAnchor == nil)
     #expect(store.presentations["second"]?.popupAnchor == ObjectIdentifier(anchors[1]))
