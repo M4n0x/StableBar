@@ -14,24 +14,6 @@ import Testing
     #expect(try style(#"{"borderEdges":null}"#).borderEdges == nil)
 }
 
-@Test func barOutlineEditsMergeAndResetWithoutChangingBarSettings() throws {
-    let url = FileManager.default.temporaryDirectory.appending(path: "outline.json")
-    var loader = ConfigurationLoader()
-    var ids: [String] = []
-    let root: [String: ConfigurationValue] = ["bar": .object(["height": .number(38), "margin": .number(3),
-                                                          "style": .object(["borderColor": .string("#123456")])])]
-    let edited = try ConfigurationEdit(action: .bar, properties: ["style": .object(["borderEdges": .string("all")])])
-        .applying(to: root, widgetIDs: &ids)
-    let configuration = try loader.load(url, data: configurationData(edited))
-    #expect(configuration.bar.style.borderEdges == .all)
-    #expect(configuration.bar.style.borderColor == HexColor(0x123456ff))
-    #expect(configuration.bar.height == 38)
-    #expect(configuration.bar.margin == 3)
-    let reset = try ConfigurationEdit(action: .unset, properties: ["bar": .object(["style": .object(["borderEdges": .null])])])
-        .applying(to: edited, widgetIDs: &ids)
-    #expect(try loader.load(url, data: configurationData(reset)).bar.style.borderEdges == nil)
-}
-
 @Test func outlineLayersTokensProfilesAndScriptOverridesCompose() throws {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

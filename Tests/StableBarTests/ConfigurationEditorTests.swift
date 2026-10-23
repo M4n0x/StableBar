@@ -2,8 +2,8 @@ import XCTest
 @testable import StableBar
 
 final class ConfigurationEditorTests: XCTestCase {
-    @MainActor func testScreenVisibilityKeepsOtherKindsAndCanHideTheLastKind() throws {
-        let fixture = try ThemeGalleryFixture(#"{"widgets":[{"id":"clock","type":"clock","position":"right","display":["builtIn","monitor"]}]}"#)
+    @MainActor func testScreenVisibilityKeepsOtherKindsEnablesHiddenWidgetsAndCanHideTheLastKind() throws {
+        let fixture = try ThemeGalleryFixture(#"{"widgets":[{"id":"clock","type":"clock","position":"right","display":["builtIn","monitor"]},{"id":"off","type":"clock","position":"right","enabled":false,"display":"vertical"}]}"#)
         defer { fixture.close() }
         let store = try fixture.store()
         defer { store.stop() }
@@ -15,6 +15,9 @@ final class ConfigurationEditorTests: XCTestCase {
         try editor.history.flush()
         editor.undo()
         XCTAssertEqual(editor.properties(for: "clock")["display"], .array([.string("builtIn"), .string("monitor")]))
+        editor.setWidget(try XCTUnwrap(store.configuration?.widgets.last), shown: true, on: .laptop)
+        XCTAssertTrue(try XCTUnwrap(store.configuration?.widgets.last).enabled)
+        XCTAssertEqual(editor.properties(for: "off")["display"], .array([.string("builtIn"), .string("vertical")]))
         XCTAssertNil(editor.error)
     }
 
@@ -29,19 +32,6 @@ final class ConfigurationEditorTests: XCTestCase {
         XCTAssertEqual(editor.properties(for: "own"), ["id": .string("own"), "type": .string("text"), "position": .string("left"), "text": .string("Hi")])
         XCTAssertEqual(try fixture.document()["widgetOverrides"], .object(["imported": .object(["position": .string("right")])]))
         XCTAssertEqual(editor.properties(for: "imported")["text"], .string("Original"))
-        XCTAssertNil(editor.error)
-    }
-
-    @MainActor func testShowOnScreenEnablesTheWidgetAndKeepsItsOtherKinds() throws {
-        let fixture = try ThemeGalleryFixture(#"{"widgets":[{"id":"clock","type":"clock","position":"right","enabled":false,"display":"vertical"}]}"#)
-        defer { fixture.close() }
-        let store = try fixture.store()
-        defer { store.stop() }
-        let editor = ConfigurationEditor(store: store)
-        editor.setWidget(try XCTUnwrap(store.configuration?.widgets.first), shown: true, on: .laptop)
-        let widget = try XCTUnwrap(store.configuration?.widgets.first)
-        XCTAssertTrue(widget.enabled)
-        XCTAssertEqual(editor.properties(for: "clock")["display"], .array([.string("builtIn"), .string("vertical")]))
         XCTAssertNil(editor.error)
     }
 

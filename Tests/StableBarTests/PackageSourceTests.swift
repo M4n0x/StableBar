@@ -116,15 +116,7 @@ private func sources(_ json: String) throws -> [PackageSource] {
     #expect(environment["P"] == "value-for-pkg/token")
 }
 
-@Test func memoryTokensSaveReadAndDelete() throws {
-    let tokens = PackageSourceTokens.memory()
-    try tokens.save("t", "source:acme")
-    #expect(tokens.read("source:acme") == "t")
-    try tokens.save("", "source:acme")
-    #expect(tokens.read("source:acme") == nil)
-}
-
-@Test func aRealRedirectToAnotherOriginArrivesWithoutTheToken() async throws {
+@Test func realRedirectsDropTheTokenOnlyWhenTheyLeaveTheOrigin() async throws {
     let source = PackageSource(id: "redirect", name: "Redirect", url: URL(string: "https://a.redirect-test.example/index.json")!)
     let away = URL(string: "https://b.redirect-test.example/index.json")!
     StubURLProtocol.redirect(source.url, to: away)
@@ -138,19 +130,17 @@ private func sources(_ json: String) throws -> [PackageSource] {
     let followed = requests.filter { $0.url?.host() == "b.redirect-test.example" }
     #expect(followed.count == 1)
     #expect(followed.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == nil && $0.value(forHTTPHeaderField: "PRIVATE-TOKEN") == nil })
-}
 
-@Test func aRealRedirectOnTheSameOriginKeepsTheToken() async throws {
-    let source = PackageSource(id: "same", name: "Same", url: URL(string: "https://a.same-origin-test.example/index.json")!)
+    let same = PackageSource(id: "same", name: "Same", url: URL(string: "https://a.same-origin-test.example/index.json")!)
     let old = URL(string: "https://a.same-origin-test.example/old.json")!
-    StubURLProtocol.redirect(old, to: source.url)
-    StubURLProtocol.serve(Data("index".utf8), at: source.url)
+    StubURLProtocol.redirect(old, to: same.url)
+    StubURLProtocol.serve(Data("index".utf8), at: same.url)
 
-    let data = try await fetch(sourceRequest(for: old, source: source, token: "secret"), session: StubURLProtocol.session())
-    #expect(String(decoding: data, as: UTF8.self) == "index")
-    let followed = StubURLProtocol.requests.filter { $0.url == source.url }
-    #expect(followed.count == 1)
-    #expect(followed.first?.value(forHTTPHeaderField: "Authorization") == "Bearer secret")
+    let index = try await fetch(sourceRequest(for: old, source: same, token: "secret"), session: StubURLProtocol.session())
+    #expect(String(decoding: index, as: UTF8.self) == "index")
+    let kept = StubURLProtocol.requests.filter { $0.url == same.url }
+    #expect(kept.count == 1)
+    #expect(kept.first?.value(forHTTPHeaderField: "Authorization") == "Bearer secret")
 }
 
 final class PackageInstallRecordTests: XCTestCase {

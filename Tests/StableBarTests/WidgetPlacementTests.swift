@@ -2,17 +2,10 @@ import XCTest
 @testable import StableBar
 
 final class WidgetPlacementTests: XCTestCase {
-    func testPositionControlsKeepEveryDestinationWithoutANotchedDisplay() throws {
-        let widgets = try decode(#"[{"id":"clock","type":"clock","position":"right"}]"#)
-        XCTAssertEqual(WidgetPlacement.positions(widgets: widgets, hasNotchedDisplay: false), [.left, .center, .right])
-        XCTAssertEqual(WidgetPlacement.destinations, WidgetPosition.allCases)
-        for position in WidgetPlacement.destinations {
-            XCTAssertEqual(try moved("clock", to: position, before: nil, widgets: widgets).first?.position, position)
-        }
-    }
-
     func testEmptyGroupsAndNotchGroupsRemainAvailableAsNeeded() throws {
         XCTAssertEqual(WidgetPlacement.positions(widgets: [], hasNotchedDisplay: false), [.left, .center, .right])
+        XCTAssertEqual(WidgetPlacement.positions(widgets: try decode(#"[{"id":"clock","type":"clock","position":"right"}]"#), hasNotchedDisplay: false),
+                       [.left, .center, .right])
         XCTAssertEqual(WidgetPlacement.positions(widgets: [], hasNotchedDisplay: true), WidgetPosition.allCases)
         let widgets = try decode(#"[{"id":"notch","type":"clock","position":"notchLeft"}]"#)
         XCTAssertEqual(WidgetPlacement.positions(widgets: widgets, hasNotchedDisplay: false), WidgetPosition.allCases)

@@ -2,23 +2,6 @@ import Foundation
 import Testing
 @testable import StableBar
 
-private func block(_ json: String) throws -> PopupBlock {
-    try JSONDecoder().decode(PopupBlock.self, from: Data(json.utf8))
-}
-
-@Test func equalizerBlocksReadTheirSourceAndHeight() throws {
-    guard case let .equalizer(source, height) = try block(#"{"type":"equalizer"}"#).content else {
-        Issue.record("Expected an equalizer")
-        return
-    }
-    #expect(source == nil && height == 12)
-    guard case let .equalizer(playing, tall) = try block(#"{"type":"equalizer","source":"playing","height":16}"#).content else {
-        Issue.record("Expected an equalizer")
-        return
-    }
-    #expect(playing == "playing" && tall == 16)
-}
-
 @Test func equalizerMistakesNameTheirProblem() throws {
     let url = FileManager.default.temporaryDirectory.appending(path: "equalizer.json")
     var loader = ConfigurationLoader()

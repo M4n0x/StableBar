@@ -233,19 +233,10 @@ final class WidgetSetupTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: fixture.url), before)
     }
 
-    @MainActor func testCommandFreePackageWithHostsRequiresReview() async throws {
+    @MainActor func testCommandFreePackageWithHostsPermissionsRequiredToolsOrSecretSettingsRequiresReview() async throws {
         try await assertCommandFreePackageRequiresReview(hosts: #"["example.com"]"#)
-    }
-
-    @MainActor func testCommandFreePackageWithPermissionsRequiresReview() async throws {
         try await assertCommandFreePackageRequiresReview(permissions: #"["calendars"]"#)
-    }
-
-    @MainActor func testCommandFreePackageWithRequiredToolsRequiresReview() async throws {
         try await assertCommandFreePackageRequiresReview(requires: #"["curl"]"#)
-    }
-
-    @MainActor func testCommandFreePackageWithSecretSettingsRequiresReview() async throws {
         try await assertCommandFreePackageRequiresReview(settings: #"{"token":{"type":"secret"}}"#)
     }
 
@@ -353,30 +344,6 @@ final class WidgetSetupTests: XCTestCase {
         XCTAssertEqual(setup.review?.inspection.directory, installed.directory)
         XCTAssertEqual(try Data(contentsOf: fixture.url), before)
         XCTAssertTrue(store.customizationHistory.undoSteps.isEmpty)
-    }
-
-    @MainActor func testAddingAnInstalledCommandFreePackageKeepsItsSavedSettings() async throws {
-        let fixture = try ThemeGalleryFixture()
-        defer { fixture.close() }
-        let index = LocalPackageIndex(fixture: fixture)
-        let entry = try await index.add(id: "note", kind: "widgets", configuration: #"{"widgets":[{"id":"note","type":"text","position":"left","text":"@setting.message"}]}"#,
-                                        settings: #"{"message":{"type":"string","default":"Default"}}"#)
-        let store = try fixture.store()
-        defer { store.stop() }
-        let client = PackageStoreClient(packages: fixture.packages, indexURL: index.url)
-        let installed = try await client.installWithoutReview(entry)
-        let setup = WidgetSetup(store: store, client: client)
-        _ = try setup.enable(installed, settings: ["message": .string("Keep my text")], position: .left)
-        await setup.load()
-        let choice = try XCTUnwrap(setup.choices.first { $0.package?.id == "note" })
-        let result = try await addAndReview(choice, with: setup, fixture: fixture, position: .right)
-        XCTAssertEqual(result, "note")
-        XCTAssertNil(setup.error)
-        XCTAssertEqual(store.configuration?.widgets.first?.content, .text("Keep my text"))
-        XCTAssertEqual(store.configuration?.widgets.first?.position, .left)
-        XCTAssertTrue(store.customizationHistory.notice?.contains("already on the bar") == true)
-        let selections = try XCTUnwrap(fixture.document()["packages"]?.decoded([WidgetPackageSelection].self))
-        XCTAssertEqual(selections.first?.settings, ["message": .string("Keep my text")])
     }
 
     @MainActor func testPackageWithNoWidgetsInCurrentSetupDoesNotEnableAnInvisiblePackage() async throws {
@@ -495,29 +462,35 @@ final class WidgetSetupTests: XCTestCase {
         }
     }
 
-    @MainActor func testAddingAPackageKeepsSavedSettingsSeparateFromCommandLineSettings() async throws {
-        let fixture = try ThemeGalleryFixture()
-        defer { fixture.close() }
-        let index = LocalPackageIndex(fixture: fixture)
-        let entry = try await index.add(id: "note", kind: "widgets", configuration: #"{"widgets":[{"id":"note","type":"text","position":"left","text":"@setting.message"}]}"#,
-                                        settings: #"{"message":{"type":"string","default":"Default"}}"#)
-        let store = try fixture.store()
-        defer { store.stop() }
-        let client = PackageStoreClient(packages: fixture.packages, indexURL: index.url)
-        let installed = try await client.installWithoutReview(entry)
-        let setup = WidgetSetup(store: store, client: client)
-        _ = try setup.enable(installed, settings: ["message": .string("Saved")], position: .left)
-        try store.setSessionEdits([.init(action: .package, properties: ["id": .string("note"), "version": .string("1"),
-            "settings": .object(["message": .string("Temporary")])])])
-        await setup.load()
-        let choice = try XCTUnwrap(setup.choices.first { $0.package?.id == "note" })
-        let id = try await addAndReview(choice, with: setup, fixture: fixture, position: .right)
-        XCTAssertEqual(id, "note")
-        XCTAssertNil(setup.error)
-        XCTAssertEqual(try fixture.document()["packages"]?.decoded([WidgetPackageSelection].self).first?.settings,
-                       ["message": .string("Saved")])
-        XCTAssertEqual(store.configuration?.widgets.first?.content, .text("Temporary"))
-        XCTAssertEqual(store.sessionEdits.count, 1)
+    @MainActor func testAddingAnInstalledPackageKeepsItsSavedSettingsSeparateFromCommandLineSettings() async throws {
+        for temporary in [false, true] {
+            let fixture = try ThemeGalleryFixture()
+            defer { fixture.close() }
+            let index = LocalPackageIndex(fixture: fixture)
+            let entry = try await index.add(id: "note", kind: "widgets", configuration: #"{"widgets":[{"id":"note","type":"text","position":"left","text":"@setting.message"}]}"#,
+                                            settings: #"{"message":{"type":"string","default":"Default"}}"#)
+            let store = try fixture.store()
+            defer { store.stop() }
+            let client = PackageStoreClient(packages: fixture.packages, indexURL: index.url)
+            let installed = try await client.installWithoutReview(entry)
+            let setup = WidgetSetup(store: store, client: client)
+            _ = try setup.enable(installed, settings: ["message": .string("Saved")], position: .left)
+            if temporary {
+                try store.setSessionEdits([.init(action: .package, properties: ["id": .string("note"), "version": .string("1"),
+                    "settings": .object(["message": .string("Temporary")])])])
+            }
+            await setup.load()
+            let choice = try XCTUnwrap(setup.choices.first { $0.package?.id == "note" })
+            let id = try await addAndReview(choice, with: setup, fixture: fixture, position: .right)
+            XCTAssertEqual(id, "note")
+            XCTAssertNil(setup.error)
+            XCTAssertEqual(try fixture.document()["packages"]?.decoded([WidgetPackageSelection].self).first?.settings,
+                           ["message": .string("Saved")])
+            XCTAssertEqual(store.configuration?.widgets.first?.content, .text(temporary ? "Temporary" : "Saved"))
+            XCTAssertEqual(store.configuration?.widgets.first?.position, .left)
+            XCTAssertTrue(store.customizationHistory.notice?.contains("already on the bar") == true)
+            XCTAssertEqual(store.sessionEdits.count, temporary ? 1 : 0)
+        }
     }
 
     @MainActor private func addAndReview(_ choice: WidgetAddChoice, with setup: WidgetSetup,

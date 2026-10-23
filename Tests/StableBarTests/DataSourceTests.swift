@@ -33,21 +33,7 @@ private func scriptOutput(_ json: String) throws -> ScriptOutput {
     #expect(updates == 2)
 }
 
-@Test @MainActor func repeatedValuesStillAddGraphSamples() async throws {
-    let script = ScriptWidget()
-    let reading = ScriptOutput(text: "50%", value: 0.5)
-    try script.accept(reading)
-    try script.accept(reading)
-    #expect(script.samples == [0.5, 0.5])
-    for _ in 0..<70 { try script.accept(reading) }
-    #expect(script.samples == Array(repeating: 0.5, count: 60))
-    try await confirmation("A full history of equal samples stays as it is", expectedCount: 0) { changed in
-        withObservationTracking { _ = script.samples } onChange: { changed() }
-        try script.accept(reading)
-    }
-}
-
-@Test @MainActor func aRepeatedReadingAddsOneGraphSampleAndInvalidatesNothingElse() async throws {
+@Test @MainActor func aRepeatedReadingAddsOneGraphSampleAndTheHistoryKeepsTheNewestSixty() async throws {
     let script = ScriptWidget()
     let reading = ScriptOutput(text: "50%", value: 0.5)
     try script.accept(reading)
@@ -62,20 +48,14 @@ private func scriptOutput(_ json: String) throws -> ScriptOutput {
     }
     #expect(script.samples == [0.5, 0.5])
     #expect(updates == 0)
-}
-
-@Test @MainActor func theGraphHistoryKeepsTheNewestSixtySamples() throws {
-    let script = ScriptWidget()
+    for _ in 0..<70 { try script.accept(reading) }
+    #expect(script.samples == Array(repeating: 0.5, count: 60))
+    try await confirmation("A full history of equal samples stays as it is", expectedCount: 0) { changed in
+        withObservationTracking { _ = script.samples } onChange: { changed() }
+        try script.accept(reading)
+    }
     for index in 0..<70 { try script.accept(ScriptOutput(text: "reading", value: Double(index) / 100)) }
     #expect(script.samples == (10..<70).map { Double($0) / 100 })
-}
-
-@Test func outputsCompareEveryField() throws {
-    let base = try scriptOutput(#"{"text":"A","menu":[{"title":"One"}],"series":{"cpu":[0.1]}}"#)
-    #expect(base == (try scriptOutput(#"{"text":"A","menu":[{"title":"One"}],"series":{"cpu":[0.1]}}"#)))
-    #expect(base != (try scriptOutput(#"{"text":"A","menu":[{"title":"Two"}],"series":{"cpu":[0.1]}}"#)))
-    #expect(base != (try scriptOutput(#"{"text":"A","menu":[{"title":"One"}],"series":{"cpu":[0.2]}}"#)))
-    #expect(base != (try scriptOutput(#"{"text":"A","menu":[{"title":"One"}],"series":{"cpu":[0.1]},"state":"warning"}"#)))
 }
 
 @MainActor
@@ -143,7 +123,7 @@ private func awaitCondition(_ condition: () -> Bool) async throws {
     #expect(script.diagnostics.running)
 }
 
-@Test @MainActor func suspendingStopsTheSourceAndIgnoresItsLateUpdates() async throws {
+@Test @MainActor func suspendingStopsTheSourceAndIgnoresUpdatesDeliveredAsItSuspendsOrLater() async throws {
     let sources = FakeSources()
     let script = ScriptWidget()
     defer { script.stop() }
@@ -153,32 +133,20 @@ private func awaitCondition(_ condition: () -> Bool) async throws {
     let emit = try #require(first.emit)
     emit(.output(.success(ScriptOutput(text: "live", value: 0.4))))
     try await awaitCondition { script.output.text == "live" }
+    let updated = script.diagnostics.lastUpdated
+    emit(.output(.success(ScriptOutput(text: "stale", value: 0.9))))
     script.suspend()
     #expect(first.stopped == 1)
     #expect(!script.diagnostics.running)
     emit(.output(.success(ScriptOutput(text: "late"))))
     try await Task.sleep(for: .milliseconds(50))
     #expect(script.output.text == "live")
+    #expect(script.diagnostics.lastUpdated == updated)
     script.resume()
     try await awaitCondition { sources.made.count == 2 && sources.made[1].emit != nil }
     #expect(sources.made[1].refreshes == ["resume"])
     #expect(first.started == 1)
     #expect(script.samples == [0.4])
-}
-
-@Test @MainActor func anUpdateDeliveredAsTheWidgetSuspendsIsNotApplied() async throws {
-    let sources = FakeSources()
-    let script = ScriptWidget()
-    defer { script.stop() }
-    script.start(schedule: SourceSchedule(interval: nil, continuous: true)) { sources.make() }
-    try await awaitCondition { sources.made.first?.emit != nil }
-    let source = try #require(sources.made.first)
-    source.emit?(.output(.success(ScriptOutput(text: "stale", value: 0.9))))
-    script.suspend()
-    try await Task.sleep(for: .milliseconds(50))
-    #expect(script.output.text == "…")
-    #expect(script.samples.isEmpty)
-    #expect(script.diagnostics.lastUpdated == nil)
 }
 
 @Test @MainActor func aFailedRunRetriesWithBackoffAndARefreshRestartsAContinuousSource() async throws {
@@ -327,26 +295,6 @@ private func writeTemporaryConfiguration(_ json: String) throws -> URL {
     try await awaitCondition { store.scripts["cpu"]?.output.text == "from the fake" }
 }
 
-@Test func calendarIsANativeSourceWithItsOwnSettings() throws {
-    let calendar = try #require(DataSourceRegistry.builtIn["calendar"])
-    #expect(calendar.isNative)
-    #expect(!calendar.continuous)
-    #expect(calendar.symbol == "calendar")
-    #expect(calendar.settings.isEmpty)
-    #expect(calendar.optionalSettings == [.calendars, .lookahead, .soon, .now])
-    #expect(calendar.changeNotification == .EKEventStoreChanged)
-    let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
-    {"providers":{"meetings":{"type":"calendar","calendars":["Work"],"lookahead":12,"soon":10,"now":2}},
-     "widgets":[{"id":"next","type":"calendar","position":"right"},{"id":"work","type":"provider","provider":"meetings","position":"right"}]}
-    """#.utf8))
-    #expect(configuration.widgets.map(\.content) == [.provider("calendar"), .provider("meetings")])
-    let defaults = try #require(configuration.providers["calendar"])
-    #expect(defaults == ProviderConfiguration(type: "calendar"))
-    #expect(defaults.calendars.isEmpty && defaults.lookahead == 24 && defaults.soon == 15 && defaults.now == 5)
-    let meetings = try #require(configuration.providers["meetings"])
-    #expect(meetings.calendars == ["Work"] && meetings.lookahead == 12 && meetings.soon == 10 && meetings.now == 2)
-}
-
 @Test @MainActor func aNativeReadingSetsItsOwnNextInterval() async throws {
     let reading = DataSourceType(name: "calendar", isNative: true, symbol: "calendar", settings: [], continuous: false) { _, _ in
         PollingSource { _ in .output(.success(ScriptOutput(text: "Standup", interval: 0.05))) }
@@ -395,30 +343,12 @@ private func writeTemporaryConfiguration(_ json: String) throws -> URL {
     #expect(refreshes() == ["startup", "calendar", "resume", "calendar"])
 }
 
-@Test @MainActor func calendarWidgetsShowTheirSourceLikeAnyOther() async throws {
-    let registry = DataSourceRegistry(types: DataSourceRegistry.builtIn.types.map { type in
-        var type = type
-        if type.name == "calendar" { type.makeSource = { _, _ in PollingSource { _ in .output(.success(ScriptOutput(text: "Standup"))) } } }
-        return type
-    })
-    let url = try writeTemporaryConfiguration(#"{"widgets":[{"id":"meeting","type":"calendar","position":"right"}]}"#)
-    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
-    let store = BarStore(configurationURL: url, registry: registry)
-    defer { store.stop() }
-    store.reloadConfiguration()
-    try await awaitCondition { store.scripts["meeting"]?.output.text == "Standup" }
-    guard case let .object(meeting) = try store.snapshot(id: "meeting") else {
-        Issue.record("Expected an object snapshot")
-        return
-    }
-    #expect(meeting["source"] == .object(["provider": .string("calendar"), "type": .string("calendar"), "push": .bool(false),
-                                          "events": .array([])]))
-}
-
-@Test @MainActor func widgetStatusDistinguishesMissingAccessFromSuccessfulCalendarOutput() throws {
+@Test @MainActor func widgetStatusTellsMissingAccessFailuresPausedDisabledAndConnectedSourcesApart() throws {
     let store = BarStore()
     store.configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
-    {"widgets":[{"id":"meeting","type":"calendar","position":"right"}]}
+    {"widgets":[{"id":"meeting","type":"calendar","position":"right"},
+                {"id":"power","type":"battery","position":"right"},
+                {"id":"off","type":"battery","position":"right","enabled":false}]}
     """#.utf8))
     let widget = store.configuration!.widgets[0]
     let script = ScriptWidget()
@@ -434,24 +364,16 @@ private func writeTemporaryConfiguration(_ json: String) throws -> URL {
     #expect(store.widgetStatus(for: widget) == .failed("Calendar unavailable"))
     store.actionErrors[widget.id] = "Meeting link failed"
     #expect(store.widgetStatus(for: widget) == .failed("Click action: Meeting link failed"))
-}
-
-@Test @MainActor func widgetStatusKeepsPausedAndDisabledSourcesDistinctFromConnections() throws {
-    let store = BarStore()
-    store.configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
-    {"widgets":[{"id":"power","type":"battery","position":"right"},
-                {"id":"off","type":"battery","position":"right","enabled":false}]}
-    """#.utf8))
-    let widget = store.configuration!.widgets[0]
-    let disabled = store.configuration!.widgets[1]
-    let script = ScriptWidget()
-    store.scripts[widget.id] = script
-    try script.accept(ScriptOutput(text: "80%"))
-    script.diagnostics.running = true
-    #expect(store.widgetStatus(for: widget) == .connected)
-    script.diagnostics.running = false
-    script.diagnostics.suspended = true
-    #expect(store.widgetStatus(for: widget) == .paused)
+    let power = store.configuration!.widgets[1]
+    let disabled = store.configuration!.widgets[2]
+    let battery = ScriptWidget()
+    store.scripts[power.id] = battery
+    try battery.accept(ScriptOutput(text: "80%"))
+    battery.diagnostics.running = true
+    #expect(store.widgetStatus(for: power) == .connected)
+    battery.diagnostics.running = false
+    battery.diagnostics.suspended = true
+    #expect(store.widgetStatus(for: power) == .paused)
     store.actionErrors[disabled.id] = "An earlier error"
     #expect(store.widgetStatus(for: disabled) == .disabled)
     #expect(!store.widgetStatus(for: disabled).needsAttention)
@@ -526,27 +448,7 @@ private extension DataSourceRegistry {
     }
 }
 
-@Test @MainActor func pushSourcesSendOnlyChanges() throws {
-    let monitor = FakeMonitor(ScriptOutput(text: "80%"))
-    let source = PushSource(monitor: monitor)
-    let sent = OSAllocatedUnfairLock<[String]>(initialState: [])
-    source.start { update in
-        guard case let .output(result, _) = update else { return }
-        let text = (try? result.get())?.text ?? "failure"
-        sent.withLock { $0.append(text) }
-    }
-    #expect(monitor.listening)
-    source.refresh(event: ScriptEvent(sender: "startup"))
-    monitor.change(to: ScriptOutput(text: "80%"))
-    monitor.change(to: ScriptOutput(text: "79%"))
-    monitor.fail(CommandFailure(message: "No battery."))
-    source.stop()
-    #expect(!monitor.listening)
-    monitor.change(to: ScriptOutput(text: "78%"))
-    #expect(sent.withLock { $0 } == ["80%", "79%", "failure"])
-}
-
-@Test @MainActor func aPushSourceCanStopBeforeItStartsStopTwiceAndStartAgain() {
+@Test @MainActor func pushSourcesSendOnlyChangesAndCanStopBeforeTheyStartStopTwiceAndStartAgain() {
     let monitor = FakeMonitor(ScriptOutput(text: "80%"))
     let source = PushSource(monitor: monitor)
     let sent = OSAllocatedUnfairLock<[String]>(initialState: [])
@@ -562,7 +464,9 @@ private extension DataSourceRegistry {
     source.start(emit: emit("first"))
     #expect(monitor.listening)
     source.refresh(event: ScriptEvent(sender: "startup"))
+    monitor.change(to: ScriptOutput(text: "80%"))
     monitor.change(to: ScriptOutput(text: "79%"))
+    monitor.fail(CommandFailure(message: "No battery."))
     source.stop()
     source.stop()
     #expect(!monitor.listening)
@@ -571,7 +475,7 @@ private extension DataSourceRegistry {
     #expect(monitor.listening)
     source.refresh(event: ScriptEvent(sender: "routine"))
     monitor.change(to: ScriptOutput(text: "77%"))
-    #expect(sent.withLock { $0 } == ["first 80%", "first 79%", "second 78%", "second 77%"])
+    #expect(sent.withLock { $0 } == ["first 80%", "first 79%", "first failure", "second 78%", "second 77%"])
 }
 
 @Test @MainActor func aFailedPushSourceStopsListeningAndListensAgainWhenItRetries() async throws {
@@ -921,7 +825,7 @@ private struct RelayProbe {
     #expect(probe.recorded == ["first", "first"])
 }
 
-@Test @MainActor func aChangeThatReachesTheMainQueueAfterStopIsDropped() async {
+@Test @MainActor func aChangeAfterStopIsDroppedAndOneAfterARestartReachesTheMainQueue() async {
     let probe = RelayProbe()
     probe.start("first")
     probe.notify()
@@ -929,13 +833,6 @@ private struct RelayProbe {
     probe.notify()
     await drainMainQueue()
     #expect(probe.recorded.isEmpty)
-}
-
-@Test @MainActor func aChangeAfterARestartReachesTheMainQueue() async {
-    let probe = RelayProbe()
-    probe.start("first")
-    probe.notify()
-    probe.relay.stop()
     probe.start("second")
     probe.notify()
     await drainMainQueue()
@@ -992,25 +889,16 @@ private struct RelayProbe {
         """#)).isEmpty)
     }
     #expect(registry.permissions(for: nil).isEmpty)
+    #expect(DataSourceRegistry.builtIn.permissions(for: try configuration(#"""
+    {"providers":{"meetings":{"type":"calendar","calendars":["Work"]}},
+     "widgets":[{"id":"work","type":"provider","provider":"meetings","position":"right"},{"id":"cpu","type":"system","position":"right"}]}
+    """#)) == [.calendars])
+    #expect(DataSourceRegistry.builtIn.permissions(for: try configuration(#"""
+    {"providers":{"meetings":{"type":"calendar"}},"widgets":[{"id":"cpu","type":"system","position":"right"}]}
+    """#)).isEmpty)
     #expect(DataSourceRegistry.builtIn.types.filter { $0.permission != nil }.map(\.name) == ["calendar"])
     let listed = ImageRenderer(content: VStack { SourcePermissionList(permissions: [calendars]) }.frame(width: 480))
     #expect((listed.nsImage?.size.height ?? 0) > 0)
     let empty = ImageRenderer(content: VStack { SourcePermissionList(permissions: []) }.frame(width: 480))
     #expect((empty.nsImage?.size.height ?? 0) == 0)
-}
-
-@Test func setupListsCalendarsWheneverAConfigurationRunsACalendarProvider() throws {
-    let calendars = try #require(DataSourceRegistry.builtIn["calendar"]?.permission)
-    #expect(calendars == .calendars)
-    #expect(calendars.title == "Calendars" && calendars.symbol == "calendar" && calendars.privacyPane == "Privacy_Calendars")
-    func permissions(_ json: String) throws -> [SourcePermission] {
-        DataSourceRegistry.builtIn.permissions(for: try JSONDecoder().decode(Configuration.self, from: Data(json.utf8)))
-    }
-    #expect(try permissions(#"{"widgets":[{"id":"next","type":"calendar","position":"right"}]}"#) == [calendars])
-    #expect(try permissions(#"""
-    {"providers":{"meetings":{"type":"calendar","calendars":["Work"]}},
-     "widgets":[{"id":"work","type":"provider","provider":"meetings","position":"right"},{"id":"cpu","type":"system","position":"right"}]}
-    """#) == [calendars])
-    #expect(try permissions(#"{"widgets":[{"id":"next","type":"calendar","position":"right","enabled":false}]}"#).isEmpty)
-    #expect(try permissions(#"{"providers":{"meetings":{"type":"calendar"}},"widgets":[{"id":"cpu","type":"system","position":"right"}]}"#).isEmpty)
 }

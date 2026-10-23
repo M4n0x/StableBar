@@ -5,27 +5,22 @@ import Testing
 struct PackageSourceLinkTests {
     private static let index = "https://gitlab.example.com/api/v4/projects/1/packages/generic/stablebar/store/index.json"
 
-    @Test func joinLinksParseValidateAndNeverCarryATokenBack() throws {
+    @Test func joinLinksParseValidateKeepAnOptionalIDAndNeverCarryATokenBack() throws {
         let index = Self.index
         let encoded = index.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
+        let query = (index + "?ref=main").addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
         let link = try #require(PackageSourceLink(url: URL(string: "stablebar://add-source?name=Acme&url=\(encoded)&id=acme&token=abc")!))
         #expect(link == PackageSourceLink(id: "acme", name: "Acme", url: URL(string: index)!))
         #expect(!link.link.absoluteString.contains("token"))
         #expect(PackageSourceLink(url: link.link) == link)
         for bad in ["stablebar://add-source?name=Acme&url=http%3A%2F%2Fa.example%2Findex.json",
                     "stablebar://other?name=Acme&url=\(encoded)", "stablebar://add-source?name=Acme",
-                    "https://add-source?name=Acme&url=\(encoded)", "stablebar://add-source?name=Acme&url=\(encoded)&id=a%20b"] {
+                    "https://add-source?name=Acme&url=\(encoded)", "stablebar://add-source?name=Acme&url=\(encoded)&id=a%20b",
+                    "stablebar://add-source?name=Acme&url=\(query)", "stablebar://add-source?name=%20&url=\(encoded)",
+                    "stablebar://add-source?name=Acme&url=\(encoded)&id=stablebar"] {
             #expect(PackageSourceLink(url: URL(string: bad)!) == nil, "\(bad)")
         }
-    }
-
-    @Test func joinLinksRefuseAQueryOrANameThatIsBlankAndKeepAnOptionalID() throws {
-        let encoded = (Self.index + "?ref=main").addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
-        #expect(PackageSourceLink(url: URL(string: "stablebar://add-source?name=Acme&url=\(encoded)")!) == nil)
-        let plain = Self.index.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
-        #expect(PackageSourceLink(url: URL(string: "stablebar://add-source?name=%20&url=\(plain)")!) == nil)
-        #expect(PackageSourceLink(url: URL(string: "stablebar://add-source?name=Acme&url=\(plain)&id=stablebar")!) == nil)
-        let withoutID = try #require(PackageSourceLink(url: URL(string: "stablebar://add-source?name=Acme&url=\(plain)")!))
+        let withoutID = try #require(PackageSourceLink(url: URL(string: "stablebar://add-source?name=Acme&url=\(encoded)")!))
         #expect(withoutID.id == nil)
     }
 

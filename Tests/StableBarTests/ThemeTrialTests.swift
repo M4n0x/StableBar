@@ -480,38 +480,7 @@ final class ThemeTrialTests: XCTestCase {
         XCTAssertTrue(restarted.customizationHistory.undoSteps.isEmpty)
     }
 
-    @MainActor func testInvalidPreviewAndFailedKeepDoNotWriteOrEndTheTrial() throws {
-        let fixture = try ThemeGalleryFixture()
-        defer { fixture.close() }
-        let invalid = try fixture.theme(#"{"defaults":{"fontSize":19}}"#)
-        try fixture.write(#"{"environment":{"INVALID":"theme"}}"#, to: invalid.directory.appending(path: "config.json"))
-        let store = try loadedStore(fixture)
-        defer { store.stop() }
-        let document = store.effectiveDocument
-        let original = try Data(contentsOf: fixture.url)
-        let trial = ThemeTrial(store: store)
-        trial.previous()
-        XCTAssertNotNil(trial.error)
-        XCTAssertEqual(trial.choice?.key, invalid.key)
-        XCTAssertFalse(trial.canKeep)
-        trial.keep()
-        XCTAssertTrue(trial.isActive)
-        XCTAssertEqual(store.effectiveDocument, document)
-        XCTAssertEqual(try Data(contentsOf: fixture.url), original)
-        trial.next()
-        XCTAssertNil(trial.error)
-        XCTAssertTrue(trial.canKeep)
-        try FileManager.default.removeItem(at: fixture.url)
-        trial.keep()
-        XCTAssertNotNil(trial.error)
-        XCTAssertTrue(trial.isActive)
-        XCTAssertTrue(store.customizationHistory.undoSteps.isEmpty)
-        try original.write(to: fixture.url)
-        trial.cancel()
-        XCTAssertEqual(store.effectiveDocument, document)
-    }
-
-    @MainActor func testNavigationPassesTwoBrokenThemesAndKeepsTheLastGoodLookUntilAnotherWorks() throws {
+    @MainActor func testNavigationPassesTwoBrokenThemesKeepsTheLastGoodLookAndNoBrokenOrFailedKeepWritesOrEndsTheTrial() throws {
         let fixture = try ThemeGalleryFixture()
         defer { fixture.close() }
         let broken = try ["broken-a", "broken-b"].map { id in
@@ -557,17 +526,30 @@ final class ThemeTrialTests: XCTestCase {
         XCTAssertTrue(trial.canKeep)
         XCTAssertNil(trial.error)
         XCTAssertNotEqual(store.configuration?.defaults.cornerRadius, 6)
+        try FileManager.default.removeItem(at: fixture.url)
+        trial.keep()
+        XCTAssertNotNil(trial.error)
+        XCTAssertTrue(trial.isActive)
+        XCTAssertTrue(store.customizationHistory.undoSteps.isEmpty)
+        try original.write(to: fixture.url)
         trial.cancel()
         XCTAssertEqual(store.effectiveDocument, baseline)
         XCTAssertEqual(try Data(contentsOf: fixture.url), original)
         XCTAssertTrue(store.customizationHistory.undoSteps.isEmpty)
     }
 
-    @MainActor func testMenuBarMenuHidesTryThemesWhenNoBarExists() throws {
+    @MainActor func testMenuBarMenuOffersTryThemesOnlyWhenABarExists() throws {
         let fixture = try ThemeGalleryFixture()
         defer { fixture.close() }
         let store = try loadedStore(fixture)
         defer { store.stop() }
+        let bar = BarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        defer { bar.close() }
+        let offered = NSMenu()
+        AppDelegate(store: store, panels: [1: bar]).menuWillOpen(offered)
+        let item = try XCTUnwrap(offered.items.first { $0.title == "Try Themes…" })
+        XCTAssertNotNil(item.action)
+        XCTAssertFalse(bar.isVisible)
         let menu = NSMenu()
         let delegate = AppDelegate(store: store)
         delegate.menuWillOpen(menu)
@@ -579,21 +561,6 @@ final class ThemeTrialTests: XCTestCase {
         XCTAssertNotNil(failed.configurationError)
         AppDelegate(store: failed).menuWillOpen(menu)
         XCTAssertFalse(menu.items.contains { $0.title == "Try Themes…" })
-    }
-
-    @MainActor func testMenuBarMenuOffersTryThemesWhenABarExists() throws {
-        let fixture = try ThemeGalleryFixture()
-        defer { fixture.close() }
-        let store = try loadedStore(fixture)
-        defer { store.stop() }
-        let bar = BarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        defer { bar.close() }
-        let menu = NSMenu()
-        let delegate = AppDelegate(store: store, panels: [1: bar])
-        delegate.menuWillOpen(menu)
-        let item = try XCTUnwrap(menu.items.first { $0.title == "Try Themes…" })
-        XCTAssertNotNil(item.action)
-        XCTAssertFalse(bar.isVisible)
     }
 
     private var pendingEdits: [ConfigurationEdit] {

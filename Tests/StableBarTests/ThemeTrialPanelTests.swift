@@ -3,7 +3,7 @@ import XCTest
 @testable import StableBar
 
 final class ThemeTrialPanelTests: XCTestCase {
-    func testPointerSelectsTheDisplayIncludingNegativeAndStackedCoordinates() {
+    func testScreenChoiceFollowsThePointerThenFallsBackToMainThenFirstBarAndRequiresABar() {
         let frames = [CGRect(x: 0, y: 0, width: 1440, height: 900),
                       CGRect(x: -1920, y: 0, width: 1920, height: 1080),
                       CGRect(x: 0, y: 900, width: 2560, height: 1440)]
@@ -16,11 +16,6 @@ final class ThemeTrialPanelTests: XCTestCase {
             XCTAssertEqual(ThemeTrialPlacement.screenIndex(at: point, frames: frames, mainIndex: 0, barIndices: [0, 1, 2]),
                            index)
         }
-    }
-
-    func testScreenChoiceFallsBackToMainThenFirstBarAndRequiresABar() {
-        let frames = [CGRect(x: 0, y: 0, width: 1440, height: 900),
-                      CGRect(x: -1920, y: 0, width: 1920, height: 1080)]
         let outside = CGPoint(x: -3000, y: 2000)
         XCTAssertEqual(ThemeTrialPlacement.screenIndex(at: outside, frames: frames, mainIndex: 1, barIndices: [0, 1]), 1)
         XCTAssertEqual(ThemeTrialPlacement.screenIndex(at: outside, frames: frames, mainIndex: nil, barIndices: [0, 1]), 0)
@@ -54,7 +49,7 @@ final class ThemeTrialPanelTests: XCTestCase {
         XCTAssertTrue(screen.contains(result))
     }
 
-    @MainActor func testOutsideClickCancelsThePreviewWithoutSavingAndReopeningStartsFresh() throws {
+    @MainActor func testPanelKeyboardKeepsOrCancelsAndOutsideClickCancelsWithoutSavingThenReopensFresh() throws {
         let fixture = try ThemeGalleryFixture()
         defer { fixture.close() }
         _ = NSApplication.shared
@@ -91,27 +86,11 @@ final class ThemeTrialPanelTests: XCTestCase {
         XCTAssertNotEqual(store.effectiveDocument, document)
         controller.cancel()
         XCTAssertEqual(store.effectiveDocument, document)
-    }
-
-    @MainActor func testPanelKeyboardKeepsCancelsAndLeavesModifiedShortcutsAlone() throws {
-        let fixture = try ThemeGalleryFixture()
-        defer { fixture.close() }
-        _ = NSApplication.shared
-        let screen = try XCTUnwrap(NSScreen.screens.first)
-        let store = BarStore(configurationURL: fixture.url, themesDirectory: fixture.themes)
-        store.reloadConfiguration()
-        defer { store.stop() }
-        let bar = BarPanel(contentRect: CGRect(x: screen.frame.minX, y: screen.frame.maxY - 60, width: screen.frame.width, height: 40),
-                           styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        defer { bar.close() }
-        var presented: PopupPanel?
-        let controller = ThemeTrialPanel(present: { presented = $0 })
-        defer { controller.cancel() }
         controller.show(store: store, bar: bar, screen: screen)
-        let panel = try XCTUnwrap(presented)
-        XCTAssertFalse(controller.handle(try key(123, panel: panel, modifiers: .command)))
-        XCTAssertTrue(controller.handle(try key(123, panel: panel)))
-        XCTAssertTrue(controller.handle(try key(36, panel: panel)))
+        let panelAgain = try XCTUnwrap(presented)
+        XCTAssertFalse(controller.handle(try key(123, panel: panelAgain, modifiers: .command)))
+        XCTAssertTrue(controller.handle(try key(123, panel: panelAgain)))
+        XCTAssertTrue(controller.handle(try key(36, panel: panelAgain)))
         XCTAssertEqual(try fixture.document()["theme"], .object(["id": .string("synthwave")]))
         XCTAssertEqual(store.customizationHistory.undoSteps.count, 1)
         controller.show(store: store, bar: bar, screen: screen)

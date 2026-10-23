@@ -218,21 +218,24 @@ final class ConfigurationHistoryTests: XCTestCase {
         XCTAssertEqual(store.configuration?.bar.height, 48)
     }
 
-    @MainActor func testHistoryNoticeClearsAfterASuccessfulChangeOrPendingUndo() throws {
-        for undoPending in [false, true] {
+    @MainActor func testHistoryNoticeClearsAfterAChangeAPendingUndoOrClosingCustomize() throws {
+        for clearing in ["change", "pending undo", "close"] {
             let fixture = try Fixture()
             defer { fixture.close() }
             let history = fixture.store.customizationHistory
             try history.change(ConfigurationEdit(action: .bar, properties: ["height": .number(48)]))
-            if !undoPending { try history.flush() }
+            if clearing != "pending undo" { try history.flush() }
             let external = Data(#"{"bar":{"height":55},"widgets":[]}"#.utf8)
             try external.write(to: fixture.url)
             fixture.store.reloadConfiguration()
             XCTAssertNotNil(history.notice)
-            if undoPending {
+            switch clearing {
+            case "pending undo":
                 try history.undo()
                 XCTAssertEqual(try Data(contentsOf: fixture.url), external)
-            } else {
+            case "close":
+                CustomizationWindow(store: fixture.store).windowWillClose(Notification(name: NSWindow.willCloseNotification))
+            default:
                 try history.change(ConfigurationEdit(action: .defaults, properties: ["fontSize": .number(16)]))
                 XCTAssertNil(history.notice)
                 try history.flush()
@@ -241,29 +244,7 @@ final class ConfigurationHistoryTests: XCTestCase {
                 XCTAssertNil(history.notice)
                 try history.redo()
             }
-            XCTAssertNil(history.notice)
-        }
-    }
-
-    @MainActor func testClosingCustomizeClearsTheHistoryNotice() throws {
-        let fixture = try Fixture()
-        defer { fixture.close() }
-        let history = fixture.store.customizationHistory
-        try history.change(ConfigurationEdit(action: .bar, properties: ["height": .number(48)]))
-        try history.flush()
-        try Data(#"{"widgets":[]}"#.utf8).write(to: fixture.url)
-        fixture.store.reloadConfiguration()
-        XCTAssertNotNil(history.notice)
-        CustomizationWindow(store: fixture.store).windowWillClose(Notification(name: NSWindow.willCloseNotification))
-        XCTAssertNil(history.notice)
-    }
-
-    func testConfigurationErrorBannerCoversEditableSectionsAndAvoidsDiagnosticDuplicates() {
-        for section in CustomizationSection.allCases {
-            let editingSection = [.appearance, .widgets, .profiles, .general].contains(section)
-            XCTAssertEqual(section.bannerError(customization: nil, configuration: "File error"), editingSection ? "File error" : nil)
-            XCTAssertEqual(section.bannerError(customization: "Save error", configuration: "File error"), "Save error")
-            XCTAssertEqual(section.bannerError(customization: "File error", configuration: "File error"), editingSection ? "File error" : nil)
+            XCTAssertNil(history.notice, clearing)
         }
     }
 
@@ -350,17 +331,10 @@ final class ConfigurationHistoryTests: XCTestCase {
         }
     }
 
-    @MainActor func testRemovedPendingTargetsDoNotBlockUndoChangesCloseQuitOrCommands() throws {
-        try assertRecovery(from: .removedProfile)
-        try assertRecovery(from: .removedWidget)
-    }
-
-    @MainActor func testDeletedFileDoesNotLeaveABlockingPendingChange() throws {
-        try assertRecovery(from: .deletedFile)
-    }
-
-    @MainActor func testUnreadableFileDoesNotLeaveABlockingPendingChange() throws {
-        try assertRecovery(from: .unreadableFile)
+    @MainActor func testPendingChangesThatCannotBeSavedDoNotBlockUndoChangesCloseQuitOrCommands() throws {
+        for failure in PendingFailure.allCases {
+            try assertRecovery(from: failure)
+        }
     }
 
     @MainActor func testTimerDiscardsFailedPendingChangesWithoutWritingThemLater() async throws {

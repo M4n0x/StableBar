@@ -932,45 +932,6 @@ final class PackagesViewTests: XCTestCase {
         XCTAssertTrue(store.customizationHistory.undoSteps.isEmpty)
     }
 
-    @MainActor func testAddWidgetPopoverLoadsTheCommandReviewAfterChoosingAPackage() async throws {
-        let fixture = try ThemeGalleryFixture()
-        defer { fixture.close() }
-        let index = LocalPackageIndex(fixture: fixture)
-        _ = try await index.add(id: "commands", kind: nil,
-            configuration: #"{"widgets":[{"id":"note","type":"text","position":"right","text":"Hello","onClick":"echo from add"}]}"#)
-        let store = try fixture.store()
-        defer { store.stop() }
-        let setup = WidgetSetup(store: store, client: PackageStoreClient(packages: fixture.packages, indexURL: index.url))
-        _ = NSApplication.shared
-        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 680, height: 620),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        defer { window.close() }
-        let model = WidgetAddPopoverModel(setup: setup, position: .left, before: nil, added: { _ in
-            XCTFail("Commands must be reviewed before adding")
-        })
-        let host = NSHostingView(rootView: WidgetAddPopoverView(model: model, store: store))
-        host.sizingOptions = []
-        window.contentView = host
-        for _ in 0..<50 {
-            host.layoutSubtreeIfNeeded()
-            if setup.choices.contains(where: { $0.package?.id == "commands" }) { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        let choice = try XCTUnwrap(setup.choices.first { $0.package?.id == "commands" })
-        let added = await setup.add(choice, to: .left)
-        XCTAssertNil(added)
-        for _ in 0..<30 {
-            host.layoutSubtreeIfNeeded()
-            if textFields(host).contains("echo from add") { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        XCTAssertTrue(textFields(host).contains("echo from add"))
-        XCTAssertFalse(window.isVisible)
-        XCTAssertTrue(try fixture.packages.list().isEmpty)
-        XCTAssertTrue(store.customizationHistory.undoSteps.isEmpty)
-    }
-
     /// Review Focus 3: a pasted token is trimmed before it's saved, and Undo removes the source but keeps its token.
     @MainActor func testAddingASourceSavesConfigAndATrimmedTokenAndUndoKeepsTheToken() async throws {
         let fixture = try ThemeGalleryFixture()

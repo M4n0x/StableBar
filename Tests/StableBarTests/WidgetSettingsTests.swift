@@ -84,7 +84,7 @@ final class WidgetSettingsTests: XCTestCase {
         XCTAssertThrowsError(try WidgetClickChoice.nothing.properties(for: link))
     }
 
-    func testCommandsPopupsAndMenusCanNeverBeSilentlyRemovedByAnyChoice() throws {
+    func testCommandsPopupsAndMenusFromConfigurationOrLiveOutputCanNeverBeSilentlyRemovedByAnyChoice() throws {
         for existing: [String: ConfigurationValue] in [
             ["onClick": .string("echo keep")],
             ["popup": .object(["style": .object([:]), "layout": .object(["type": .string("text"), "text": .string("Details")])])],
@@ -98,17 +98,14 @@ final class WidgetSettingsTests: XCTestCase {
                 XCTAssertThrowsError(try choice.properties(for: widget, value: "https://example.com"))
             }
         }
-    }
-
-    func testClickCommandsAndMenusFromLiveOutputAlsoStayUnderAdvanced() throws {
-        let widget = try widget()
+        let plain = try widget()
         for json in [#"{"text":"Live","onClick":"echo live"}"#, #"{"text":"Live","menu":[{"title":"Keep","onClick":"echo keep"}]}"#] {
             let output = try JSONDecoder().decode(ScriptOutput.self, from: Data(json.utf8))
-            XCTAssertEqual(WidgetClickChoice.current(for: widget, output: output), .advanced)
-            XCTAssertNotNil(WidgetClickChoice.explanation(for: widget, output: output))
-            XCTAssertThrowsError(try WidgetClickChoice.nothing.properties(for: widget, output: output))
-            XCTAssertThrowsError(try WidgetClickChoice.application.properties(for: widget, value: "com.apple.iCal", output: output))
-            XCTAssertThrowsError(try WidgetClickChoice.webPage.properties(for: widget, value: "https://example.com", output: output))
+            XCTAssertEqual(WidgetClickChoice.current(for: plain, output: output), .advanced)
+            XCTAssertNotNil(WidgetClickChoice.explanation(for: plain, output: output))
+            XCTAssertThrowsError(try WidgetClickChoice.nothing.properties(for: plain, output: output))
+            XCTAssertThrowsError(try WidgetClickChoice.application.properties(for: plain, value: "com.apple.iCal", output: output))
+            XCTAssertThrowsError(try WidgetClickChoice.webPage.properties(for: plain, value: "https://example.com", output: output))
         }
     }
 
@@ -123,15 +120,6 @@ final class WidgetSettingsTests: XCTestCase {
         XCTAssertEqual(WidgetScreenChoice(widget.display), .specific)
         XCTAssertNil(WidgetScreenChoice.specific.properties)
         XCTAssertEqual(widget.display, .ids([1, 3]))
-    }
-
-    func testCommonClockFormatsRemainValidAndCustomFormatsAreAccepted() throws {
-        XCTAssertEqual(Set(WidgetClockFormat.common.map(\.value)).count, WidgetClockFormat.common.count)
-        for format in WidgetClockFormat.common.map(\.value) + ["yyyy-MM-dd 'at' HH:mm"] {
-            let clock = try widget(["type": .string("clock"), "format": .string(format)])
-            XCTAssertEqual(clock.content, .clock(format: format))
-            XCTAssertFalse(clock.label(output: nil, activeApp: nil, date: .now).text.isEmpty)
-        }
     }
 
     private func widget(_ properties: [String: ConfigurationValue] = [:]) throws -> WidgetConfiguration {

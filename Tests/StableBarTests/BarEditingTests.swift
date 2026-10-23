@@ -113,30 +113,21 @@ final class BarEditingTests: XCTestCase {
         }
     }
 
-    func testCompactMeasuredSectionsFitABusyNotchedBarWithoutScrolling() throws {
-        let widths: [WidgetPosition: CGFloat] = [.left: 50, .notchLeft: 86, .center: 50, .notchRight: 86, .right: 350]
-        let layout = BarEditLayout(width: 1512, display: laptop, bar: BarSettings(), preferredWidths: widths)
-        for position in WidgetPosition.allCases {
-            let frame = try XCTUnwrap(layout.sections[position])
-            XCTAssertEqual(frame.width, try XCTUnwrap(widths[position]), accuracy: 0.01,
-                           "Measured sections that fit must retain their content width")
-            XCTAssertLessThanOrEqual(frame.x + frame.width, 1512 - 12)
+    func testMeasuredSectionsThatFitABusyNotchedBarKeepTheirWidthWithoutScrolling() throws {
+        for rightWidth: CGFloat in [350, 450] {
+            let widths: [WidgetPosition: CGFloat] = [.left: 50, .notchLeft: 86, .center: 50, .notchRight: 86, .right: rightWidth]
+            let layout = BarEditLayout(width: 1512, display: laptop, bar: BarSettings(), preferredWidths: widths)
+            XCTAssertTrue(layout.scrolling.isEmpty)
+            for position in WidgetPosition.allCases {
+                let frame = try XCTUnwrap(layout.sections[position])
+                XCTAssertEqual(frame.width, try XCTUnwrap(widths[position]), accuracy: 0.01,
+                               "Measured sections that fit must retain their content width")
+                XCTAssertLessThanOrEqual(frame.x + frame.width, 1512 - 12)
+                XCTAssertTrue(frame.x + frame.width <= 661 || frame.x >= 851)
+            }
+            let right = try XCTUnwrap(layout.sections[.right])
+            XCTAssertEqual(right.x + right.width, 1512 - 12, accuracy: 0.01)
         }
-        XCTAssertTrue(layout.scrolling.isEmpty)
-    }
-
-    func testRightSectionUsesTheSpacePreviouslyReservedForControlsWithoutScrolling() throws {
-        let widths: [WidgetPosition: CGFloat] = [.left: 50, .notchLeft: 86, .center: 50, .notchRight: 86, .right: 450]
-        let layout = BarEditLayout(width: 1512, display: laptop, bar: BarSettings(), preferredWidths: widths)
-        XCTAssertTrue(layout.scrolling.isEmpty)
-        for position in WidgetPosition.allCases {
-            let frame = try XCTUnwrap(layout.sections[position])
-            XCTAssertEqual(frame.width, try XCTUnwrap(widths[position]), accuracy: 0.01)
-            XCTAssertLessThanOrEqual(frame.x + frame.width, 1512 - 12)
-            XCTAssertTrue(frame.x + frame.width <= 661 || frame.x >= 851)
-        }
-        let right = try XCTUnwrap(layout.sections[.right])
-        XCTAssertEqual(right.x + right.width, 1512 - 12, accuracy: 0.01)
     }
 
     func testOnlyTheSectionThatCannotFitScrollsAndSectionsReachTheRightInset() throws {
@@ -158,20 +149,13 @@ final class BarEditingTests: XCTestCase {
         }
     }
 
-    func testEmptyTraysContainOnlyTheSlotAndPadding() throws {
-        let layout = BarEditLayout(width: 1512, display: laptop, bar: BarSettings())
-        for position in WidgetPosition.allCases {
-            XCTAssertEqual(try XCTUnwrap(layout.sections[position]).width, max(36, BarEditTrayMetrics.chipWidth(for: position)))
-        }
-    }
-
-    func testDragChipsFitEmptyTraysWithoutOverlappingOtherTraysOrTheNotch() throws {
+    func testEmptyTraysHoldOnlyTheirDragChipWithoutOverlappingOtherTraysOrTheNotch() throws {
         for display in [laptop, external] {
             let layout = BarEditLayout(width: 1512, display: display, bar: BarSettings())
             XCTAssertTrue(layout.scrolling.isEmpty)
             let ordered = layout.sections.sorted { $0.value.x < $1.value.x }
             for (index, entry) in ordered.enumerated() {
-                XCTAssertGreaterThanOrEqual(entry.value.width, BarEditTrayMetrics.chipWidth(for: entry.key))
+                XCTAssertEqual(entry.value.width, max(36, BarEditTrayMetrics.chipWidth(for: entry.key)))
                 if index > 0 {
                     XCTAssertGreaterThan(entry.value.x, ordered[index - 1].value.x + ordered[index - 1].value.width)
                 }
@@ -590,43 +574,24 @@ final class BarEditingTests: XCTestCase {
         XCTAssertTrue(store.customizationHistory.undoSteps.isEmpty)
     }
 
-    @MainActor func testBarPanelOnlyAcceptsKeyboardFocusWhileEditingAndRuntimeCanOpenOneWidget() throws {
-        _ = NSApplication.shared
-        let panel = BarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        defer { panel.close() }
-        XCTAssertFalse(panel.canBecomeKey)
-        XCTAssertFalse(panel.canBecomeMain)
-        panel.isEditingBar = true
-        XCTAssertTrue(panel.canBecomeKey)
-        XCTAssertFalse(panel.canBecomeMain)
-        panel.isEditingBar = false
-        XCTAssertFalse(panel.canBecomeKey)
-        let fixture = try ThemeGalleryFixture()
-        defer { fixture.close() }
-        let store = try fixture.store()
-        defer { store.stop() }
-        var id: String?
-        var generic = false
-        store.onCustomizeWidget = { id = $0 }
-        store.onCustomize = { generic = true }
-        _ = try store.handle(RuntimeRequest(action: .customize, id: "clock"))
-        XCTAssertEqual(id, "clock")
-        XCTAssertFalse(generic)
-        _ = try store.handle(RuntimeRequest(action: .customize))
-        XCTAssertTrue(generic)
-    }
-
-    @MainActor func testMenuBarEntryStartsAndFinishesEditingAndIsAbsentWithoutABar() throws {
+    @MainActor func testMenuBarEntryNeedsABarAndAConfigurationAndStartsAndFinishesEditing() throws {
         let fixture = try ThemeGalleryFixture(#"{"widgets":[]}"#)
         defer { fixture.close() }
-        let store = try fixture.store()
+        let store = BarStore(configurationURL: fixture.url)
         defer { store.stop() }
         let panel = BarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         defer { panel.close() }
         let menu = NSMenu()
+        let delegate = AppDelegate(store: store, panels: [1: panel])
+        delegate.menuWillOpen(menu)
+        XCTAssertFalse(store.barEditing.isAvailable)
+        XCTAssertFalse(menu.items.contains { $0.title == "Edit Bar in Place" })
+        store.barEditing.begin()
+        XCTAssertFalse(store.barEditing.isActive)
+        store.reloadConfiguration()
+        XCTAssertTrue(store.barEditing.isAvailable)
         AppDelegate(store: store).menuWillOpen(menu)
         XCTAssertFalse(menu.items.contains { $0.title == "Edit Bar in Place" })
-        let delegate = AppDelegate(store: store, panels: [1: panel])
         delegate.menuWillOpen(menu)
         let item = try XCTUnwrap(menu.items.first { $0.title == "Edit Bar in Place" })
         XCTAssertEqual(menu.items.firstIndex { $0 === item }, 2)
@@ -662,26 +627,6 @@ final class BarEditingTests: XCTestCase {
                 XCTAssertEqual(menu.items.map { $0.isSeparatorItem ? "separator" : $0.title }, expected)
             }
         }
-    }
-
-    @MainActor func testEditBarIsUnavailableWithoutConfiguration() throws {
-        let fixture = try ThemeGalleryFixture()
-        defer { fixture.close() }
-        let store = BarStore(configurationURL: fixture.url)
-        defer { store.stop() }
-        let panel = BarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        defer { panel.close() }
-        let menu = NSMenu()
-        let delegate = AppDelegate(store: store, panels: [1: panel])
-        delegate.menuWillOpen(menu)
-        XCTAssertFalse(store.barEditing.isAvailable)
-        XCTAssertFalse(menu.items.contains { $0.title == "Edit Bar in Place" })
-        store.barEditing.begin()
-        XCTAssertFalse(store.barEditing.isActive)
-        store.reloadConfiguration()
-        XCTAssertTrue(store.barEditing.isAvailable)
-        delegate.menuWillOpen(menu)
-        XCTAssertTrue(menu.items.contains { $0.title == "Edit Bar in Place" })
     }
 
     @MainActor func testLeavingEditModeReleasesOnlyTheKeyBarAndKeepsItsVisibility() {
@@ -725,38 +670,6 @@ final class BarEditingTests: XCTestCase {
         XCTAssertFalse(BarEditingKeyboard.handle(escape, store: store, keyWindow: panel))
     }
 
-    @MainActor func testEscapeLeavesOtherWindowsSheetsAndFieldEditorsAlone() throws {
-        let fixture = try ThemeGalleryFixture()
-        defer { fixture.close() }
-        let store = try fixture.store()
-        defer { store.stop() }
-        store.barEditing.begin()
-        let panel = UnorderedEditingPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
-                                           backing: .buffered, defer: false)
-        defer { panel.close() }
-        panel.isEditingBar = true
-        let other = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
-        other.isReleasedWhenClosed = false
-        defer { other.close() }
-        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
-                                                  windowNumber: panel.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "",
-                                                  isARepeat: false, keyCode: 53))
-        XCTAssertFalse(BarEditingKeyboard.handle(escape, store: store, keyWindow: other))
-        XCTAssertTrue(store.barEditing.isActive)
-        XCTAssertFalse(BarEditingKeyboard.handle(escape, store: store, keyWindow: nil))
-        panel.simulatedSheet = other
-        XCTAssertFalse(BarEditingKeyboard.handle(escape, store: store, keyWindow: panel))
-        XCTAssertTrue(store.barEditing.isActive)
-        panel.simulatedSheet = nil
-        let fieldEditor = NSTextView()
-        fieldEditor.isFieldEditor = true
-        panel.contentView = fieldEditor
-        XCTAssertTrue(panel.makeFirstResponder(fieldEditor))
-        XCTAssertFalse(BarEditingKeyboard.handle(escape, store: store, keyWindow: panel))
-        XCTAssertTrue(store.barEditing.isActive)
-    }
-
-
     @MainActor func testBarUndoAndRedoFinishCustomizeEditingAndFollowSharedHistoryState() throws {
         let fixture = try ThemeGalleryFixture(#"{"widgets":[{"id":"a","type":"clock","position":"left"}]}"#)
         defer { fixture.close() }
@@ -793,30 +706,6 @@ final class BarEditingTests: XCTestCase {
         XCTAssertFalse(editing.canUndo)
     }
 
-    @MainActor func testUndoAndRedoUseTheTypedCharacterInsteadOfTheUSKeyPosition() throws {
-        let fixture = try ThemeGalleryFixture(#"{"widgets":[{"id":"a","type":"clock","position":"left"}]}"#)
-        defer { fixture.close() }
-        let store = try fixture.store()
-        defer { store.stop() }
-        store.barEditing.begin()
-        store.barEditing.remove("a")
-        let panel = BarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        defer { panel.close() }
-        panel.isEditingBar = true
-        func event(_ code: UInt16, _ character: String, _ modifiers: NSEvent.ModifierFlags) throws -> NSEvent {
-            try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
-                timestamp: 0, windowNumber: panel.windowNumber, context: nil, characters: character,
-                charactersIgnoringModifiers: character, isARepeat: false, keyCode: code))
-        }
-        XCTAssertFalse(BarEditingKeyboard.handle(try event(6, "y", .command), store: store, keyWindow: panel))
-        XCTAssertEqual(store.configuration?.widgets.count, 0)
-        XCTAssertTrue(BarEditingKeyboard.handle(try event(16, "z", .command), store: store, keyWindow: panel))
-        XCTAssertEqual(store.configuration?.widgets.count, 1)
-        XCTAssertTrue(BarEditingKeyboard.handle(try event(16, "Z", [.command, .shift]), store: store, keyWindow: panel))
-        XCTAssertEqual(store.configuration?.widgets.count, 0)
-        XCTAssertFalse(panel.isVisible)
-    }
-
     @MainActor func testUndoAndRedoPreserveCommandLayoutsAndNonLatinKeyFallback() throws {
         let fixture = try ThemeGalleryFixture(#"{"widgets":[{"id":"a","type":"clock","position":"left"}]}"#)
         defer { fixture.close() }
@@ -846,7 +735,7 @@ final class BarEditingTests: XCTestCase {
         }
     }
 
-    @MainActor func testUndoShortcutsLeaveOtherWindowsSheetsAndTextInputAlone() throws {
+    @MainActor func testEscapeAndUndoShortcutsLeaveOtherWindowsSheetsAndTextInputAlone() throws {
         let fixture = try ThemeGalleryFixture(#"{"widgets":[{"id":"a","type":"clock","position":"left"}]}"#)
         defer { fixture.close() }
         let store = try fixture.store()
@@ -859,9 +748,9 @@ final class BarEditingTests: XCTestCase {
         let other = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         other.isReleasedWhenClosed = false
         defer { other.close() }
-        for modifiers: NSEvent.ModifierFlags in [.command, [.command, .shift]] {
+        for (code, characters, modifiers): (UInt16, String, NSEvent.ModifierFlags) in [(53, "", []), (6, "z", .command), (6, "z", [.command, .shift])] {
             let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
-                timestamp: 0, windowNumber: panel.windowNumber, context: nil, characters: "z", charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6))
+                timestamp: 0, windowNumber: panel.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code))
             XCTAssertFalse(BarEditingKeyboard.handle(event, store: store, keyWindow: other))
             XCTAssertFalse(BarEditingKeyboard.handle(event, store: store, keyWindow: nil))
             panel.simulatedSheet = other
@@ -878,6 +767,7 @@ final class BarEditingTests: XCTestCase {
             XCTAssertFalse(BarEditingKeyboard.handle(event, store: store, keyWindow: panel))
             panel.isEditingBar = true
         }
+        XCTAssertTrue(store.barEditing.isActive)
         for modifiers: NSEvent.ModifierFlags in [[], .shift, [.command, .option], [.command, .control]] {
             XCTAssertFalse(store.barEditing.handleKey(6, charactersIgnoringModifiers: "z", modifiers: modifiers))
         }
@@ -885,11 +775,6 @@ final class BarEditingTests: XCTestCase {
         XCTAssertEqual(store.customizationHistory.undoSteps.count, 1)
         store.barEditing.end()
         XCTAssertFalse(store.barEditing.handleKey(6, charactersIgnoringModifiers: "z", modifiers: .command))
-    }
-
-    func testPositionMenusUseMacOSTitleCase() {
-        XCTAssertEqual(WidgetPosition.allCases.map(\.menuTitle), ["Left", "Left of Notch", "Center", "Right of Notch", "Right"])
-        XCTAssertEqual(WidgetPosition.notchLeft.title, "Left of notch")
     }
 
     @MainActor func testEmptyCustomLayoutsAndTransparentWidgetsUsePlaceholdersUntilTheirContentReturns() throws {

@@ -33,11 +33,13 @@ import Testing
     }
 }
 
-@Test @MainActor func unchangedInheritedStyleChoicesKeepTheirSourceAndDoNotCreateEdits() throws {
-    try withCustomizationEditor(#"{"includes":["settings.json"],"widgets":[]}"#, included: #"""
-    {"defaults":{"fontName":"Helvetica","fontWeight":"regular"},
+@Test @MainActor func unchangedInheritedStyleAndColorChoicesKeepTheirSourceAndDoNotCreateEdits() throws {
+    try withCustomizationEditor(#"{"includes":["settings.json"],"widgets":[]}"#, included: ##"""
+    {"tokens":{"accent":"#123456","bespoke":"#234567"},
+     "defaults":{"fontName":"Helvetica","fontWeight":"regular",
+                 "foreground":"@token.accent","background":"@token.bespoke","borderColor":"#345678"},
      "workspaceDefaults":{"indicator":"underline"}}
-    """#) { editor, url in
+    """##) { editor, url in
         let store = editor.store
         let origins = store.origins
         let original = try Data(contentsOf: url)
@@ -49,6 +51,16 @@ import Testing
             selection.wrappedValue = selection.wrappedValue
             let origin = try #require(store.origins["\(action.rawValue).\(key)"])
             #expect(!store.setsInMainFile(origin))
+        }
+        let defaults = try #require(store.effectiveDocument["defaults"]).decoded([String: ConfigurationValue].self)
+        for key in ["foreground", "background", "borderColor"] {
+            let origin = try #require(store.origins["defaults.\(key)"])
+            let color = try #require(defaults[key]).decoded(HexColor.self)
+            let picker = TokenPicker(token: origin.token, color: color) {
+                editor.change(ConfigurationEdit(action: .defaults, properties: [key: $0]))
+            }
+            picker.selection.wrappedValue = picker.selection.wrappedValue
+            #expect(!store.setsInMainFile(try #require(store.origins["defaults.\(key)"])))
         }
         #expect(store.sessionEdits.isEmpty)
         #expect(editor.undoSteps.isEmpty)
@@ -98,29 +110,6 @@ import Testing
         #expect(editor.store.configuration?.defaults.fontWeight == "bold")
         #expect(editor.store.customizationEdits.isEmpty)
         #expect(editor.undoSteps.count == 1)
-    }
-}
-
-@Test @MainActor func unchangedInheritedColorChoicesKeepTokenAndCustomSources() throws {
-    try withCustomizationEditor(#"{"includes":["settings.json"],"widgets":[]}"#, included: ##"""
-    {"tokens":{"accent":"#123456","bespoke":"#234567"},
-     "defaults":{"foreground":"@token.accent","background":"@token.bespoke","borderColor":"#345678"}}
-    """##) { editor, _ in
-        let store = editor.store
-        let origins = store.origins
-        let defaults = try #require(store.effectiveDocument["defaults"]).decoded([String: ConfigurationValue].self)
-        for key in ["foreground", "background", "borderColor"] {
-            let origin = try #require(store.origins["defaults.\(key)"])
-            let color = try #require(defaults[key]).decoded(HexColor.self)
-            let picker = TokenPicker(token: origin.token, color: color) {
-                editor.change(ConfigurationEdit(action: .defaults, properties: [key: $0]))
-            }
-            picker.selection.wrappedValue = picker.selection.wrappedValue
-            #expect(!store.setsInMainFile(try #require(store.origins["defaults.\(key)"])))
-        }
-        #expect(store.sessionEdits.isEmpty)
-        #expect(editor.undoSteps.isEmpty)
-        #expect(store.origins == origins)
     }
 }
 

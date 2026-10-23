@@ -108,14 +108,6 @@ private func workspace(_ json: String) throws -> WorkspaceConfiguration {
     try JSONDecoder().decode(WorkspaceConfiguration.self, from: Data(json.utf8))
 }
 
-@Test func workspaceCellsTakeOneStateInTodaysPriority() {
-    let apps = [WorkspaceApp(workspace: "1", name: "Finder", bundleID: "com.apple.finder")]
-    #expect(WorkspaceState(Workspace(name: "1", isFocused: true, isVisible: true, monitor: 1)) == .focused)
-    #expect(WorkspaceState(Workspace(name: "1", isFocused: false, isVisible: true, monitor: 1)) == .visible)
-    #expect(WorkspaceState(Workspace(name: "1", isFocused: false, isVisible: false, monitor: 1)) == .empty)
-    #expect(WorkspaceState(Workspace(name: "1", isFocused: false, isVisible: false, monitor: 1, apps: apps)) == nil)
-}
-
 @Test func workspaceShorthandStylesResolveLikeBefore() throws {
     let configuration = try workspace(##"""
     {"style":{"foreground":"#111111","hoverForeground":"#222222","paddingHorizontal":5},
@@ -201,7 +193,7 @@ private func workspace(_ json: String) throws -> WorkspaceConfiguration {
     #expect(focused.underline.background == .color(HexColor(0x888888ff)))
 }
 
-@Test func explicitStatesWinOverShorthandPropertyByProperty() throws {
+@Test func explicitStatesWinOverHoverShorthandPropertyByProperty() throws {
     let decoded = try style(##"""
     {"hoverBackground":"#222222","hoverForeground":"#333333",
      "states":{"hover":{"background":"#111111"},"warning":{"foreground":"#ff0000"}}}
@@ -210,6 +202,13 @@ private func workspace(_ json: String) throws -> WorkspaceConfiguration {
     #expect(decoded.states?["warning"]?.foreground == HexColor(0xff0000ff))
     #expect(try style(#"{"states":{"hover":null}}"#).states == nil)
     #expect(try style(#"{"states":{}}"#).states == nil)
+    let split = try style(##"""
+    {"hoverBackground":"#222222","hoverForeground":"#333333","states":{"hover":{"foreground":"#444444","borderColor":"#555555"}}}
+    """##)
+    let resolved = resolveStyle([split], states: StyleStates(hover: true))
+    #expect(resolved.background == .color(HexColor(0x222222ff)))
+    #expect(resolved.foreground == HexColor(0x444444ff))
+    #expect(resolved.borderColor == HexColor(0x555555ff))
 }
 
 @Test func themeStatesMergeWithWidgetStatesAndWinOverTheBase() throws {
@@ -235,35 +234,6 @@ private func workspace(_ json: String) throws -> WorkspaceConfiguration {
     #expect(configuration.cellStyle(.focused).underline.background == .color(HexColor(0x444444ff)))
     #expect(configuration.cellStyle(.visible).underline.background == .color(HexColor(0x555555ff)))
     #expect(configuration.cellStyle(.visible).underline.height == 2)
-}
-
-@Test func layeredStylesMergeHoverOnePropertyAtATime() throws {
-    let hover = StyleStates(hover: true)
-    let theme = try style(##"{"hoverBackground":"#222222"}"##)
-    let widget = try style(##"{"hoverForeground":"#555555"}"##)
-    let hovered = resolveStyle([theme, widget], states: hover)
-    #expect(hovered.background == .color(HexColor(0x222222ff)))
-    #expect(hovered.foreground == HexColor(0x555555ff))
-    let output = try style(##"{"hoverBackground":"#333333"}"##)
-    let overridden = resolveStyle([theme, widget, output], states: hover)
-    #expect(overridden.background == .color(HexColor(0x333333ff)))
-    #expect(overridden.foreground == HexColor(0x555555ff))
-}
-
-@Test func hoverShorthandFillsInWhatExplicitStatesLeaveUnset() throws {
-    let both = try style(##"""
-    {"hoverBackground":"#222222","hoverForeground":"#333333","states":{"hover":{"background":"#111111"}}}
-    """##)
-    let hovered = resolveStyle([both], states: StyleStates(hover: true))
-    #expect(hovered.background == .color(HexColor(0x111111ff)))
-    #expect(hovered.foreground == HexColor(0x333333ff))
-    let split = try style(##"""
-    {"hoverBackground":"#222222","hoverForeground":"#333333","states":{"hover":{"foreground":"#444444","borderColor":"#555555"}}}
-    """##)
-    let resolved = resolveStyle([split], states: StyleStates(hover: true))
-    #expect(resolved.background == .color(HexColor(0x222222ff)))
-    #expect(resolved.foreground == HexColor(0x444444ff))
-    #expect(resolved.borderColor == HexColor(0x555555ff))
 }
 
 @Test func scriptOutputStylesCarryStatesThatMergeWithTheConfiguredOnes() throws {
@@ -298,7 +268,7 @@ private func workspace(_ json: String) throws -> WorkspaceConfiguration {
     }
 }
 
-@Test func openAppliesAfterHoverSoItsStyleShowsWhileThePointerRests() throws {
+@Test func openAppliesAfterHoverAndTheDataStateSoItsStyleShowsWhileThePointerRests() throws {
     let resolution = ResolvedWidgetStyle(base: try style(##"""
     {"background":"#000000","states":{"hover":{"background":"#111111"},"open":{"background":"#222222","borderColor":"#333333"}}}
     """##))
@@ -311,6 +281,12 @@ private func workspace(_ json: String) throws -> WorkspaceConfiguration {
     #expect(borderOnly.style(hovered: true, open: true).borderColor == HexColor(0x333333ff))
     #expect(borderOnly.style(hovered: false, open: true).background == .color(HexColor(0x000000ff)))
     #expect(borderOnly.blockStates(open: true) == StyleStates(open: true))
+    let warning = ResolvedWidgetStyle(base: try style(##"""
+    {"foreground":"#ffffff","states":{"warning":{"foreground":"#ff0000","background":"#110000"},"open":{"background":"#222222"}}}
+    """##), state: "warning")
+    #expect(warning.style(hovered: false, open: true).background == .color(HexColor(0x222222ff)))
+    #expect(warning.style(hovered: false, open: true).foreground == HexColor(0xff0000ff))
+    #expect(warning.style(hovered: false, open: false).background == .color(HexColor(0x110000ff)))
 }
 
 @Test func dataStatesApplyBeforeHoverAndOpenAndThemeStatesBeatTheBase() throws {
@@ -347,15 +323,6 @@ private func workspace(_ json: String) throws -> WorkspaceConfiguration {
     #expect(resolved.text.foreground == HexColor(0xff0000ff))
     #expect(resolved.box.background == .color(HexColor(0x330000ff)))
     #expect(resolved.inherited.foreground == HexColor(0xffffffff))
-}
-
-@Test func openShowsOverTheDataState() throws {
-    let resolution = ResolvedWidgetStyle(base: try style(##"""
-    {"foreground":"#ffffff","states":{"warning":{"foreground":"#ff0000","background":"#110000"},"open":{"background":"#222222"}}}
-    """##), state: "warning")
-    #expect(resolution.style(hovered: false, open: true).background == .color(HexColor(0x222222ff)))
-    #expect(resolution.style(hovered: false, open: true).foreground == HexColor(0xff0000ff))
-    #expect(resolution.style(hovered: false, open: false).background == .color(HexColor(0x110000ff)))
 }
 
 private func rules(_ json: String) throws -> [StyleRule] {

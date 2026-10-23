@@ -229,23 +229,26 @@ final class ThemeGalleryTests: XCTestCase {
         XCTAssertTrue(store.customizationHistory.undoSteps.isEmpty)
     }
 
-    @MainActor func testThemeColorsAppearInNoticeAndResetReturnsToTheTheme() async throws {
-        let fixture = try ThemeGalleryFixture()
-        defer { fixture.close() }
-        let store = try fixture.store()
-        defer { store.stop() }
-        let gallery = ThemeGallery(store: store)
-        await gallery.refresh()
-        XCTAssertTrue(gallery.overrides.values.isEmpty)
-        try store.customizationHistory.change(ConfigurationEdit(action: .tokens, properties: ["text": .string("#123456")]))
-        await gallery.refresh()
-        XCTAssertEqual(gallery.overrides.values.map(\.path), [["tokens", "text"]])
-        try store.customizationHistory.change(gallery.overrides.resetEdit)
-        await gallery.refresh()
-        XCTAssertTrue(gallery.overrides.values.isEmpty)
-        XCTAssertEqual(store.configuration?.defaults.foreground, HexColor(light: 0x1d1d1fff, dark: 0xf5f5f7ff))
-        XCTAssertNil(try fixture.document()["tokens"])
-        XCTAssertEqual(store.customizationHistory.undoSteps.count, 2)
+    @MainActor func testThemeColorsAppearInNoticeAndResetReturnsToTheThemeEvenWhenItDoesNotRedefineThem() async throws {
+        for themed in [false, true] {
+            let fixture = try ThemeGalleryFixture(themed ? #"{"theme":{"id":"test-theme","version":"1"},"widgets":[]}"# : #"{"widgets":[]}"#)
+            defer { fixture.close() }
+            if themed { _ = try fixture.theme(#"{}"#) }
+            let store = try fixture.store()
+            defer { store.stop() }
+            let gallery = ThemeGallery(store: store)
+            await gallery.refresh()
+            XCTAssertTrue(gallery.overrides.values.isEmpty)
+            try store.customizationHistory.change(ConfigurationEdit(action: .tokens, properties: ["text": .string("#123456")]))
+            await gallery.refresh()
+            XCTAssertEqual(gallery.overrides.values.map(\.path), [["tokens", "text"]])
+            try store.customizationHistory.change(gallery.overrides.resetEdit)
+            await gallery.refresh()
+            XCTAssertTrue(gallery.overrides.values.isEmpty)
+            XCTAssertEqual(store.configuration?.defaults.foreground, HexColor(light: 0x1d1d1fff, dark: 0xf5f5f7ff))
+            XCTAssertNil(try fixture.document()["tokens"])
+            XCTAssertEqual(store.customizationHistory.undoSteps.count, 2)
+        }
     }
     @MainActor func testBuiltInSelectionOverridesAnIncludedThemeWithoutEditingTheInclude() async throws {
         let fixture = try ThemeGalleryFixture(#"{"includes":["included.json"],"widgets":[]}"#)
@@ -264,20 +267,6 @@ final class ThemeGalleryTests: XCTestCase {
         XCTAssertEqual(store.customizationHistory.undoSteps.count, 1)
         try store.customizationHistory.undo()
         XCTAssertEqual(gallery.selectedKey, "blueprint")
-    }
-
-    @MainActor func testInheritedThemeColorsStillCountWhenTheSelectedThemeDoesNotRedefineThem() async throws {
-        let fixture = try ThemeGalleryFixture(#"{"theme":{"id":"test-theme","version":"1"},"widgets":[]}"#)
-        defer { fixture.close() }
-        _ = try fixture.theme(#"{}"#)
-        let store = try fixture.store()
-        defer { store.stop() }
-        let gallery = ThemeGallery(store: store)
-        try store.customizationHistory.change(ConfigurationEdit(action: .tokens, properties: ["text": .string("#123456")]))
-        await gallery.refresh()
-        XCTAssertEqual(gallery.overrides.values.map(\.path), [["tokens", "text"]])
-        try store.customizationHistory.change(gallery.overrides.resetEdit)
-        XCTAssertEqual(store.configuration?.defaults.foreground, HexColor(light: 0x1d1d1fff, dark: 0xf5f5f7ff))
     }
 
     @MainActor func testGetSelectionFailureStaysOnTheInstalledCardWithoutABannerError() async throws {

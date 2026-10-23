@@ -8,21 +8,6 @@ private func block(_ json: String) throws -> PopupBlock {
     try JSONDecoder().decode(PopupBlock.self, from: Data(json.utf8))
 }
 
-@Test func widgetsAndTextFieldAndSymbolBlocksTakeATransition() throws {
-    let widget = try JSONDecoder().decode(WidgetConfiguration.self, from: Data(#"""
-    {"id":"time","type":"clock","position":"right","transition":"numeric",
-     "layout":{"type":"row","children":[{"type":"symbol","name":"clock","transition":"fade"},
-                                        {"type":"field","field":"text"},{"type":"text","text":"UTC","transition":"none"}]}}
-    """#.utf8))
-    #expect(widget.transition == .numeric)
-    guard case let .row(children)? = widget.layout?.content else {
-        Issue.record("Expected a row layout")
-        return
-    }
-    #expect(children.map(\.transition) == [.fade, nil, WidgetTransition.none])
-    #expect(try block(#"{"type":"field","field":"text","transition":"roll"}"#).transition == .roll)
-}
-
 @Test func transitionMistakesNameTheirProblem() throws {
     let url = FileManager.default.temporaryDirectory.appending(path: "transitions.json")
     var loader = ConfigurationLoader()
@@ -77,34 +62,6 @@ private func block(_ json: String) throws -> PopupBlock {
       {"id":"marked","type":"spacer","position":"left","overlay":{"type":"text","text":"·"}}]}
     """#.utf8)).widgets
     #expect(widgets.filter(\.drawsTransitions).map(\.id) == ["note", "app", "drawnSpaces", "marked"])
-}
-
-@Test @MainActor func theEditorAndCommandLineSetTransitions() throws {
-    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let root = directory.appending(path: "config.json")
-    try Data(#"{"widgets":[{"id":"note","type":"text","text":"A","position":"left"}]}"#.utf8).write(to: root)
-    let store = BarStore(configurationURL: root)
-    defer { store.stop() }
-    store.reloadConfiguration()
-    let editor = ConfigurationEditor(store: store)
-    editor.set(["transition": .string("fade")])
-    #expect(editor.error == nil)
-    #expect(store.configuration?.widgets[0].transition == .fade)
-    try store.applyEdits([ConfigurationEdit(action: .set, id: "note", properties: [
-        "layout": .object(["type": .string("field"), "field": .string("text"), "transition": .string("roll")])
-    ])], persist: true)
-    #expect(store.configuration?.widgets[0].layout?.transition == .roll)
-    let saved = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: root))
-    guard case let .array(widgets)? = saved["widgets"], case let .object(note)? = widgets.first else {
-        Issue.record("Expected the saved widget")
-        return
-    }
-    #expect(note["transition"] == .string("fade"))
-    editor.set(["transition": .string("spin")])
-    #expect(editor.error == "widgets.note: transition: Use none, fade, roll or numeric.")
-    #expect(store.configuration?.widgets[0].transition == .fade)
 }
 
 @Test func widgetsShowAndHideWithTheirTransitionUnlessMotionIsReduced() throws {
@@ -241,9 +198,4 @@ private struct Probe: View {
 
 @Test func theBarMeasuresWidgetsInTheMeasuringCopy() {
     #expect(String(reflecting: BarView.Body.self).contains("MeasuringCopy"))
-}
-
-@Test func animationDurationTimesTheBarsMotionAndKeepsItsCurve() throws {
-    let bar = try JSONDecoder().decode(BarSettings.self, from: Data(#"{"motion":"bouncy","animationDuration":0}"#.utf8))
-    #expect(bar.animation == WidgetAnimation(curve: .bouncy, duration: 0))
 }

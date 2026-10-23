@@ -399,24 +399,21 @@ func workspaceWindowFocusUsesItsIDAndReportsFailure(source: WorkspaceSource) asy
     #expect(source.size == NSSize(width: 32, height: 32))
 }
 
-@Test func notchGroupsStayOutsideAnOffCenterNotch() {
+@Test func groupsStayOutsideAnOffCenterNotchAndCenterWithoutPhantomGapsOnAnExternalDisplay() {
     let layout = BarLayout(inset: 12, spacing: 8, notchSpacing: 16, notch: 720...940)
     let x = layout.origins(width: 1728, sizes: [180, 260, 0, 200, 340])
     #expect(x[0] == 12)
     #expect(x[1] + 260 == 704)
     #expect(x[3] == 956)
     #expect(x[4] + 340 == 1716)
-}
-
-@Test func externalDisplayCentersTheCombinedGroupWithoutPhantomGaps() {
-    let layout = BarLayout(inset: 12, spacing: 8, notchSpacing: 16, notch: nil)
-    let x = layout.origins(width: 1920, sizes: [180, 260, 0, 100, 340])
-    #expect(x[1] == 776)
-    #expect(x[3] == 1044)
-    #expect(x[1] == 1920 - (x[3] + 100))
-    let musicOnly = layout.origins(width: 1920, sizes: [180, 260, 0, 0, 340])
+    let external = BarLayout(inset: 12, spacing: 8, notchSpacing: 16, notch: nil)
+    let combined = external.origins(width: 1920, sizes: [180, 260, 0, 100, 340])
+    #expect(combined[1] == 776)
+    #expect(combined[3] == 1044)
+    #expect(combined[1] == 1920 - (combined[3] + 100))
+    let musicOnly = external.origins(width: 1920, sizes: [180, 260, 0, 0, 340])
     #expect(musicOnly[1] == 830)
-    let center = layout.origins(width: 1920, sizes: [180, 0, 100, 0, 340])
+    let center = external.origins(width: 1920, sizes: [180, 0, 100, 0, 340])
     #expect(center[2] == 910)
 }
 

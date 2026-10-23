@@ -386,7 +386,7 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     #expect(store.configurationError == nil)
 }
 
-@Test func unknownPropertiesFailWithTheirPath() throws {
+@Test func unknownPropertiesAndSourceTypesFailWithTheirPath() throws {
     let url = FileManager.default.temporaryDirectory.appending(path: "strict.json")
     var loader = ConfigurationLoader()
     for (json, message) in [
@@ -401,7 +401,13 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
         (#"{"widgets":[{"id":"date","type":"clock","position":"right","onClick":"open -a Calendar","open":"com.apple.iCal"}]}"#, "widgets.date: open: A widget cannot set both onClick and open."),
         (#"{"widgets":[],"popups":{"agenda":{"style":{},"layout":{"type":"row","onClickField":"joinCommand","openField":"link","children":[]}}}}"#, "popups.agenda.layout.open: A block cannot combine onClick or onClickField with open or openField."),
         (#"{"widgets":[],"popups":{"apps":{"style":{},"layout":{"type":"row","quitField":"pid","open":"com.apple.ActivityMonitor","children":[]}}}}"#, "popups.apps.layout.quitField: A block cannot combine quitField with onClick, onClickField, open or openField."),
-        (#"{"widgets":[}"#, "The given data was not valid JSON. Unexpected character '}' around line 1, column 13.")
+        (#"{"widgets":[}"#, "The given data was not valid JSON. Unexpected character '}' around line 1, column 13."),
+        (#"{"providers":{"machine":{"type":"sytem"}},"widgets":[]}"#, "providers.machine.type: Unknown provider type."),
+        (#"{"providers":{"feed":{"type":"stream"}},"widgets":[]}"#, "providers.feed: Missing property command."),
+        (#"{"widgets":[{"id":"disk","type":"disk","position":"right"}]}"#, "widgets.disk: type: Unknown widget type."),
+        (#"{"widgets":[{"id":"disk","type":"provider","provider":"disk","position":"right"}]}"#, "Unknown provider: disk."),
+        (#"{"widgets":[],"profiles":[{"name":"work","configuration":{"providers":{"machine":{"type":"command"}}}}]}"#,
+         "providers.machine: Missing property command.")
     ] {
         let error = #expect(throws: (any Error).self) { try loader.load(url, data: Data(json.utf8)) }
         #expect(error.map(errorMessage) == message)
@@ -414,6 +420,9 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     #expect(opening.widgets[0].open == "com.apple.iCal")
     #expect(opening.widgets[0].popup?.layout.openField == "link")
     #expect(try loader.load(url, data: Data(#"{"widgets":[{"id":"docs","type":"text","position":"right","text":"Docs","open":"HTTPS://example.com"}]}"#.utf8)).widgets[0].open == "HTTPS://example.com")
+    let configuration = try loader.load(url, data: Data(#"{"providers":{"machine":{"type":"system","interval":2}},"widgets":[]}"#.utf8))
+    #expect(configuration.providers["machine"]?.type == "system")
+    #expect(configuration.providers["machine"]?.command == nil)
 }
 
 @Test func schemaListsTheSamePropertiesAsTheDecoders() throws {
@@ -511,23 +520,4 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     // As before the registry, other types accept these settings too; only the type that lists them reads them.
     #expect(try JSONDecoder().decode(ProviderConfiguration.self, from: Data(#"{"type":"system","calendars":["Work"],"soon":10}"#.utf8))
         .type == "system")
-}
-
-@Test func unknownSourceTypesNameTheirPath() throws {
-    let url = FileManager.default.temporaryDirectory.appending(path: "sources.json")
-    var loader = ConfigurationLoader()
-    for (json, message) in [
-        (#"{"providers":{"machine":{"type":"sytem"}},"widgets":[]}"#, "providers.machine.type: Unknown provider type."),
-        (#"{"providers":{"feed":{"type":"stream"}},"widgets":[]}"#, "providers.feed: Missing property command."),
-        (#"{"widgets":[{"id":"disk","type":"disk","position":"right"}]}"#, "widgets.disk: type: Unknown widget type."),
-        (#"{"widgets":[{"id":"disk","type":"provider","provider":"disk","position":"right"}]}"#, "Unknown provider: disk."),
-        (#"{"widgets":[],"profiles":[{"name":"work","configuration":{"providers":{"machine":{"type":"command"}}}}]}"#,
-         "providers.machine: Missing property command.")
-    ] {
-        let error = #expect(throws: (any Error).self) { try loader.load(url, data: Data(json.utf8)) }
-        #expect(error.map(errorMessage) == message)
-    }
-    let configuration = try loader.load(url, data: Data(#"{"providers":{"machine":{"type":"system","interval":2}},"widgets":[]}"#.utf8))
-    #expect(configuration.providers["machine"]?.type == "system")
-    #expect(configuration.providers["machine"]?.command == nil)
 }
