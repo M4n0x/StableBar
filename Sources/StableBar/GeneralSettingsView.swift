@@ -64,6 +64,10 @@ struct GeneralSettingsView: View {
                         }
                     }
                     .id(SettingsSearchResult.configuration.id)
+                    SettingsGroup("Command line") {
+                        CommandLineToolSettings()
+                    }
+                    .id(SettingsSearchResult.commandLine.id)
                     SettingsGroup("Updates") {
                         AboutView(update: store.update).rows
                         SettingRow(title: "Notify about package updates", hint: "Show a dismissible button in the bar. Checks hourly.") {
