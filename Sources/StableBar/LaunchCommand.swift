@@ -11,6 +11,7 @@ enum LaunchCommand {
     case buildSource(packages: URL, output: URL, previous: URL?, url: URL?, name: String?)
     case renderDocsImages(URL)
     case triage(URL, agent: TriageAgent?, model: String?)
+    case triageContext(URL)
     case help
 
     static let configurationURL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/stablebar/config.json")
@@ -114,6 +115,8 @@ enum LaunchCommand {
             self = .renderDocsImages(URL(filePath: (arguments[1] as NSString).expandingTildeInPath))
         case "triage":
             self = try Self.triage(url, Array(arguments.dropFirst()))
+        case "--triage-context" where arguments.count == 1:
+            self = .triageContext(url)
         case "--help" where arguments.count == 1:
             self = .help
         default:
