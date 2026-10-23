@@ -4,7 +4,7 @@ enum SettingsSearchResult: String, CaseIterable, Identifiable {
     case login, menuBar, windows, workspaces, access, configuration, updates, help
     case barSize, barLook, barPlacement, screenSetups, everyWidget, widgetContent, widgetStyle, widgetBehavior, addWidget
     case theme, colors, glass, popups, animation, roles, workspaceStyle, modeAliases
-    case profiles, library, store, status
+    case profiles, library, store, packageSources, status
 
     var id: String { rawValue }
     var title: String { details.0 }
@@ -41,6 +41,7 @@ enum SettingsSearchResult: String, CaseIterable, Identifiable {
         case .profiles: ("Profiles", .profiles, "Profiles", "automatic conditions app battery power dark external display pinned")
         case .library: ("Installed packages", .packages, "Packages › Installed", "package version update uninstall settings credentials local folder built-in")
         case .store: ("Get widgets and themes from the Store", .packages, "Packages › Store", "store install download")
+        case .packageSources: ("Package sources", .packages, "Packages › Sources", "private team company source repository index token gitlab github")
         case .status: ("Status and troubleshooting", .diagnostics, "Status", "diagnostics error failed refresh snapshot event")
         }
     }

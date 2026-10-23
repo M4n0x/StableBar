@@ -19,6 +19,9 @@ final class PackageDraft {
     var credentialsError: String?
     var checking = false
     var working = false
+    /// The source whose Store card or update opened this draft; nil for a folder or the Installed list.
+    /// Adding the draft installs the package for that source, or claims the installed version for it.
+    var sourceID: String?
     @ObservationIgnored var inspectionTask: Task<Void, Never>?
 
     init(inspection: WidgetPackageInspection, settings: [String: ConfigurationValue]) {
@@ -44,21 +47,34 @@ final class PackageLibrary {
             if notifiesAboutUpdates { startUpdateChecks() } else { stopUpdateChecks() }
         }
     }
+    /// Installed and opened drafts by `versionKey`; Store drafts by `"\(sourceID):\(versionKey)"`.
     private var drafts: [String: PackageDraft] = [:]
-    private var downloads: Set<URL> = []
+    /// The private sources the configuration had when it was last read.
+    @ObservationIgnored private var configuredSources: [PackageSource]?
     private var selectionRequest = 0
     private(set) var installed: [WidgetPackageManifest] = []
     private(set) var entries: [PackageIndex.Entry] = []
+    /// The Store, then the private sources, as the client had them when the Store last loaded.
+    private(set) var sources: [PackageSource] = [.store]
+    /// Package ID → the source that installed it.
+    private(set) var records: [String: PackageInstallRecord] = [:]
+    /// Source ID → why its index didn't load.
+    private(set) var sourceErrors: [String: String] = [:]
+    /// The sources whose index loaded the last time the Store loaded.
+    private(set) var loadedSources: Set<String> = []
+    /// The last reload started by a change to `packageSources`; tests await it.
+    @ObservationIgnored private(set) var sourceSync: Task<Void, Never>?
     private(set) var selections: [WidgetPackageSelection] = []
     private(set) var draft: PackageDraft?
     private var requestedID: String?
     private(set) var loading = false
     private(set) var loadingStore = false
+    /// Store entries being installed, by `key`.
     private(set) var getting: Set<String> = []
     private(set) var updating: Set<String> = []
     var pendingUpdate: PackageDraft?
     private(set) var updateAdditions: [String] = []
-    var storeError: String?
+    var storeError: String? { sourceErrors[PackageSource.storeID] }
     var error: String?
     var search = ""
     var showingStore = false
@@ -146,8 +162,34 @@ final class PackageLibrary {
         selections.contains { $0.id == manifest.id && $0.version == manifest.version && $0.enabled }
     }
 
+    var hasPrivateSources: Bool { sources.contains { !$0.isStore } }
+
+    func sourceName(_ id: String) -> String {
+        sources.first { $0.id == id }?.name ?? id
+    }
+
+    private func name(of record: PackageInstallRecord) -> String {
+        sources.first { $0.id == record.source }?.name ?? record.name ?? record.source
+    }
+
+    /// The only source an installed package can update from: the one that installed it.
+    /// Packages without a record, or opened from a folder, update from the Store; a removed source gives none.
+    func updateSourceID(for manifest: WidgetPackageManifest) -> String? {
+        guard let record = records[manifest.id], !record.isLocal else { return PackageSource.storeID }
+        return sources.contains { $0.id == record.source } ? record.source : nil
+    }
+
     func update(for manifest: WidgetPackageManifest) -> PackageIndex.Entry? {
-        entries.first { $0.id == manifest.id && $0.version.compare(manifest.version, options: .numeric) == .orderedDescending }
+        guard let sourceID = updateSourceID(for: manifest) else { return nil }
+        return entries.first {
+            $0.sourceID == sourceID && $0.id == manifest.id && $0.version.compare(manifest.version, options: .numeric) == .orderedDescending
+        }
+    }
+
+    /// The name of the other source that installed this entry's ID, which must be uninstalled before getting it.
+    func installedElsewhere(_ entry: PackageIndex.Entry) -> String? {
+        guard let record = records[entry.id], !record.isLocal, record.source != entry.sourceID else { return nil }
+        return name(of: record)
     }
 
     var updates: [WidgetPackageManifest] { installedPackages.filter { update(for: $0) != nil } }
@@ -162,6 +204,7 @@ final class PackageLibrary {
             let inspection = try await client.inspect(downloaded.directory, settings: values)
             let previous = try await client.inspect(packages.directory(id: manifest.id, version: manifest.version))
             let draft = PackageDraft(inspection: inspection, settings: values)
+            draft.sourceID = entry.sourceID
             updateAdditions = inspection.additions(since: previous)
             if updateAdditions.isEmpty {
                 try await applyUpdate(draft)
@@ -183,9 +226,25 @@ final class PackageLibrary {
         catch { self.error = errorMessage(error) }
     }
 
+    /// A draft from a source is recorded as that source's; anything else as a local folder.
+    private func install(_ draft: PackageDraft) async throws -> WidgetPackageInspection {
+        try await client.install(draft.inspection.directory, from: source(of: draft))
+    }
+
+    private func source(of draft: PackageDraft) async throws -> PackageSource? {
+        guard let sourceID = draft.sourceID else { return nil }
+        guard let source = await client.source(id: sourceID) else { throw PackageSourceError.notConfigured(sourceID) }
+        return source
+    }
+
     private func applyUpdate(_ draft: PackageDraft) async throws {
         let manifest = draft.inspection.manifest
-        if !isInstalled(draft) { draft.inspection = try await client.install(draft.inspection.directory) }
+        if !isInstalled(draft) {
+            draft.inspection = try await install(draft)
+        } else if let source = try await source(of: draft) {
+            // The update reviewed the source's files; the installed version is enabled only when it has them, as Add does.
+            try await client.claim(manifest, from: source, reviewed: draft.inspection.directory)
+        }
         configurationChanged()
         if let selection = selections.first(where: { $0.id == manifest.id }) {
             try store.customizationHistory.flush()
@@ -221,16 +280,47 @@ final class PackageLibrary {
         store.customizationHistory.showNotice("\(manifest.name) updated to \(manifest.version).")
     }
 
-    func source(_ draft: PackageDraft) -> PackageSource? {
+    func origin(_ draft: PackageDraft) -> PackageOrigin? {
         let manifest = draft.inspection.manifest
-        let installed = packages.directory.appending(path: manifest.id).appending(path: manifest.version)
-        if draft.inspection.directory == installed { return source(of: manifest) }
-        if reviewing || downloads.contains(draft.inspection.directory) { return .store }
-        return .local
+        if isInstalledCopy(draft.inspection.directory, of: manifest) { return origin(of: manifest) }
+        if let sourceID = draft.sourceID { return origin(sourceID: sourceID) }
+        return reviewing ? .store : .local
     }
 
-    func source(of manifest: WidgetPackageManifest) -> PackageSource? {
-        entries.contains { $0.id == manifest.id } ? .listed : .installed
+    func origin(of manifest: WidgetPackageManifest) -> PackageOrigin? {
+        .installed(record: records[manifest.id], version: manifest.version,
+                   listedInStore: entries.contains { $0.sourceID == PackageSource.storeID && $0.id == manifest.id }, sources: sources)
+    }
+
+    func origin(of entry: PackageIndex.Entry) -> PackageOrigin {
+        origin(sourceID: entry.sourceID)
+    }
+
+    private func origin(sourceID: String) -> PackageOrigin {
+        sourceID == PackageSource.storeID ? .store : .privateSource(sourceName(sourceID))
+    }
+
+    func isInstalledCopy(_ directory: URL, of manifest: WidgetPackageManifest) -> Bool {
+        directory == packages.directory.appending(path: manifest.id).appending(path: manifest.version)
+    }
+
+    /// Store entries of one kind (nil: both) and one source (nil: every source) that match the search
+    /// by name, description, ID or source name.
+    func storeEntries(showingThemes: Bool?, sourceID: String?) -> [PackageIndex.Entry] {
+        entries.filter { entry in
+            (showingThemes == nil || showingThemes == (entry.kind == .theme)) && (sourceID == nil || entry.sourceID == sourceID)
+                && matchesSearch(entry.name, entry.description, entry.id, sourceName(entry.sourceID))
+        }
+    }
+
+    /// Matches an installed package by name, description, ID or the name of the source that installed it.
+    func matchesSearch(_ manifest: WidgetPackageManifest) -> Bool {
+        let source = records[manifest.id].flatMap { $0.isLocal(version: manifest.version) ? nil : name(of: $0) }
+        return matchesSearch(manifest.name, manifest.description, manifest.id, source)
+    }
+
+    private func matchesSearch(_ fields: String?...) -> Bool {
+        search.isEmpty || fields.compactMap { $0 }.joined(separator: " ").localizedCaseInsensitiveContains(search)
     }
 
     func shownWidgets(_ draft: PackageDraft) -> Int {
@@ -239,6 +329,7 @@ final class PackageLibrary {
     }
 
     func configurationChanged() {
+        syncSources()
         do {
             selections = try store.effectiveDocument["packages"]?.decoded([WidgetPackageSelection].self) ?? []
             if let theme = store.effectiveDocument["theme"] { selections.append(try theme.decoded(WidgetPackageSelection.self)) }
@@ -257,9 +348,30 @@ final class PackageLibrary {
         }
     }
 
+    /// Undo and edits to `packageSources` reach the client, and the Store reloads with them.
+    /// Compared with the previous configuration, not with the client, so sources set on the client directly stay.
+    private func syncSources() {
+        guard let configured = try? PackageSource.configured(in: store.effectiveDocument).filter({ !$0.isStore }) else { return }
+        defer { configuredSources = configured }
+        guard let previous = configuredSources, previous != configured else { return }
+        sourceSync = Task { [client] in
+            await client.setPrivateSources(configured)
+            await loadStore(reload: true)
+        }
+    }
+
+    /// Hands the configured sources to the client and loads them, so the sync after an edit has nothing left to do.
+    private func applySources() async {
+        let configured = (try? PackageSource.configured(in: store.effectiveDocument).filter { !$0.isStore }) ?? []
+        configuredSources = configured
+        await client.setPrivateSources(configured)
+        await loadStore()
+    }
+
     func loadInstalled() async {
         do {
             installed = try await client.installed()
+            records = try await client.records()
             error = nil
             configurationChanged()
         } catch {
@@ -270,12 +382,15 @@ final class PackageLibrary {
     func loadStore(reload: Bool = false) async {
         loadingStore = true
         defer { loadingStore = false }
-        do {
-            entries = try await (reload ? client.reloadIndex() : client.index()).packages
-            storeError = nil
-        } catch {
-            storeError = errorMessage(error)
+        let catalog = await client.catalog(reload: reload)
+        let previous = entries
+        sources = await client.sources
+        // A source that failed keeps the entries it last listed, so its updates don't vanish while offline.
+        entries = sources.flatMap { source in
+            catalog.errors[source.id] == nil ? catalog.entries.filter { $0.sourceID == source.id } : previous.filter { $0.sourceID == source.id }
         }
+        sourceErrors = catalog.errors
+        loadedSources = Set(sources.map(\.id).filter { catalog.errors[$0] == nil })
     }
 
     func preview(_ manifest: WidgetPackageManifest) async throws -> PackagePreviewData {
@@ -283,8 +398,8 @@ final class PackageLibrary {
     }
 
     func preview(_ entry: PackageIndex.Entry) async throws -> PackagePreviewData {
-        if let screenshot = entry.screenshot {
-            return try await PackagePreviewData(screenshot: fetch(screenshot))
+        if entry.screenshot != nil {
+            return try await PackagePreviewData(screenshot: client.screenshot(for: entry))
         }
         return try await preview(client.packageForAdding(entry))
     }
@@ -308,7 +423,7 @@ final class PackageLibrary {
             await selectInstalled(manifest)
         } else if let manifest = installedPackages.first(where: { $0.id == id }) {
             await selectInstalled(manifest)
-        } else if let entry = entries.first(where: { $0.id == id }) {
+        } else if let entry = entries.first(where: { $0.id == id && $0.sourceID == draft?.sourceID }) ?? entries.first(where: { $0.id == id }) {
             await selectStore(entry)
         }
     }
@@ -335,8 +450,7 @@ final class PackageLibrary {
         do {
             let inspection = try await client.packageForAdding(entry)
             guard request == selectionRequest else { return }
-            downloads.insert(inspection.directory)
-            await select(inspection.directory)
+            await select(inspection.directory, sourceID: entry.sourceID)
         } catch {
             guard request == selectionRequest else { return }
             self.error = errorMessage(error)
@@ -345,15 +459,17 @@ final class PackageLibrary {
         }
     }
 
-    func select(_ directory: URL) async {
+    /// Opens a folder, an installed copy, or with `sourceID` a package from that source in the Store.
+    func select(_ directory: URL, sourceID: String? = nil) async {
         selectionRequest += 1
         let request = selectionRequest
         loading = true
         do {
             let inspection = try await client.inspect(directory)
             guard request == selectionRequest else { return }
-            let key = inspection.manifest.versionKey
-            if let saved = drafts[key] {
+            let key = sourceID.map { "\($0):\(inspection.manifest.versionKey)" } ?? inspection.manifest.versionKey
+            // A source's saved draft is reused only for the same files: its download, or the copy it installed.
+            if let saved = drafts[key], sourceID == nil || saved.inspection.directory == directory {
                 await show(saved)
                 return
             }
@@ -363,6 +479,7 @@ final class PackageLibrary {
             let reviewed = try await client.inspect(directory, settings: values)
             guard request == selectionRequest else { return }
             let draft = PackageDraft(inspection: reviewed, settings: values)
+            draft.sourceID = sourceID
             drafts[key] = draft
             let preview = try await preview(reviewed)
             draft.screenshotData = preview.screenshot
@@ -385,8 +502,8 @@ final class PackageLibrary {
     }
 
     func get(_ entry: PackageIndex.Entry) async {
-        getting.insert(entry.id)
-        defer { getting.remove(entry.id) }
+        getting.insert(entry.key)
+        defer { getting.remove(entry.key) }
         do {
             _ = try await client.installWithoutReview(entry)
             await loadInstalled()
@@ -461,8 +578,13 @@ final class PackageLibrary {
             draft.inspectionTask?.cancel()
             draft.inspection = try await client.inspect(draft.inspection.directory, settings: draft.settings)
             if !isInstalled(draft) {
-                draft.inspection = try await client.install(draft.inspection.directory)
+                draft.inspection = try await install(draft)
                 draft.inspection = try await client.inspect(draft.inspection.directory, settings: draft.settings)
+                await loadInstalled()
+            } else if let source = try await source(of: draft) {
+                // As Get does: an unclaimed installed version with the draft's files becomes the source's;
+                // one with other files, or another source's, is refused rather than enabled unreviewed.
+                try await client.claim(draft.inspection.manifest, from: source, reviewed: draft.inspection.directory)
                 await loadInstalled()
             }
             if let onEnable {
@@ -523,6 +645,79 @@ final class PackageLibrary {
         return ConfigurationEdit(action: manifest.kind == .theme ? .theme : .package, properties: [
             "id": .string(manifest.id), "version": .string(manifest.version),
             "enabled": .bool(enabled), "settings": .object(draft.settings)
+        ])
+    }
+}
+
+/// The Sources sheet: editing `packageSources` in the main configuration and the tokens in the Keychain.
+/// Tokens are read and written only through the client, which trims them and never logs them.
+extension PackageLibrary {
+    /// The Store and the sources the configuration defines now, which `sources` only follows after a catalog load.
+    func currentSources() -> [PackageSource] {
+        (try? PackageSource.configured(in: store.effectiveDocument)) ?? [.store]
+    }
+
+    /// Only sources the main configuration file defines can be edited; one from an include is read-only.
+    func isEditable(_ source: PackageSource) -> Bool {
+        guard !source.isStore, let main = try? store.editedMainDocument(),
+              let sources = try? main["packageSources"]?.decoded([[String: ConfigurationValue]].self) else { return false }
+        return sources.contains { $0["id"] == .string(source.id) }
+    }
+
+    /// The name of the file that defines the source; nil when unknown.
+    func definingFile(_ source: PackageSource) -> String? {
+        store.origins["packageSources.\(source.id).id"].map { URL(fileURLWithPath: $0.file).lastPathComponent }
+    }
+
+    /// The IDs of the private sources with a saved token.
+    func savedTokens() async -> Set<String> {
+        var saved: Set<String> = []
+        for source in sources where !source.isStore {
+            if await client.tokenIsSaved(for: source.id) { saved.insert(source.id) }
+        }
+        return saved
+    }
+
+    /// Loads a source's index without caching it. A token is trimmed, and a blank one sends none.
+    /// A nil token uses the one saved for the source, when the source is on the origin it was saved for.
+    func check(_ source: PackageSource, token: String?) async throws -> PackageIndex {
+        guard let token else { return try await client.checkWithSavedToken(source) }
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await client.check(source, token: trimmed.isEmpty ? nil : trimmed)
+    }
+
+    /// Adds the source to the main configuration with Undo, and saves a non-blank token to the Keychain.
+    /// Refuses an id the configuration already has, so adding never replaces a source.
+    func addSource(_ source: PackageSource, token: String) async throws {
+        guard !currentSources().contains(where: { $0.id == source.id }) else { throw PackageSourceError.idTaken(source.id) }
+        try store.customizationHistory.change([Self.edit(source)])
+        if !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { try await client.saveToken(token, for: source) }
+        await applySources()
+    }
+
+    /// Saves a new name or URL, and a token unless it's nil. A read-only source only takes the token.
+    /// A token stays bound to the origin it was saved for, so after a move to another host it isn't sent until
+    /// a new one is saved, and Undo of the move brings back a working source.
+    func updateSource(_ source: PackageSource, token: String?) async throws {
+        if isEditable(source) { try store.customizationHistory.change([Self.edit(source)]) }
+        if let token { try await client.saveToken(token, for: source) }
+        await applySources()
+    }
+
+    /// Removes the source from the main configuration with Undo. Its token stays, so Undo brings it back working.
+    func removeSource(_ id: String) async throws {
+        try store.customizationHistory.change([ConfigurationEdit(action: .packageSource, id: id)])
+        await applySources()
+    }
+
+    func removeToken(_ id: String) async throws {
+        try await client.deleteToken(for: id)
+        await loadStore()
+    }
+
+    private static func edit(_ source: PackageSource) -> ConfigurationEdit {
+        ConfigurationEdit(action: .packageSource, properties: [
+            "id": .string(source.id), "name": .string(source.name), "url": .string(source.url.absoluteString)
         ])
     }
 }

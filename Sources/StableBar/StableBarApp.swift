@@ -24,19 +24,37 @@ struct StableBarApp {
             case let .packages(url, action, source):
                 let packages = WidgetPackageStore(directory: url.deletingLastPathComponent().appending(path: "packages"))
                 if action == "list" {
-                    let encoder = JSONEncoder()
-                    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                    print(String(decoding: try encoder.encode(packages.list()), as: UTF8.self))
+                    print(String(decoding: try packageListing(packages), as: UTF8.self))
                 } else {
                     try printReview(action == "install" ? packages.install(source!) : packages.inspect(source!))
                 }
-            case let .installFromStore(url, id):
+            case let .installFromStore(url, id, source):
                 let packages = WidgetPackageStore(directory: url.deletingLastPathComponent().appending(path: "packages"))
+                // Without a configuration file, only the Store is configured.
+                let sources = FileManager.default.fileExists(atPath: url.path) ? try PackageSource.configured(at: url) : []
+                let client = PackageStoreClient(packages: packages, sources: sources.filter { !$0.isStore })
                 Task {
                     do {
-                        let index = try await PackageIndex.load(from: PackageIndex.url)
-                        guard let entry = index.packages.first(where: { $0.id == id }) else { throw WidgetPackageError.notInStore(id) }
-                        try printReview(packages.install(await packages.download(entry, from: PackageIndex.url)))
+                        try printReview(await client.install(id: id, from: source))
+                    } catch {
+                        FileHandle.standardError.write(Data("\(errorMessage(error))\n".utf8))
+                        exit(1)
+                    }
+                    exit(0)
+                }
+                dispatchMain()
+            case let .buildSource(packages, output, previous, url, name):
+                Task {
+                    do {
+                        let build = try await PackageSourceBuilder(packages: packages, output: output, previous: previous).build()
+                        print("Index lists \(build.ids.count) \(build.ids.count == 1 ? "package" : "packages"): \(build.ids.joined(separator: ", ")).")
+                        print(build.written.isEmpty ? "No new files for the packages. Upload \(output.path)/index.json."
+                              : "Upload these new files and index.json from \(output.path):")
+                        for file in build.written { print("  \(file)") }
+                        if let url, let name {
+                            let id = PackageSource.newID(for: name, taken: [])
+                            print("Join link: \(PackageSourceLink(id: id, name: name, url: url).link.absoluteString)")
+                        }
                     } catch {
                         FileHandle.standardError.write(Data("\(errorMessage(error))\n".utf8))
                         exit(1)
@@ -424,6 +442,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSWorkspace.shared.open(URL(string: "https://github.com/Seb-GRAF/StableBar/blob/main/docs/README.md")!)
     }
     @objc private func quit() { NSApp.terminate(nil) }
+
+    /// `stablebar://add-source` opens Settings › Packages with the Add source form filled in; nothing is added until the user confirms.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let link = urls.compactMap({ PackageSourceLink(url: $0) }).last else { return }
+        store.pendingSourceLink = link
+        customization.show(store: store, section: .packages)
+    }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showCustomization()

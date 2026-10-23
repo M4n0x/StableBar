@@ -46,7 +46,7 @@ struct BarInspector: View {
     let screen: ScreenKind
     let kinds: [ScreenKind]
     let names: [String: String]
-    let source: (WidgetConfiguration) -> PackageSource
+    let source: (WidgetConfiguration) -> PackageOrigin
     let useSharedBar: (ScreenSetup) -> Void
     let remove: (String) -> Void
     @Binding var scrollPositions: [String: String]
@@ -150,7 +150,7 @@ struct BarInspector: View {
         HStack(spacing: 10) {
             header(Image(systemName: widget.content.symbol).font(.system(size: 18)), title: names[widget.id] ?? widget.id) {
                 Text(typeName(widget))
-                PackageSourceBadge(source: source(widget))
+                PackageOriginBadge(source: source(widget))
             }
             Text("Shows on").font(.system(size: 12)).foregroundStyle(.secondary)
             Menu {

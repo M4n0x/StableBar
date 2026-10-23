@@ -81,6 +81,10 @@ final class ThemeGalleryTests: XCTestCase {
         defer { fixture.close() }
         let listed = try fixture.theme(#"{}"#, id: "listed")
         let unlisted = try fixture.theme(#"{}"#)
+        // Installed before install records existed.
+        for id in ["listed", "test-theme"] {
+            try FileManager.default.removeItem(at: fixture.directory.appending(path: "packages/\(id)/\(PackageInstallRecord.fileName)"))
+        }
         let index = LocalPackageIndex(fixture: fixture)
         _ = try await index.add(id: "listed", version: "1")
         let store = try fixture.store()
@@ -110,16 +114,16 @@ final class ThemeGalleryTests: XCTestCase {
         await gallery.loadStore()
         XCTAssertFalse(gallery.storeUnavailable)
         XCTAssertEqual(gallery.storeThemes.map(\.id), [entry.id])
-        XCTAssertEqual(gallery.previews[entry.versionKey]?.light.bar.height, 31)
-        XCTAssertEqual(gallery.previews[entry.versionKey]?.light.defaults.fontSize, 19)
-        XCTAssertEqual(gallery.previews[entry.versionKey]?.light.widgets.map(\.id), [])
+        XCTAssertEqual(gallery.previews[entry.key]?.light.bar.height, 31)
+        XCTAssertEqual(gallery.previews[entry.key]?.light.defaults.fontSize, 19)
+        XCTAssertEqual(gallery.previews[entry.key]?.light.widgets.map(\.id), [])
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.packages.directory.path))
         XCTAssertEqual(try Data(contentsOf: fixture.url), before)
         // A ready preview is cached: Get works even if its archive is no longer available.
         try FileManager.default.removeItem(at: index.url.deletingLastPathComponent())
         await gallery.get(entry)
-        XCTAssertNil(gallery.errors[entry.versionKey])
-        XCTAssertNil(gallery.progress[entry.versionKey])
+        XCTAssertNil(gallery.errors[entry.key])
+        XCTAssertNil(gallery.progress[entry.key])
         XCTAssertTrue(gallery.storeThemes.isEmpty)
         XCTAssertEqual(gallery.selectedKey, entry.versionKey)
         XCTAssertEqual(store.configuration?.bar.height, 31)
@@ -168,6 +172,22 @@ final class ThemeGalleryTests: XCTestCase {
         XCTAssertEqual(gallery.selectedKey, "my-blueprint/1.0.1")
     }
 
+    /// A name without ASCII letters or digits gives no theme id, so saving fails rather than inventing one.
+    @MainActor func testSavingAThemeNamedWithoutLettersOrDigitsFails() async throws {
+        let fixture = try ThemeGalleryFixture(#"{"theme":{"id":"blueprint"},"widgets":[]}"#)
+        defer { fixture.close() }
+        let store = try fixture.store()
+        defer { store.stop() }
+        let before = try Data(contentsOf: fixture.url)
+        let gallery = ThemeGallery(store: store)
+        await gallery.refresh()
+        await gallery.save(try XCTUnwrap(gallery.choices.first { $0.key == "blueprint" }), as: "日本")
+        XCTAssertNotNil(gallery.error(for: "blueprint"))
+        XCTAssertEqual(try Data(contentsOf: fixture.url), before)
+        XCTAssertTrue(try fixture.packages.list().isEmpty)
+        XCTAssertTrue(store.customizationHistory.undoSteps.isEmpty)
+    }
+
     @MainActor func testOfflineStoreLeavesLocalGalleryAndSelectionWorking() async throws {
         let fixture = try ThemeGalleryFixture()
         defer { fixture.close() }
@@ -198,11 +218,11 @@ final class ThemeGalleryTests: XCTestCase {
         await gallery.refresh()
         await gallery.loadStore()
         XCTAssertEqual(gallery.storeThemes.count, 1)
-        XCTAssertNotNil(gallery.errors[entry.versionKey])
-        XCTAssertNil(gallery.previews[entry.versionKey])
+        XCTAssertNotNil(gallery.errors[entry.key])
+        XCTAssertNil(gallery.previews[entry.key])
         await gallery.get(entry)
-        XCTAssertTrue(gallery.errors[entry.versionKey]?.contains("checksum") == true)
-        XCTAssertNil(gallery.progress[entry.versionKey])
+        XCTAssertTrue(gallery.errors[entry.key]?.contains("checksum") == true)
+        XCTAssertNil(gallery.progress[entry.key])
         XCTAssertNil(store.customizationHistory.error)
         XCTAssertNil(store.configurationError)
         XCTAssertEqual(try Data(contentsOf: fixture.url), before)
@@ -385,10 +405,67 @@ final class ThemeGalleryTests: XCTestCase {
         let initialCount = calls.withLock { $0.count }
         await gallery.loadStore()
         XCTAssertEqual(calls.withLock { Array($0.dropFirst(initialCount)) }, [entry.versionKey])
-        XCTAssertNotNil(gallery.previews[entry.versionKey])
+        XCTAssertNotNil(gallery.previews[entry.key])
         await gallery.loadStore()
         await gallery.refresh()
         XCTAssertEqual(calls.withLock { $0.count }, initialCount + 1)
+    }
+
+    @MainActor func testThemesAndAddWidgetChoicesIncludePrivateSources() async throws {
+        let fixture = try ThemeGalleryFixture()
+        defer { fixture.close() }
+        let index = LocalPackageIndex(fixture: fixture), acme = LocalPackageIndex(fixture: fixture, folder: "acme")
+        _ = try await index.add()
+        _ = try await acme.add(id: "acme-theme", configuration: #"{"bar":{"height":27}}"#, name: "Acme theme")
+        let acmeSource = PackageSource(id: "acme", name: "Acme", url: acme.url)
+        let store = try fixture.store()
+        defer { store.stop() }
+        let client = PackageStoreClient(packages: fixture.packages, indexURL: index.url)
+        await client.setPrivateSources([acmeSource])
+        let gallery = ThemeGallery(store: store, client: client)
+        await gallery.refresh()
+        await gallery.loadStore()
+        XCTAssertFalse(gallery.storeUnavailable)
+        XCTAssertEqual(gallery.storeThemes.map(\.key), ["stablebar:store-theme/1", "acme:acme-theme/1"])
+        let acmeTheme = try XCTUnwrap(gallery.storeThemes.first { $0.sourceID == "acme" })
+        XCTAssertEqual(gallery.previews[acmeTheme.key]?.light.bar.height, 27)
+        XCTAssertEqual(gallery.sourceName("acme"), "Acme")
+        await gallery.get(acmeTheme)
+        XCTAssertNil(gallery.errors[acmeTheme.key])
+        XCTAssertEqual(try fixture.packages.record(id: "acme-theme"), PackageInstallRecord(acmeSource))
+        let installed = try XCTUnwrap(gallery.choices.first { $0.manifest.id == "acme-theme" })
+        XCTAssertEqual(gallery.source(of: installed), .privateSource("Acme"))
+        XCTAssertEqual(gallery.storeThemes.map(\.key), ["stablebar:store-theme/1"])
+        // An author's folder build of version 2 is labelled as the folder's, not Acme's.
+        let folder = fixture.directory.appending(path: "acme-theme-2")
+        try fixture.write(#"{"id":"acme-theme","name":"Acme theme","version":"2","entry":"config.json","kind":"theme"}"#,
+                          to: folder.appending(path: "package.json"))
+        try fixture.write(#"{"bar":{"height":28}}"#, to: folder.appending(path: "config.json"))
+        _ = try fixture.packages.install(folder)
+        await gallery.refresh()
+        let folderBuild = try XCTUnwrap(gallery.choices.first { $0.manifest.versionKey == "acme-theme/2" })
+        XCTAssertEqual(gallery.source(of: folderBuild), .local)
+        XCTAssertEqual(gallery.source(of: try XCTUnwrap(gallery.choices.first { $0.manifest.versionKey == "acme-theme/1" })),
+                       .privateSource("Acme"))
+
+        // The Add popover lists widgets from every source.
+        let widgets = LocalPackageIndex(fixture: fixture, folder: "widgets"), acmeWidgets = LocalPackageIndex(fixture: fixture, folder: "acme-widgets")
+        _ = try await widgets.add(id: "clock", kind: "widgets", configuration: #"{"widgets":[]}"#, name: "Clock")
+        _ = try await acmeWidgets.add(id: "clock", kind: "widgets", configuration: #"{"widgets":[]}"#, name: "Clock")
+        let widgetClient = PackageStoreClient(packages: fixture.packages, indexURL: widgets.url)
+        await widgetClient.setPrivateSources([PackageSource(id: "acme", name: "Acme", url: acmeWidgets.url)])
+        let choices = WidgetAddCatalog.compose(try await widgetClient.widgetChoices(), sourceNames: ["acme": "Acme"])
+        XCTAssertEqual(choices.filter { $0.package != nil }.map(\.id), ["store/clock", "store/acme/clock"])
+        let acmeClock = try XCTUnwrap(choices.first { $0.id == "store/acme/clock" })
+        XCTAssertEqual(acmeClock.package?.sourceID, "acme")
+        XCTAssertEqual(acmeClock.sourceName, "Acme")
+        XCTAssertTrue(acmeClock.matches("Acme"))
+        XCTAssertTrue(try XCTUnwrap(choices.first { $0.id == "store/clock" }).matches("Store"))
+        XCTAssertFalse(try XCTUnwrap(choices.first { $0.id == "store/clock" }).matches("Acme"))
+        let setup = WidgetSetup(store: store, client: widgetClient)
+        await setup.load()
+        XCTAssertFalse(setup.storeUnavailable)
+        XCTAssertEqual(setup.choices.first { $0.id == "store/acme/clock" }?.sourceName, "Acme")
     }
 
     @MainActor func testInstalledVersionsHaveSeparateCachedSampleLooks() async throws {
@@ -479,9 +556,9 @@ final class ThemeGalleryTests: XCTestCase {
         let entry = try await index.add(checksum: String(repeating: "0", count: 64))
         let actions = ThemeGallery(store: store, client: PackageStoreClient(packages: fixture.packages, indexURL: index.url))
         await actions.get(entry)
-        let error = try XCTUnwrap(actions.errors[entry.versionKey])
+        let error = try XCTUnwrap(actions.errors[entry.key])
         await actions.refreshTask?.value
         await actions.refresh()
-        XCTAssertEqual(actions.errors[entry.versionKey], error)
+        XCTAssertEqual(actions.errors[entry.key], error)
     }
 }

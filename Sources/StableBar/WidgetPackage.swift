@@ -244,6 +244,70 @@ struct WidgetPackageStore: Sendable {
         }
     }
 
+    /// Whether two package folders hold the same files: the same relative paths, directories, bytes and symbolic links.
+    /// Finder's litter, a regular file named `.DS_Store` or starting with `._` (AppleDouble), is ignored only when one
+    /// side lacks it, as when Finder browsed one copy. A package can ship and run such a file, so when both sides have it
+    /// its bytes are compared like any file's; a directory or link with such a name is always compared.
+    /// Throws, as inspecting would, when a file or link in either folder leads out of it.
+    func sameContents(_ a: URL, _ b: URL) throws -> Bool {
+        try validateContents(at: a)
+        try validateContents(at: b)
+        let first = try packageItems(in: a), second = try packageItems(in: b)
+        for path in Set(first.keys).union(second.keys) {
+            switch (first[path], second[path]) {
+            case let (one?, other?): guard one == other else { return false }
+            case let (one?, nil), let (nil, one?): guard one.isFinderLitter(at: path) else { return false }
+            case (nil, nil): break
+            }
+        }
+        return true
+    }
+
+    private enum PackageItem: Equatable {
+        /// `other`: a socket, pipe or device, which no package needs; two of them at the same path compare equal.
+        case directory, file(Data), link(String), other
+
+        func isFinderLitter(at path: String) -> Bool {
+            let name = (path as NSString).lastPathComponent
+            guard case .file = self else { return false }
+            return name == ".DS_Store" || name.hasPrefix("._")
+        }
+    }
+
+    /// Every entry under `folder`, by relative path. It reads the directories itself because FileManager's listings
+    /// hide regular files starting with `._` on macOS, and a package can ship and run one.
+    private func packageItems(in folder: URL) throws -> [String: PackageItem] {
+        var items: [String: PackageItem] = [:]
+        func visit(_ relative: String) throws {
+            let directory = relative.isEmpty ? folder : folder.appending(path: relative)
+            guard let handle = opendir(directory.path) else { throw WidgetPackageError.missingFile(directory.path) }
+            defer { closedir(handle) }
+            var names: [String] = []
+            while let entry = readdir(handle) {
+                let name = withUnsafePointer(to: entry.pointee.d_name) {
+                    $0.withMemoryRebound(to: CChar.self, capacity: Int(entry.pointee.d_namlen) + 1) { String(cString: $0) }
+                }
+                if name != "." && name != ".." { names.append(name) }
+            }
+            for name in names {
+                let path = relative.isEmpty ? name : "\(relative)/\(name)"
+                let file = folder.appending(path: path)
+                var info = stat()
+                guard lstat(file.path, &info) == 0 else { throw WidgetPackageError.missingFile(file.path) }
+                switch info.st_mode & S_IFMT {
+                case S_IFLNK: items[path] = .link(try FileManager.default.destinationOfSymbolicLink(atPath: file.path))
+                case S_IFDIR:
+                    items[path] = .directory
+                    try visit(path)
+                case S_IFREG: items[path] = .file(try Data(contentsOf: file))
+                default: items[path] = .other
+                }
+            }
+        }
+        try visit("")
+        return items
+    }
+
     func requiresNewerApp(_ minimumVersion: String) -> Bool {
         guard let appVersion else { return false }
         return appVersion.compare(minimumVersion, options: .numeric) == .orderedAscending
@@ -277,23 +341,125 @@ struct WidgetPackageStore: Sendable {
         return WidgetPackageInspection(manifest: manifest, directory: source, commands: commands.sorted(), screenshot: screenshot, widgets: widgets)
     }
 
-    func install(_ source: URL) throws -> WidgetPackageInspection {
+    /// `record` is the source the package comes from, `.local` for a folder; `requestedName` names it in a refusal.
+    func install(_ source: URL, record: PackageInstallRecord = .local,
+                 requestedName: String = "a local folder") throws -> WidgetPackageInspection {
         let inspection = try inspect(source)
-        let destination = try directory(id: inspection.manifest.id, version: inspection.manifest.version)
+        let id = inspection.manifest.id
+        let destination = try directory(id: id, version: inspection.manifest.version)
         guard !FileManager.default.fileExists(atPath: destination.path) else {
-            throw WidgetPackageError.alreadyInstalled(inspection.manifest.id, inspection.manifest.version)
+            throw WidgetPackageError.alreadyInstalled(id, inspection.manifest.version)
         }
+        // Refused before any file is copied.
+        let claimed = try claimedRecord(id: id, version: inspection.manifest.version, packageName: inspection.manifest.name,
+                                        for: record, requestedName: requestedName)
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         let staging = destination.deletingLastPathComponent().appending(path: ".install-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: staging) }
         try FileManager.default.copyItem(at: source, to: staging)
         _ = try inspect(staging)
         try FileManager.default.moveItem(at: staging, to: destination)
+        do { try write(claimed, id: id) } catch {
+            // A version without its record would leave the ID open to any source.
+            try? FileManager.default.removeItem(at: destination)
+            try? releaseIfEmpty(id: id)
+            throw error
+        }
         return try inspect(destination)
     }
 
-    func download(_ entry: PackageIndex.Entry, from index: URL) async throws -> URL {
-        let data = try await fetch(index.deletingLastPathComponent().appending(path: entry.archive))
+    private func recordURL(id: String) throws -> URL {
+        try validatePackageComponent(id)
+        let url = directory.appending(path: id).appending(path: PackageInstallRecord.fileName)
+        try validatePackagePath(url, inside: directory)
+        return url
+    }
+
+    /// The source that installed `id`, or nil when no version is installed or it predates install records.
+    func record(id: String) throws -> PackageInstallRecord? {
+        let url = try recordURL(id: id)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try JSONDecoder().decode(PackageInstallRecord.self, from: Data(contentsOf: url))
+    }
+
+    /// Package ID → its install record, for every installed ID that has one.
+    func records() throws -> [String: PackageInstallRecord] {
+        guard FileManager.default.fileExists(atPath: directory.path) else { return [:] }
+        var records: [String: PackageInstallRecord] = [:]
+        for package in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+            let id = package.lastPathComponent
+            records[id] = try record(id: id)
+        }
+        return records
+    }
+
+    /// Records that `record`'s source installed `version` of `id`, or throws `.claimed` when another source did.
+    func claim(id: String, version: String, packageName: String, for record: PackageInstallRecord, requestedName: String) throws {
+        try write(claimedRecord(id: id, version: version, packageName: packageName, for: record, requestedName: requestedName), id: id)
+    }
+
+    /// The record to keep after installing `version` of `id` from `record`'s source:
+    /// - unclaimed (no record, or `local`): the requested record. A source claiming the ID takes only `version`, whose
+    ///   files it installs or that were checked against its own: every other installed version came from a folder or
+    ///   from before records existed, so it's listed among the local versions;
+    /// - the same source: the requested record, which refreshes its name and URL, without `version` among the local versions;
+    /// - another source: when a local folder is installed, so authors can test a version, the existing record with
+    ///   `version` among its local versions; otherwise the install is refused.
+    private func claimedRecord(id: String, version: String, packageName: String, for requested: PackageInstallRecord,
+                               requestedName: String) throws -> PackageInstallRecord {
+        guard let existing = try record(id: id), !existing.isLocal else {
+            guard !requested.isLocal else { return requested }
+            return try installedVersions(id: id).filter { $0 != version }.reduce(requested) { $0.settingLocal($1, true) }
+        }
+        if existing.source == requested.source {
+            var refreshed = requested
+            refreshed.localVersions = existing.localVersions
+            return refreshed.settingLocal(version, false)
+        }
+        if requested.isLocal { return existing.settingLocal(version, true) }
+        throw PackageSourceError.claimed(package: packageName, installedFrom: existing.name ?? existing.source, requested: requestedName)
+    }
+
+    private func write(_ record: PackageInstallRecord, id: String) throws {
+        let url = try recordURL(id: id)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try encoder.encode(record).write(to: url, options: .atomic)
+    }
+
+    /// The version folders installed for `id`.
+    private func installedVersions(id: String) throws -> [String] {
+        let folder = directory.appending(path: id)
+        guard FileManager.default.fileExists(atPath: folder.path) else { return [] }
+        try validatePackagePath(folder, inside: directory)
+        return try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+            .map(\.lastPathComponent)
+    }
+
+    /// After `version` of `id` is uninstalled: forgets that it came from a folder, and releases the ID once no version is left.
+    func releaseVersion(id: String, version: String) throws {
+        if let record = try record(id: id), record.localVersions?.contains(version) == true {
+            try write(record.settingLocal(version, false), id: id)
+        }
+        try releaseIfEmpty(id: id)
+    }
+
+    /// Removes `packages/<id>`, and its install record, once no version of it is left.
+    func releaseIfEmpty(id: String) throws {
+        try validatePackageComponent(id)
+        let folder = directory.appending(path: id)
+        guard FileManager.default.fileExists(atPath: folder.path) else { return }
+        try validatePackagePath(folder, inside: directory)
+        let versions = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+        if versions.isEmpty { try FileManager.default.removeItem(at: folder) }
+    }
+
+    /// `appending(path:)` keeps the archive on the index's host, even for an `archive` with `../` or a scheme in it.
+    func download(_ entry: PackageIndex.Entry, from source: PackageSource, token: String?,
+                  session: URLSession = .packageSources) async throws -> URL {
+        let url = source.url.deletingLastPathComponent().appending(path: entry.archive)
+        let data = try await fetch(sourceRequest(for: url, source: source, token: token), session: session)
         guard SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == entry.sha256 else {
             throw WidgetPackageError.checksumMismatch(entry.id)
         }
@@ -326,6 +492,29 @@ struct WidgetPackageStore: Sendable {
     }
 }
 
+/// `--packages`: every installed manifest, with `source` naming the source that installed it when it has a record,
+/// and `local` for a version installed from a folder.
+func packageListing(_ packages: WidgetPackageStore) throws -> Data {
+    struct Listed: Encodable {
+        enum CodingKeys: String, CodingKey { case source }
+        let manifest: WidgetPackageManifest
+        let source: String?
+
+        func encode(to encoder: Encoder) throws {
+            try manifest.encode(to: encoder)
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encodeIfPresent(source, forKey: .source)
+        }
+    }
+    let records = try packages.records()
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    return try encoder.encode(packages.list().map { manifest in
+        let record = records[manifest.id]
+        return Listed(manifest: manifest, source: record.map { $0.isLocal(version: manifest.version) ? PackageSource.localID : $0.source })
+    })
+}
+
 // Unlike manifests, the index ignores unknown keys and entries of unknown kinds, because older apps read the same index.
 struct PackageIndex: Decodable, Sendable {
     struct Entry: Decodable, Sendable {
@@ -336,15 +525,31 @@ struct PackageIndex: Decodable, Sendable {
         let description: String?
         let author: String?
         let minimumVersion: String?
-        let screenshot: URL?
+        /// Resolved against the index URL when the index lists a relative path.
+        var screenshot: URL?
         let archive: String
         let sha256: String
-        let source: URL
+        /// The package's code repository. The JSON key stays `source`; private indexes may leave it out.
+        let repository: URL?
+        /// The package source that listed this entry. Not part of the index.
+        var sourceID = PackageSource.storeID
+
+        enum CodingKeys: String, CodingKey {
+            case id, name, version, kind, description, author, minimumVersion, screenshot, archive, sha256
+            case repository = "source"
+        }
+
+        /// Identifies an entry across sources, for caches and SwiftUI.
+        var key: String { "\(sourceID):\(id)/\(version)" }
     }
 
     static let url = URL(string: "https://github.com/Seb-GRAF/stablebar-packages/releases/download/store/index.json")!
 
     let packages: [Entry]
+
+    init(packages: [Entry]) {
+        self.packages = packages
+    }
 
     init(from decoder: Decoder) throws {
         var entries = try decoder.container(keyedBy: ConfigurationKey.self).nestedUnkeyedContainer(forKey: ConfigurationKey(stringValue: "packages"))
@@ -358,17 +563,29 @@ struct PackageIndex: Decodable, Sendable {
         self.packages = packages
     }
 
+    /// Tags every entry with the source, resolves relative screenshots and keeps the first entry for each ID.
+    static func load(from source: PackageSource, token: String?, session: URLSession) async throws -> PackageIndex {
+        let data = try await fetch(sourceRequest(for: source.url, source: source, token: token), session: session)
+        var seen: Set<String> = []
+        var packages: [Entry] = []
+        for var entry in try JSONDecoder().decode(PackageIndex.self, from: data).packages where seen.insert(entry.id).inserted {
+            entry.sourceID = source.id
+            if let screenshot = entry.screenshot, screenshot.scheme == nil {
+                entry.screenshot = URL(string: screenshot.relativeString, relativeTo: source.url)?.absoluteURL
+            }
+            packages.append(entry)
+        }
+        return PackageIndex(packages: packages)
+    }
+
     static func load(from url: URL) async throws -> PackageIndex {
-        try JSONDecoder().decode(PackageIndex.self, from: await fetch(url))
+        try await load(from: PackageSource(id: PackageSource.storeID, name: PackageSource.store.name, url: url), token: nil,
+                       session: .packageSources)
     }
 }
 
 func fetch(_ url: URL) async throws -> Data {
-    let (data, response) = try await URLSession.shared.data(from: url)
-    if let response = response as? HTTPURLResponse, response.statusCode != 200 {
-        throw WidgetPackageError.downloadFailed(url.absoluteString, response.statusCode)
-    }
-    return data
+    try await fetch(URLRequest(url: url), session: .shared)
 }
 
 func preparePackageDocument(_ document: [String: ConfigurationValue], directory: URL) throws -> [String: ConfigurationValue] {
@@ -459,16 +676,16 @@ private func packageEnvironment(_ definition: [String: ConfigurationValue], dire
 }
 
 func preparePackageAssets(_ value: ConfigurationValue, path: String = "", origins: [String: ConfigurationOrigin],
-                          sources: [String: URL]) throws -> ConfigurationValue {
+                          boundaries: [String: URL]) throws -> ConfigurationValue {
     switch value {
     case let .object(object):
         var result: [String: ConfigurationValue] = [:]
         for (key, child) in object {
             result[key] = try preparePackageAssets(child, path: path.isEmpty ? key : "\(path).\(key)",
-                                                  origins: origins, sources: sources)
+                                                  origins: origins, boundaries: boundaries)
         }
         if object["type"] == .string("image"), case let .string(file) = object["path"],
-           let source = origins["\(path).path"]?.file, let directory = sources[source] {
+           let source = origins["\(path).path"]?.file, let directory = boundaries[source] {
             result["path"] = .string(try packageFile(file, inside: directory).path)
         }
         return .object(result)
@@ -476,7 +693,7 @@ func preparePackageAssets(_ value: ConfigurationValue, path: String = "", origin
         return .array(try array.enumerated().map { index, child in
             var key = String(index)
             if path == "widgets", case let .object(widget) = child, case let .string(id) = widget["id"] { key = id }
-            return try preparePackageAssets(child, path: "\(path).\(key)", origins: origins, sources: sources)
+            return try preparePackageAssets(child, path: "\(path).\(key)", origins: origins, boundaries: boundaries)
         })
     default: return value
     }

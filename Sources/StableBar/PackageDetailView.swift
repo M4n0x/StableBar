@@ -84,14 +84,14 @@ struct PackageDetailView: View {
 
     private var header: some View {
         let manifest = draft.inspection.manifest
-        let source = library.source(draft)
+        let source = library.origin(draft)
         let byline = manifest.author.map { "by \($0) · " } ?? ""
         return HStack(spacing: 10) {
             PackageIcon(id: manifest.id, name: manifest.name)
             VStack(alignment: .leading, spacing: 3) {
                 Text(manifest.name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
                 HStack(spacing: 6) {
-                    if let source { PackageSourceBadge(source: source) }
+                    if let source { PackageOriginBadge(source: source) }
                     Text(byline + manifest.version).lineLimit(1).truncationMode(.middle)
                 }
                 .font(.system(size: 12))
@@ -129,24 +129,29 @@ struct PackageDetailView: View {
     @ViewBuilder private var overview: some View {
         let manifest = draft.inspection.manifest
         Section {
-            switch library.source(draft) {
+            switch library.origin(draft) {
             case .store?:
                 row("bag", "The StableBar Store", hint: (manifest.author.map { "By \($0). " } ?? "")
                     + "Built and published by the Store, not by its author."
                     + (draft.inspection.commands.isEmpty ? "" : " A maintainer read this version before it was published.")) {
-                    PackageSourceBadge(source: .store)
+                    PackageOriginBadge(source: .store)
                 }
             case .listed?:
                 row("bag", "Listed in the Store", hint: "\(path). This package ID is in the Store. This installed copy’s source isn’t recorded.") {
-                    PackageSourceBadge(source: .listed)
+                    PackageOriginBadge(source: .listed)
                 }
             case .local?:
                 row("folder", "A folder on this Mac", hint: "\(path). StableBar doesn’t review local folders.") {
-                    PackageSourceBadge(source: .local)
+                    PackageOriginBadge(source: .local)
+                }
+            case let .privateSource(name)?:
+                row("lock", "From \(name)", hint: [library.sourceHost(of: draft), library.privateSourceHint(draft)]
+                    .compactMap { $0 }.joined(separator: ". ")) {
+                    PackageOriginBadge(source: .privateSource(name))
                 }
             default:
                 row("folder", "On this Mac", hint: "\(path). The installation source isn’t recorded.") {
-                    PackageSourceBadge(source: .installed)
+                    PackageOriginBadge(source: .installed)
                 }
             }
             HStack {
@@ -262,7 +267,7 @@ struct PackageDetailView: View {
             if let minimum = manifest.minimumVersion {
                 row("app.badge.checkmark", "Needs StableBar \(minimum) or later")
             }
-            switch library.source(draft) {
+            switch library.origin(draft) {
             case .store?:
                 row("checkmark.shield", commands.isEmpty ? "The Store checked that it runs no commands" : "A maintainer read this version") {
                     Label(commands.isEmpty ? "Checked" : "Reviewed", systemImage: "checkmark").foregroundStyle(SettingsPalette.success)
@@ -272,6 +277,10 @@ struct PackageDetailView: View {
             case .local?:
                 row("shield", "StableBar doesn’t review local folders") {
                     Text("Local folder").foregroundStyle(SettingsPalette.warning)
+                }
+            case let .privateSource(name)?:
+                row("shield", "StableBar’s maintainers didn’t review this package") {
+                    Text(name).foregroundStyle(SettingsPalette.warning)
                 }
             default:
                 EmptyView()
@@ -396,7 +405,7 @@ struct BuiltInPackagesView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("StableBar Essentials").font(.system(size: 17, weight: .semibold))
                     HStack(spacing: 6) {
-                        PackageSourceBadge(source: .included)
+                        PackageOriginBadge(source: .included)
                         Text("Widgets and themes by StableBar").lineLimit(1)
                     }
                     .font(.system(size: 12))
@@ -547,5 +556,23 @@ struct PackageTag: View {
             .frame(height: 17)
             .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 5))
             .fixedSize()
+    }
+}
+
+extension PackageLibrary {
+    /// The host a private package comes from: its configured source's, else the install record's URL.
+    func sourceHost(of draft: PackageDraft) -> String? {
+        let id = draft.sourceID ?? records[draft.inspection.manifest.id]?.source
+        let url = sources.first { $0.id == id }?.url ?? records[draft.inspection.manifest.id].flatMap { $0.source == id ? $0.url : nil }
+        return url?.host()
+    }
+
+    /// What the "From <source>" row says after the host. An installed copy whose source is still configured
+    /// gets its updates from there.
+    func privateSourceHint(_ draft: PackageDraft) -> String {
+        let manifest = draft.inspection.manifest
+        let updates = isInstalledCopy(draft.inspection.directory, of: manifest)
+            && records[manifest.id].map { record in sources.contains { $0.id == record.source && !$0.isStore } } == true
+        return (updates ? "Updates are checked there. " : "") + "StableBar’s maintainers didn’t review this package."
     }
 }

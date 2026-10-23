@@ -614,8 +614,10 @@ struct Configuration: Decodable, Sendable {
     enum CodingKeys: String, CodingKey, CaseIterable { case workspaceSource, modeAliases, bar, defaults, popupDefaults, roles, workspaceDefaults, widgets, screens, popups, templates, widgetOverrides, environment, providers, groups }
 
     init(from decoder: Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self, allowing: ["$schema", "tokens", "packages", "theme"])
+        try decoder.rejectUnknownKeys(CodingKeys.self, allowing: ["$schema", "tokens", "packages", "packageSources", "theme"])
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        _ = try decoder.container(keyedBy: ConfigurationKey.self)
+            .decodeIfPresent([PackageSource].self, forKey: ConfigurationKey(stringValue: "packageSources"))
         workspaceSource = try values.decodeIfPresent(WorkspaceSource.self, forKey: .workspaceSource) ?? .aerospace
         modeAliases = try values.decodeIfPresent([String: String?].self, forKey: .modeAliases)?.compactMapValues { $0 } ?? [:]
         guard modeAliases.allSatisfy({ !$0.key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

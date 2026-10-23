@@ -1,7 +1,7 @@
 import Foundation
 
 struct ConfigurationEdit: Codable, Sendable {
-    enum Action: String, Codable { case set, add, remove, reorder, screens, bar, defaults, popupDefaults, roles, workspaceDefaults, tokens, modeAliases, workspaceSource, unset, profile, profiles, package, theme }
+    enum Action: String, Codable { case set, add, remove, reorder, screens, bar, defaults, popupDefaults, roles, workspaceDefaults, tokens, modeAliases, workspaceSource, unset, profile, profiles, package, packageSource, theme }
     let action: Action
     var id: String?
     var properties: [String: ConfigurationValue]?
@@ -108,6 +108,18 @@ struct ConfigurationEdit: Codable, Sendable {
             if let index = packages.firstIndex(where: { $0["id"] == .string(id) }) { packages[index] = package }
             else { packages.append(package) }
             root["packages"] = .array(packages.map(ConfigurationValue.object))
+        case .packageSource:
+            // A whole source replaces the one with its id, or is appended; an id alone removes that source.
+            var sources = try root["packageSources"]?.decoded([[String: ConfigurationValue]].self) ?? []
+            if let source = properties {
+                guard let id = try source["id"]?.decoded(String.self) else { throw CommandFailure(message: "A package source id is required.") }
+                if let index = sources.firstIndex(where: { $0["id"] == .string(id) }) { sources[index] = source }
+                else { sources.append(source) }
+            } else {
+                guard let id else { throw CommandFailure(message: "A package source id is required.") }
+                sources.removeAll { $0["id"] == .string(id) }
+            }
+            root["packageSources"] = sources.isEmpty ? nil : .array(sources.map(ConfigurationValue.object))
         case .theme:
             root["theme"] = properties.map(ConfigurationValue.object)
         }

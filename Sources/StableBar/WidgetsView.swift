@@ -261,9 +261,9 @@ struct WidgetsView: View {
         return Set(overrides.keys)
     }
 
-    private func source(_ widget: WidgetConfiguration) -> PackageSource {
+    private func source(_ widget: WidgetConfiguration) -> PackageOrigin {
         guard let id = store.widgetPackageIDs[widget.id] else { return .builtIn }
-        return setup.choices.contains { $0.package?.id == id } ? .listed : .installed
+        return setup.choices.contains { $0.package?.id == id && $0.package?.sourceID == PackageSource.storeID } ? .listed : .installed
     }
 
 

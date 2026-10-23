@@ -433,13 +433,14 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
         "profile": ConfigurationProfile.CodingKeys.allCases, "conditions": ProfileConditions.CodingKeys.allCases,
         "packageSelection": WidgetPackageSelection.CodingKeys.allCases, "rule": StyleRule.CodingKeys.allCases,
         "ruleCondition": RuleCondition.CodingKeys.allCases, "workspaceDefaults": WorkspaceDefaults.CodingKeys.allCases,
-        "glass": GlassSettings.CodingKeys.allCases, "screen": ScreenConfiguration.CodingKeys.allCases
+        "glass": GlassSettings.CodingKeys.allCases, "screen": ScreenConfiguration.CodingKeys.allCases,
+        "packageSource": PackageSource.CodingKeys.allCases
     ]
     for (name, keys) in decoders {
         #expect(try properties(definitions[name]) == Set(keys.map(\.stringValue) + (name == "widget" ? ["template"] : [])), "\(name)")
     }
     #expect(try properties(.object(schema)) == Set(Configuration.CodingKeys.allCases.map(\.stringValue)
-        + ["$schema", "tokens", "packages", "theme", "includes", "profiles", "profile", "widgetOrder"]))
+        + ["$schema", "tokens", "packages", "packageSources", "theme", "includes", "profiles", "profile", "widgetOrder"]))
 }
 
 @Test func examplesAndTheStarterConfigurationStayValid() throws {

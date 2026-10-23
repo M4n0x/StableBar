@@ -8,9 +8,11 @@ struct WidgetAddChoice: Identifiable, Sendable {
     var properties: [String: ConfigurationValue]?
     var package: PackageIndex.Entry?
     var isScript = false
+    /// The private source a package comes from; nil for built-ins and the Store.
+    var sourceName: String?
 
     func matches(_ search: String) -> Bool {
-        search.isEmpty || "\(name) \(description) \(package == nil ? "Built in" : "Store")".localizedCaseInsensitiveContains(search)
+        search.isEmpty || "\(name) \(description) \(package == nil ? "Built in" : sourceName ?? "Store")".localizedCaseInsensitiveContains(search)
     }
 
     func add(position: WidgetPosition, id: String) -> ConfigurationEdit? {
@@ -45,17 +47,27 @@ enum WidgetAddCatalog {
         .init(id: "script", name: "Script", symbol: "terminal", description: "Run a shell command on a schedule.", properties: ["type": .string("script"), "command": .string("date +%H:%M"), "interval": .number(30)], isScript: true)
     ]
 
-    static func compose(_ packages: [PackageIndex.Entry] = []) -> [WidgetAddChoice] {
+    /// Store packages keep `store/<id>`; a private source's are `store/<source id>/<id>`, so the same ID can appear once per source.
+    static func compose(_ packages: [PackageIndex.Entry] = [], sourceNames: [String: String] = [:]) -> [WidgetAddChoice] {
         var choices = builtIns.filter { !$0.isScript }
-        for entry in packages.sorted(by: { ($0.name, $0.id) < ($1.name, $1.id) }) {
-            choices.append(.init(id: "store/\(entry.id)", name: entry.name, symbol: "shippingbox", description: entry.description ?? "Widgets from the Store.", package: entry))
+        func order(_ entry: PackageIndex.Entry) -> String { entry.sourceID == PackageSource.storeID ? "" : entry.sourceID }
+        for entry in packages.sorted(by: { ($0.name, $0.id, order($0)) < ($1.name, $1.id, order($1)) }) {
+            if entry.sourceID == PackageSource.storeID {
+                choices.append(.init(id: "store/\(entry.id)", name: entry.name, symbol: "shippingbox",
+                                     description: entry.description ?? "Widgets from the Store.", package: entry))
+            } else {
+                let source = sourceNames[entry.sourceID] ?? entry.sourceID
+                choices.append(.init(id: "store/\(entry.sourceID)/\(entry.id)", name: entry.name, symbol: "shippingbox",
+                                     description: entry.description ?? "Widgets from \(source).", package: entry, sourceName: source))
+            }
         }
         return choices + builtIns.filter(\.isScript)
     }
 }
 
 extension PackageStoreClient {
+    /// The widget packages of every source that loaded.
     func widgetChoices() async throws -> [PackageIndex.Entry] {
-        try await index().packages.filter { $0.kind != .theme }
+        await catalog().widgets
     }
 }

@@ -179,3 +179,12 @@ func packagedVersionIncludesLocalCommitAndDirtyState(state: String) async throws
     #expect(!packages.requiresNewerApp("0.4.0"))
     #expect(packages.requiresNewerApp("0.6.0"))
 }
+
+@Test func sourceInfoPlistRegistersTheStablebarURLScheme() throws {
+    let plist = URL(filePath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appending(path: "Resources/Info.plist")
+    let info = try #require(PropertyListSerialization.propertyList(from: Data(contentsOf: plist), format: nil) as? [String: Any])
+    let types = try #require(info["CFBundleURLTypes"] as? [[String: Any]])
+    #expect(types.contains { ($0["CFBundleURLSchemes"] as? [String])?.contains("stablebar") == true })
+}
