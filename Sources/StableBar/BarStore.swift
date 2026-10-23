@@ -766,6 +766,7 @@ final class BarStore: NSObject {
 
     func setPopupVisibleWidget(_ id: String?, anchor: NSView? = nil) {
         popupWidgetID = id
+        appMenu.closeSubmenus(after: nil)
         let anchor = anchor.map(ObjectIdentifier.init)
         for (widgetID, presentation) in presentations { presentation.setPopupAnchor(widgetID == id ? anchor : nil) }
         updateSuspension()

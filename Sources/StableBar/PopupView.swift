@@ -40,6 +40,13 @@ struct PopupView: View {
                     guard store.barEditing.allowsWidgetActions else { return }
                     if popup.dismissOnAction { store.popup.close() }
                     confirmQuit(pid)
+                }, openSubmenu: { [screenKind] element, row in
+                    store.appMenu.openSubmenu(element, beside: row) { submenu in
+                        PopupView(popup: submenu, style: style, store: store, widget: widget).environment(\.screenKind, screenKind)
+                    }
+                }, pressMenuItem: { element in
+                    store.popup.close()
+                    store.appMenu.press(element)
                 }, states: states, update: store.update) { command, environment in
                     if environment.isEmpty ? popup.dismissOnAction : popup.dismissOnControl { store.popup.close() }
                     store.runAction(command, widget: widget,
@@ -126,6 +133,11 @@ struct BlockContext {
     let open: (OpenTarget) -> Void
     /// Asks to quit a `quitField` block's process; a popup's also closes the popup when its actions dismiss it.
     var quit: (pid_t) -> Void = { _ in }
+    /// Opens the submenu of an app menu block's item beside the item's row, or without an item, closes the one open
+    /// beside the block.
+    var openSubmenu: (AXUIElement?, NSView) -> Void = { _, _ in }
+    /// Presses an app menu block's item.
+    var pressMenuItem: (AXUIElement) -> Void = { _ in }
     /// The widget's states, such as `open`; each block adds its own hover.
     var states = StyleStates()
     /// False when the inherited style already has the widget's hover and open states, as in default
@@ -439,6 +451,8 @@ struct PopupBlockView: View {
             if let update = context.update, let version = update.version {
                 UpdateDetails(update: update, version: version, appearance: appearance)
             }
+        case let .appMenu(entries):
+            AppMenuList(entries: entries, appearance: appearance, openSubmenu: context.openSubmenu, press: context.pressMenuItem)
         case let .essentials(kind, timeZone):
             EssentialsDetails(kind: kind, timeZone: timeZone, fields: fields, context: context, appearance: appearance)
         }
@@ -938,6 +952,73 @@ struct WidgetImage: View {
             } catch {
                 if !Task.isCancelled { self.error = error.localizedDescription }
             }
+        }
+    }
+}
+
+struct AppMenuList: View {
+    let entries: [AppMenuEntry]
+    let appearance: WidgetAppearance
+    let openSubmenu: (AXUIElement?, NSView) -> Void
+    let press: (AXUIElement) -> Void
+    @State private var submenu: Int?
+
+    var body: some View {
+        let checks = entries.contains(where: \.isChecked)
+        VStack(spacing: 0) {
+            ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
+                if entry.title.isEmpty {
+                    Rectangle().fill(appearance.foreground.opacity(0.12)).frame(height: 1).padding(.vertical, 4)
+                } else {
+                    AppMenuRow(entry: entry, checks: checks, appearance: appearance, open: submenu == index) { row in
+                        guard submenu != index else { return }
+                        let opens = entry.hasSubmenu && entry.isEnabled
+                        submenu = opens ? index : nil
+                        openSubmenu(opens ? entry.element : nil, row)
+                    } press: {
+                        press(entry.element)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct AppMenuRow: View {
+    let entry: AppMenuEntry
+    let checks: Bool
+    let appearance: WidgetAppearance
+    let open: Bool
+    let rest: (NSView) -> Void
+    let press: () -> Void
+    @State private var hovered = false
+    @State private var anchor = NSView()
+
+    var body: some View {
+        Button {
+            if entry.hasSubmenu { rest(anchor) } else if entry.isEnabled { press() }
+        } label: {
+            HStack(spacing: 4) {
+                if checks {
+                    Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).frame(width: 14).opacity(entry.isChecked ? 1 : 0)
+                }
+                Text(entry.title).lineLimit(1)
+                Spacer(minLength: 8)
+                if entry.hasSubmenu { Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)) }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background((hovered || open) && entry.isEnabled ? appearance.hoverBackground : AnyShapeStyle(Color.clear),
+                        in: RoundedRectangle(cornerRadius: max(appearance.cornerRadius - 4, 0)))
+            .background(MenuAnchor(view: anchor))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(entry.isEnabled ? 1 : 0.4)
+        .onHover { hovered = $0 }
+        .task(id: hovered) {
+            guard hovered, (try? await Task.sleep(for: .milliseconds(200))) != nil else { return }
+            rest(anchor)
         }
     }
 }
