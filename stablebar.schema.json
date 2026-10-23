@@ -1661,7 +1661,7 @@
         },
         "morphPopups": {
           "$ref": "#/definitions/boolean",
-          "description": "When a popup opens while another is open on the same bar, move and reshape the open popup into the new one instead of closing it. Disabled by default."
+          "description": "When a popup opens while another is open on the same bar, move and reshape the open popup into the new one instead of closing it. Enabled by default."
         },
         "animationDuration": {
           "$ref": "#/definitions/number",

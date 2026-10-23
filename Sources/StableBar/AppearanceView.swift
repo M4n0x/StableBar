@@ -298,7 +298,7 @@ struct AppearanceView: View {
         return ThemeGroup(title: "Animation") {
             bar.choice("Motion", "motion", choices: BarMotion.allCases.map(\.rawValue), default: BarMotion.smooth.rawValue)
             bar.choice("Popups", "popupTransition", choices: PopupTransition.allCases.map(\.rawValue), default: motion.popupTransition.rawValue)
-            bar.toggle("Morph between popups", "morphPopups", default: false,
+            bar.toggle("Morph between popups", "morphPopups", default: true,
                        hint: "Opening another widget's popup moves the open one into it.")
         }
         .frame(maxWidth: .infinity)
