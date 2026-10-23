@@ -219,6 +219,8 @@ final class WidgetPopup {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.ignoresMouseEvents = true
+        // A tooltip appears at full opacity, so the system's zoom-in would show it shrunken and blurred at first.
+        panel.animationBehavior = .none
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
         panel.appearance = window.appearance
