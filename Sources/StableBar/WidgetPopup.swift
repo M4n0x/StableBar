@@ -44,14 +44,15 @@ struct PopupShadowView: View {
     let inset: CGFloat
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius)
-        shape.fill(.black)
-            .padding(inset)
-            .shadow(color: color, radius: radius, y: 1)
+        Canvas { context, size in
+            let shape = RoundedRectangle(cornerRadius: cornerRadius).path(in: CGRect(origin: .zero, size: size).insetBy(dx: inset, dy: inset))
+            var shadow = context
+            shadow.addFilter(.shadow(color: color, radius: radius, y: 1))
+            shadow.fill(shape, with: .color(.black))
             // A translucent popup would show the shape through it.
-            .mask {
-                Rectangle().overlay { shape.padding(inset).blendMode(.destinationOut) }.compositingGroup()
-            }
+            context.blendMode = .clear
+            context.fill(shape, with: .color(.black))
+        }
     }
 }
 
