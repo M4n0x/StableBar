@@ -356,8 +356,10 @@ extension SettingsCallout where Trailing == EmptyView {
     }
 }
 
-enum PackageSource {
+enum PackageOrigin: Equatable {
     case builtIn, included, store, listed, installed, local
+    /// A private package source, by its name.
+    case privateSource(String)
 
     var title: String {
         switch self {
@@ -367,6 +369,7 @@ enum PackageSource {
         case .listed: "Listed in Store"
         case .installed: "Installed"
         case .local: "Local folder"
+        case let .privateSource(name): name
         }
     }
 
@@ -376,6 +379,7 @@ enum PackageSource {
         case .store, .listed: "bag.fill"
         case .installed: "shippingbox.fill"
         case .local: "folder.fill"
+        case .privateSource: "lock.fill"
         }
     }
 
@@ -384,17 +388,43 @@ enum PackageSource {
         case .builtIn, .included, .installed: .secondary
         case .store, .listed: .blue
         case .local: SettingsPalette.warning
+        case .privateSource: .accentColor
         }
+    }
+
+    /// Where an installed package came from, by its install record:
+    /// - no record (installed before records existed): listed in the Store or just installed;
+    /// - a version installed from a folder, even under a source's ID: a local folder;
+    /// - a source that's no longer configured: its saved name, marked removed.
+    static func installed(record: PackageInstallRecord?, version: String, listedInStore: Bool, sources: [PackageSource]) -> PackageOrigin {
+        guard let record else { return listedInStore ? .listed : .installed }
+        if record.isLocal(version: version) { return .local }
+        if record.source == PackageSource.storeID { return .store }
+        if let source = sources.first(where: { $0.id == record.source }) { return .privateSource(source.name) }
+        return .privateSource("\(record.name ?? record.source) (removed)")
     }
 }
 
-struct PackageSourceBadge: View {
-    let source: PackageSource
+struct PackageOriginBadge: View {
+    /// `icon` keeps only the symbol, with the title as its tooltip, where a narrow Store card has no room for the name.
+    enum Style { case full, icon }
+
+    let source: PackageOrigin
+    /// Replaces the origin's title, as "StableBar Store" on Store cards.
+    var title: String? = nil
+    var style: Style = .full
 
     var body: some View {
+        switch style {
+        case .full: badge
+        case .icon: badge.help(title ?? source.title).accessibilityElement(children: .ignore).accessibilityLabel(title ?? source.title)
+        }
+    }
+
+    private var badge: some View {
         HStack(spacing: 3) {
             Image(systemName: source.symbol).font(.system(size: 8, weight: .bold))
-            Text(source.title)
+            if style == .full { Text(title ?? source.title) }
         }
             .font(.system(size: 10.5, weight: .semibold))
             .foregroundStyle(source.tint)
@@ -407,7 +437,7 @@ struct PackageSourceBadge: View {
     private var background: AnyShapeStyle {
         switch source {
         case .builtIn, .included, .installed: AnyShapeStyle(SettingsPalette.control)
-        case .store, .listed, .local: AnyShapeStyle(source.tint.opacity(0.15))
+        case .store, .listed, .local, .privateSource: AnyShapeStyle(source.tint.opacity(0.15))
         }
     }
 }

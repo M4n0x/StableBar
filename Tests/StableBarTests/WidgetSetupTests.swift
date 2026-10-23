@@ -317,7 +317,9 @@ final class WidgetSetupTests: XCTestCase {
         await setup.load()
         let choice = try XCTUnwrap(setup.choices.first { $0.package?.id == "power" })
         _ = await setup.add(choice, to: .right)
-        let installed = try fixture.packages.install(try XCTUnwrap(setup.review?.inspection.directory))
+        // The review's Add installs the package for the Store, the source it came from.
+        let installed = try fixture.packages.install(try XCTUnwrap(setup.review?.inspection.directory),
+                                                     record: PackageInstallRecord(await client.store), requestedName: "StableBar Store")
         _ = try setup.enable(installed, settings: [:], position: .right)
         try store.customizationHistory.change(.init(action: .remove, id: "battery"))
         XCTAssertEqual(store.configuration?.widgets.first?.enabled, false)

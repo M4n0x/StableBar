@@ -7,7 +7,9 @@ final class WidgetSetup {
         let inspection: WidgetPackageInspection
         let position: WidgetPosition
         let before: String?
-        var id: String { inspection.manifest.versionKey }
+        /// The source the package is added from, which the review installs it for.
+        var sourceID: String?
+        var id: String { "\(sourceID ?? ""):\(inspection.manifest.versionKey)" }
     }
 
     private let store: BarStore
@@ -54,15 +56,11 @@ final class WidgetSetup {
     func load() async {
         isLoading = true
         defer { isLoading = false }
-        do {
-            choices = WidgetAddCatalog.compose(try await client.widgetChoices())
-            storeUnavailable = false
-            storeError = nil
-        } catch {
-            choices = WidgetAddCatalog.compose()
-            storeUnavailable = true
-            storeError = errorMessage(error)
-        }
+        let catalog = await client.catalog()
+        let names = Dictionary(await client.sources.map { ($0.id, $0.name) }) { first, _ in first }
+        choices = WidgetAddCatalog.compose(catalog.widgets, sourceNames: names)
+        storeError = catalog.errors[PackageSource.storeID]
+        storeUnavailable = storeError != nil
     }
 
     func add(_ choice: WidgetAddChoice, to position: WidgetPosition, before anchor: String? = nil) async -> String? {
@@ -76,7 +74,7 @@ final class WidgetSetup {
                 let inspection = try await client.packageForAdding(entry)
                 try Task.checkCancellation()
                 if inspection.requiresReview || !inspection.manifest.settings.isEmpty || inspection.widgets.count > 1 {
-                    review = Review(inspection: inspection, position: position, before: anchor)
+                    review = Review(inspection: inspection, position: position, before: anchor, sourceID: entry.sourceID)
                     return nil
                 }
                 let installed = try await client.installWithoutReview(entry)

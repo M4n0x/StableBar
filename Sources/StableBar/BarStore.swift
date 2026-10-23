@@ -25,6 +25,8 @@ final class BarStore: NSObject {
     var onCustomize: (() -> Void)?
     var onCustomizeWidget: ((String) -> Void)?
     var onCustomizePackages: (() -> Void)?
+    /// A `stablebar://add-source` link waiting for Settings › Packages to open its form.
+    var pendingSourceLink: PackageSourceLink?
     var onCustomizeProfile: ((String) -> Void)?
     var onEndCustomizationEditing: (() -> Void)?
     var onTryThemes: ((Int) -> Void)?
@@ -47,9 +49,12 @@ final class BarStore: NSObject {
     @ObservationIgnored lazy var customizationHistory = ConfigurationHistory(store: self, saveDelay: customizationSaveDelay)
     @ObservationIgnored lazy var barEditing = BarEditing(store: self)
     @ObservationIgnored lazy var packageStoreClient = PackageStoreClient(
-        packages: WidgetPackageStore(directory: configurationURL.deletingLastPathComponent().appending(path: "packages")))
+        packages: WidgetPackageStore(directory: configurationURL.deletingLastPathComponent().appending(path: "packages")),
+        sources: packageSources.filter { !$0.isStore })
     @ObservationIgnored lazy var packageLibrary = PackageLibrary(store: self)
     var themesDirectory: URL? { configurationLoader.themesDirectory }
+    /// The Store and the configured private sources. An invalid list leaves only the Store.
+    var packageSources: [PackageSource] { (try? PackageSource.configured(in: effectiveDocument)) ?? [.store] }
     var context = ConfigurationContext()
     private(set) var presentations: [String: WidgetPresentation] = [:]
     private(set) var barStyle = WidgetStyle()
@@ -495,6 +500,7 @@ final class BarStore: NSObject {
         }
         for (url, data) in otherBars { try writeConfiguration(data, to: url) }
         try FileManager.default.removeItem(at: directory)
+        try packages.releaseVersion(id: id, version: version)
         if fromCustomization { customizationHistory.dropUnavailableHistory() }
     }
 
@@ -640,6 +646,8 @@ final class BarStore: NSObject {
         readAppMenu()
         preparePresentations()
         effectiveDocument = loader.document
+        let sources = packageSources.filter { !$0.isStore }
+        Task { [packageStoreClient] in await packageStoreClient.setPrivateSources(sources) }
         screenDocuments = loader.screenDocuments
         origins = loader.origins
         activeProfiles = loader.activeProfiles

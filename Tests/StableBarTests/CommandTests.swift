@@ -193,3 +193,86 @@ func stoppedCommandCannotEscapeByChangingItsProcessGroup(timeout: Bool) async th
     #expect(kill(process, 0) == -1)
     #expect(errno == ESRCH)
 }
+
+@Test func installPackageTakesAnOptionalSource() throws {
+    guard case let .installFromStore(_, id, source) = try LaunchCommand(arguments: ["--install-package", "clock", "--source", "acme"]) else {
+        Issue.record("Expected a Store install.")
+        return
+    }
+    #expect(id == "clock")
+    #expect(source == "acme")
+    guard case let .installFromStore(_, plainID, plainSource) = try LaunchCommand(arguments: ["--install-package", "clock"]) else {
+        Issue.record("Expected a Store install.")
+        return
+    }
+    #expect(plainID == "clock")
+    #expect(plainSource == nil)
+    #expect(throws: CommandFailure.self) { try LaunchCommand(arguments: ["--install-package", "clock", "--source"]) }
+}
+
+@Test func buildSourceTakesPathsAndFlagsInAnyOrder() throws {
+    guard case let .buildSource(packages, output, previous, url, name) = try LaunchCommand(arguments: [
+        "--build-source", "./packages", "./dist", "--name", "Acme", "--previous", "./previous/index.json",
+        "--url", "https://example.com/store/index.json",
+    ]) else {
+        Issue.record("Expected a source build.")
+        return
+    }
+    #expect(packages.lastPathComponent == "packages")
+    #expect(output.lastPathComponent == "dist")
+    #expect(previous?.path.hasSuffix("previous/index.json") == true)
+    #expect(url == URL(string: "https://example.com/store/index.json"))
+    #expect(name == "Acme")
+    guard case let .buildSource(_, _, plainPrevious, plainURL, plainName) = try LaunchCommand(arguments: ["--build-source", "p", "o"]) else {
+        Issue.record("Expected a source build.")
+        return
+    }
+    #expect(plainPrevious == nil && plainURL == nil && plainName == nil)
+}
+
+@Test func buildSourceNeedsBothURLAndNameOrNeither() {
+    #expect(throws: CommandFailure.self) {
+        try LaunchCommand(arguments: ["--build-source", "p", "o", "--url", "https://example.com/index.json"])
+    }
+    #expect(throws: CommandFailure.self) { try LaunchCommand(arguments: ["--build-source", "p", "o", "--name", "Acme"]) }
+}
+
+@Test func buildSourceRefusesBadFlagsAndURLs() {
+    for arguments in [
+        ["--build-source", "p"],
+        ["--build-source", "p", "o", "--previous"],
+        ["--build-source", "p", "o", "--other", "x"],
+        ["--build-source", "p", "o", "--previous", "a", "--previous", "b"],
+        ["--build-source", "p", "o", "--url", "http://example.com/index.json", "--name", "Acme"],
+        ["--build-source", "p", "o", "--url", "https://user:secret@example.com/index.json", "--name", "Acme"],
+        ["--build-source", "p", "o", "--url", "https://example.com/index.json?token=x", "--name", "Acme"],
+        ["--build-source", "p", "o", "--url", "https://example.com/index.json", "--name", " "],
+    ] {
+        #expect(throws: CommandFailure.self) { try LaunchCommand(arguments: arguments) }
+    }
+}
+
+@Test func packageListingNamesTheSourceOfRecordedPackages() throws {
+    let fixture = try ThemeGalleryFixture()
+    defer { fixture.close() }
+    for id in ["clock", "weather"] {
+        let source = fixture.directory.appending(path: "sources/\(id)")
+        try fixture.write(#"{"id":"\#(id)","name":"\#(id)","version":"1","kind":"widgets","entry":"config.json"}"#,
+                          to: source.appending(path: "package.json"))
+        try fixture.write(#"{"widgets":[]}"#, to: source.appending(path: "config.json"))
+        _ = try fixture.packages.install(source, record: PackageInstallRecord(source: "acme", name: "Acme", url: nil))
+    }
+    try FileManager.default.removeItem(at: fixture.packages.directory.appending(path: "weather/\(PackageInstallRecord.fileName)"))
+    // A folder build of another version of Acme's clock is listed as the folder's.
+    let folder = fixture.directory.appending(path: "sources/clock-2")
+    try fixture.write(#"{"id":"clock","name":"clock","version":"2","kind":"widgets","entry":"config.json"}"#,
+                      to: folder.appending(path: "package.json"))
+    try fixture.write(#"{"widgets":[]}"#, to: folder.appending(path: "config.json"))
+    _ = try fixture.packages.install(folder)
+    let listing = try #require(JSONSerialization.jsonObject(with: packageListing(fixture.packages)) as? [[String: Any]])
+    #expect(listing.map { $0["id"] as? String } == ["clock", "clock", "weather"])
+    #expect(listing[0]["source"] as? String == "acme")
+    #expect(listing[0]["name"] as? String == "clock")
+    #expect(listing[1]["source"] as? String == "local")
+    #expect(listing[2]["source"] == nil)
+}

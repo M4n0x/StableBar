@@ -300,6 +300,13 @@
         "$ref": "#/definitions/packageSelection"
       }
     },
+    "packageSources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/packageSource"
+      },
+      "description": "Private package catalogs listed beside the StableBar Store. Tokens are kept in the Keychain, never here."
+    },
     "theme": {
       "$ref": "#/definitions/packageSelection",
       "description": "Theme applied after widget packages and before includes. Without version, a theme that ships with StableBar; with version, an installed theme package."
@@ -1766,6 +1773,24 @@
         },
         "settings": {
           "type": ["object", "null"]
+        }
+      }
+    },
+    "packageSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "url"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://[^/?#@]+(/[^?#]*)?$"
         }
       }
     },

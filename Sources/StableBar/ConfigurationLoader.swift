@@ -169,28 +169,35 @@ struct ConfigurationLayer {
     mutating func merge(_ next: ConfigurationLayer) throws {
         let widgets = try (values["widgets"]?.decoded([ConfigurationValue].self) ?? [])
             + (next.values["widgets"]?.decoded([ConfigurationValue].self) ?? [])
-        let previousPackages = values["packages"]
+        let previous = values
         let previousProfiles = values["profiles"]
         values.merge(next.values) { $1.overriding($0) }
         if let profiles = next.values["profiles"] {
             values["profiles"] = .array(try mergeProfiles(previousProfiles, with: profiles).map(ConfigurationValue.object))
         }
-        if let selections = next.values["packages"] {
-            var packages = try previousPackages?.decoded([[String: ConfigurationValue]].self) ?? []
-            for selection in try selections.decoded([[String: ConfigurationValue]].self) {
-                let id = try (selection["id"] ?? .null).decoded(String.self)
-                if let index = packages.firstIndex(where: { $0["id"] == .string(id) }) {
-                    packages[index].merge(selection) { $1.overriding($0) }
-                } else {
-                    packages.append(selection)
-                }
+        for key in ["packages", "packageSources"] {
+            if let entries = next.values[key] {
+                values[key] = try mergeByID(previous[key], with: entries)
             }
-            values["packages"] = .array(packages.map(ConfigurationValue.object))
         }
         values["widgets"] = .array(widgets)
         origins.merge(next.origins) { $1 }
         contributions.merge(next.contributions) { $0 + $1 }
     }
+}
+
+/// Merges two arrays of objects that have an `id`: a later entry changes the earlier one with the same id, and new ids are appended.
+private func mergeByID(_ previous: ConfigurationValue?, with next: ConfigurationValue) throws -> ConfigurationValue {
+    var entries = try previous?.decoded([[String: ConfigurationValue]].self) ?? []
+    for entry in try next.decoded([[String: ConfigurationValue]].self) {
+        let id = try (entry["id"] ?? .null).decoded(String.self)
+        if let index = entries.firstIndex(where: { $0["id"] == .string(id) }) {
+            entries[index].merge(entry) { $1.overriding($0) }
+        } else {
+            entries.append(entry)
+        }
+    }
+    return .array(entries.map(ConfigurationValue.object))
 }
 
 struct ConfigurationContribution: Equatable, Sendable {
@@ -229,7 +236,8 @@ func configurationValues(_ value: ConfigurationValue, path: String = "") -> [Str
     case let .array(array):
         for (index, value) in array.enumerated() {
             var key = String(index)
-            if (path == "widgets" || path.hasSuffix(".configuration.widgets")),
+            // Sources merge by id across files, so their paths use the id too, and origins name the file that defined each one.
+            if (path == "widgets" || path.hasSuffix(".configuration.widgets") || path == "packageSources"),
                case let .object(widget) = value, case let .string(id) = widget["id"] {
                 key = id
             } else if path == "profiles", case let .object(profile) = value, case let .string(name) = profile["name"] {
@@ -261,7 +269,7 @@ struct ConfigurationLoader {
     private(set) var matchesApps = false
     private(set) var templates: [String: [String: ConfigurationValue]] = [:]
     private(set) var screenDocuments: [String: [String: ConfigurationValue]] = [:]
-    private var packageSources: [String: URL] = [:]
+    private var packageBoundaries: [String: URL] = [:]
     private var packageNames: [String: String] = [:]
     private var packageIDs: [String: String] = [:]
 
@@ -286,7 +294,7 @@ struct ConfigurationLoader {
                           previewTheme: ConfigurationLayer? = nil, screen: ScreenKind? = nil) throws -> [String: ConfigurationValue] {
         dependencies = []
         activeProfiles = []
-        packageSources = [:]
+        packageBoundaries = [:]
         packageNames = [:]
         packageIDs = [:]
         widgetPackageNames = [:]
@@ -363,6 +371,7 @@ struct ConfigurationLoader {
         var names = Set<String>()
         for profile in profiles {
             guard names.insert(profile.name).inserted else { throw ThemeConfigurationError.duplicateProfile(profile.name) }
+            if profile.configuration["packageSources"] != nil { throw PackageSourceError.inProfile(profile.name) }
         }
         if let selected, !names.contains(selected) { throw ThemeConfigurationError.unknownProfile(selected) }
         for profile in profiles where profile.enabled || profile.name == previewProfile {
@@ -446,7 +455,7 @@ struct ConfigurationLoader {
         for key in ["templates", "widgetOverrides", "includes", "widgetOrder"] {
             layer.values.removeValue(forKey: key)
         }
-        document = try preparePackageAssets(.object(layer.values), origins: layer.origins, sources: packageSources)
+        document = try preparePackageAssets(.object(layer.values), origins: layer.origins, boundaries: packageBoundaries)
             .decoded([String: ConfigurationValue].self)
         let finalPaths = configurationOrigins(.object(document), source: ConfigurationOrigin(file: ""))
         origins = layer.origins.filter { finalPaths[$0.key] != nil }
@@ -527,7 +536,7 @@ struct ConfigurationLoader {
         let canonical = url.resolvingSymlinksInPath()
         if let boundary {
             try validatePackagePath(url, inside: boundary)
-            packageSources[url.path] = boundary
+            packageBoundaries[url.path] = boundary
         }
         guard !path.contains(canonical) else {
             throw ConfigurationCompositionError.includeCycle(path + [canonical])
@@ -536,6 +545,13 @@ struct ConfigurationLoader {
         let includes = try values.removeValue(forKey: "includes")?.decoded([String].self) ?? []
         var merged = ConfigurationLayer(values: ["widgets": .array([])], origins: [:])
         if boundary != nil, values["packages"] != nil { throw WidgetPackageError.nestedPackages }
+        if boundary != nil, values["packageSources"] != nil { throw PackageSourceError.inPackage }
+        if let sources = try values["packageSources"]?.decoded([[String: ConfigurationValue]].self) {
+            var ids = Set<String>()
+            for case let .string(id)? in sources.map({ $0["id"] }) {
+                guard ids.insert(id).inserted else { throw PackageSourceError.duplicateID(id) }
+            }
+        }
         for include in includes {
             let file = URL(fileURLWithPath: (include as NSString).expandingTildeInPath,
                            relativeTo: url.deletingLastPathComponent()).standardizedFileURL

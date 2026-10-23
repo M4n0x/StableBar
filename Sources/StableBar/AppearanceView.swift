@@ -186,7 +186,7 @@ struct AppearanceView: View {
         case .all: return included + others
         case .included: return included
         case .store: return others.filter { item in
-            if case let .installed(choice) = item { return gallery.source(of: choice) == .listed }
+            if case let .installed(choice) = item { return ![.installed, .local].contains(gallery.source(of: choice)) }
             return true
         }
         }
@@ -202,7 +202,8 @@ struct AppearanceView: View {
                              source: gallery.source(of: choice)) { gallery.select(choice, on: screen, everyBar: editor.themeChangesEveryBar) }
         case let .store(entry):
             return ThemeCard(title: entry.name, look: look, appearance: appearance, progress: gallery.progress[item.id],
-                             error: gallery.error(for: item.id), isStore: true) {
+                             error: gallery.error(for: item.id), isStore: true,
+                             source: entry.sourceID == PackageSource.storeID ? nil : .privateSource(gallery.sourceName(entry.sourceID))) {
                 Task { await gallery.get(entry, on: screen, everyBar: editor.themeChangesEveryBar) }
             }
         }
@@ -371,7 +372,7 @@ private enum ThemeItem: Identifiable {
     var id: String {
         switch self {
         case let .installed(choice): choice.key
-        case let .store(entry): entry.versionKey
+        case let .store(entry): entry.key
         }
     }
 

@@ -671,6 +671,7 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     _ = try await runCommand("/usr/bin/tar", arguments: ["-czf", archive.path, "-C", source.path, "."])
     let sha256 = SHA256.hash(data: try Data(contentsOf: archive)).map { String(format: "%02x", $0) }.joined()
     let index = directory.appending(path: "store/index.json")
+    let indexSource = PackageSource(id: PackageSource.storeID, name: "StableBar Store", url: index)
     for (version, checksum, message) in [
         ("1", String(repeating: "0", count: 64), "The archive of package clock does not match the store's checksum."),
         ("2", sha256, "The archive of package clock 2 contains a different id or version.")
@@ -680,7 +681,7 @@ private func writePackageFile(_ text: String, to url: URL) throws {
           "source":"https://example.com/packages/clock"}]}
         """#, to: index)
         let entry = try await PackageIndex.load(from: index).packages[0]
-        let error = await #expect(throws: WidgetPackageError.self) { try await store.download(entry, from: index) }
+        let error = await #expect(throws: WidgetPackageError.self) { try await store.download(entry, from: indexSource, token: nil) }
         #expect(error?.localizedDescription == message)
     }
     try writePackageFile(#"""
@@ -690,7 +691,7 @@ private func writePackageFile(_ text: String, to url: URL) throws {
     """#, to: index)
     let packages = try await PackageIndex.load(from: index).packages
     #expect(packages.map(\.id) == ["clock"])
-    let installed = try store.install(try await store.download(packages[0], from: index))
+    let installed = try store.install(try await store.download(packages[0], from: indexSource, token: nil))
     #expect(installed.directory == directory.appending(path: "packages/clock/1"))
     #expect(installed.manifest.kind == .widgets)
 }

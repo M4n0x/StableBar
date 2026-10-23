@@ -7,8 +7,13 @@ struct ScriptEvent: Sendable {
     var environment: [String: String] = [:]
 
     func commandEnvironment(_ configured: [String: String], secret: @Sendable (String) -> String = packageSecret) async -> [String: String] {
-        var variables = configured.mapValues { $0.hasPrefix("@secret.") ? secret(String($0.dropFirst("@secret.".count))) : $0 }
-            .merging(environment) { _, event in event }
+        // A source's token belongs to its requests only; configuration can't read it.
+        let resolved = configured.mapValues { value in
+            guard value.hasPrefix("@secret.") else { return value }
+            let account = String(value.dropFirst("@secret.".count))
+            return account.hasPrefix("source:") ? "" : secret(account)
+        }
+        var variables = resolved.merging(environment) { _, event in event }
         variables["NAME"] = configured["NAME"]
         variables["CONFIG_DIR"] = configured["CONFIG_DIR"]
         variables["SENDER"] = sender

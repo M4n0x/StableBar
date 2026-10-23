@@ -16,6 +16,7 @@ Unknown properties are errors, so a misspelled key cannot be silently ignored. T
 - `defaults`: styles inherited by every widget.
 - `popupDefaults`: styles inherited by every popup, over `defaults`.
 - `workspaceSource`: `aerospace` (default), `yabai` or `spaces` (macOS Spaces, see [macOS Spaces workspaces](widgets.md#macos-spaces-workspaces)), for workspace widgets and active-display tracking.
+- `packageSources`: [private package sources](packages.md#private-sources), each with an `id`, a `name` and an `https` index `url`.
 - `widgets`: ordered widget definitions with unique `id`, `type`, `position` and optional `style`, `icon`, `onClick` or `open`, `menu`, `popup`.
 - `position`: `left`, `notchLeft`, `center`, `notchRight` or `right`.
 - Colors: `#RRGGBB` or `#RRGGBBAA` (alpha last), or `{ "light": "#RRGGBB", "dark": "#RRGGBB" }` for a color that follows the light or dark appearance.
@@ -43,7 +44,7 @@ Split a setup into JSON files and load them from the main configuration:
 }
 ```
 
-Include paths are relative to the file that names them; absolute paths and `~` also work. Includes can have their own includes. Files apply in listed order, followed by the containing file. Objects merge recursively, with later values winning. Arrays replace earlier arrays, except top-level `widgets`, which concatenate in order, `packages`, whose selections merge by package ID, and `profiles`, which merge by name. Root package selections can disable or change versions inherited from includes. Modules can contain only a theme, templates, popups, environment variables, or overrides; they do not need widgets.
+Include paths are relative to the file that names them; absolute paths and `~` also work. Includes can have their own includes. Files apply in listed order, followed by the containing file. Objects merge recursively, with later values winning. Arrays replace earlier arrays, except top-level `widgets`, which concatenate in order, `packages`, whose selections merge by package ID, `packageSources`, which merge by `id`, and `profiles`, which merge by name. Root package selections can disable or change versions inherited from includes. Modules can contain only a theme, templates, popups, environment variables, or overrides; they do not need widgets.
 
 Define reusable widget properties in `templates`, then select one with `template`:
 

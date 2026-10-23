@@ -8,7 +8,7 @@ struct ThemeCard: View {
     var progress: String?
     var error: String?
     var isStore = false
-    var source: PackageSource? = .included
+    var source: PackageOrigin? = .included
     let select: () -> Void
     @State private var hovering = false
 
@@ -36,13 +36,16 @@ struct ThemeCard: View {
                     if let progress {
                         ProgressView().controlSize(.mini).accessibilityLabel(progress)
                     } else if isStore {
-                        Button("Get", action: select)
-                            .buttonStyle(.borderedProminent)
-                            .buttonBorderShape(.capsule)
-                            .controlSize(.small)
-                            .accessibilityLabel("Get \(title)")
+                        HStack(spacing: 4) {
+                            if case .privateSource? = source, let source { PackageOriginBadge(source: source) }
+                            Button("Get", action: select)
+                                .buttonStyle(.borderedProminent)
+                                .buttonBorderShape(.capsule)
+                                .controlSize(.small)
+                                .accessibilityLabel("Get \(title)")
+                        }
                     } else if let source {
-                        PackageSourceBadge(source: source)
+                        PackageOriginBadge(source: source)
                     } else {
                         Text("Installed").font(.system(size: 10.5)).foregroundStyle(.secondary)
                     }

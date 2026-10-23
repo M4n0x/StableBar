@@ -7,7 +7,8 @@ enum LaunchCommand {
     case validate(URL)
     case control(URL, RuntimeRequest)
     case packages(URL, String, URL?)
-    case installFromStore(URL, String)
+    case installFromStore(URL, String, String?)
+    case buildSource(packages: URL, output: URL, previous: URL?, url: URL?, name: String?)
     case renderDocsImages(URL)
     case help
 
@@ -25,7 +26,8 @@ enum LaunchCommand {
            StableBar [--config PATH] --batch JSON_ARRAY [--persist]
            StableBar [--config PATH] --profile NAME|auto [--persist]
            StableBar [--config PATH] --reset | --refresh ID | --popup ID
-           StableBar [--config PATH] --packages | --inspect-package PATH | --install-package PATH|ID
+           StableBar [--config PATH] --packages | --inspect-package PATH | --install-package PATH|ID [--source SOURCE]
+           StableBar --build-source PACKAGES OUT [--previous FILE] [--url URL --name NAME]
            StableBar [--config PATH] --enable-package ID VERSION [--persist]
            StableBar [--config PATH] --uninstall-package ID VERSION
            StableBar --help
@@ -80,11 +82,15 @@ enum LaunchCommand {
         case "--install-package" where arguments.count == 2:
             let source = URL(filePath: (arguments[1] as NSString).expandingTildeInPath)
             self = (try? source.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-                ? .packages(url, "install", source) : .installFromStore(url, arguments[1])
+                ? .packages(url, "install", source) : .installFromStore(url, arguments[1], nil)
+        case "--install-package" where arguments.count == 4 && arguments[2] == "--source":
+            self = .installFromStore(url, arguments[1], arguments[3])
         case "--enable-package" where arguments.count == 3:
             self = batch([ConfigurationEdit(action: .package, properties: ["id": .string(arguments[1]), "version": .string(arguments[2]), "enabled": .bool(true)])])
         case "--uninstall-package" where arguments.count == 3:
             self = .control(url, RuntimeRequest(action: .uninstallPackage, id: arguments[1], version: arguments[2]))
+        case "--build-source" where arguments.count >= 3:
+            self = try Self.buildSource(Array(arguments.dropFirst()))
         case "--validate" where arguments.count <= 2:
             let url = arguments.count == 2 ? URL(filePath: (arguments[1] as NSString).expandingTildeInPath) : url
             self = .validate(url)
@@ -114,5 +120,39 @@ enum LaunchCommand {
                 throw CommandFailure(message: "--persist requires a configuration edit.")
             }
         }
+    }
+
+    /// `PACKAGES OUT`, then `--previous FILE`, `--url URL` and `--name NAME` in any order. A join link needs both `--url` and `--name`.
+    private static func buildSource(_ arguments: [String]) throws -> LaunchCommand {
+        func path(_ text: String) -> URL { URL(filePath: (text as NSString).expandingTildeInPath) }
+        var options: [String: String] = [:]
+        var rest = arguments.dropFirst(2)
+        while let flag = rest.popFirst() {
+            guard ["--previous", "--url", "--name"].contains(flag), options[flag] == nil, let value = rest.popFirst() else {
+                throw CommandFailure(message: Self.usage)
+            }
+            options[flag] = value
+        }
+        guard (options["--url"] == nil) == (options["--name"] == nil) else {
+            throw CommandFailure(message: "--url and --name go together: the join link needs both.")
+        }
+        var url: URL?
+        if let text = options["--url"], let name = options["--name"] {
+            guard let parsed = URL(string: text) else { throw CommandFailure(message: "--url isn’t a URL.") }
+            do {
+                _ = try PackageSource.validated(id: "source", name: name, url: parsed)
+            } catch PackageSourceError.emptyName {
+                throw CommandFailure(message: "--name can’t be empty.")
+            } catch PackageSourceError.insecureURL {
+                throw CommandFailure(message: "--url needs an https URL.")
+            } catch PackageSourceError.queryInURL {
+                throw CommandFailure(message: "--url needs an index URL without ?query or #fragment.")
+            } catch PackageSourceError.credentialsInURL {
+                throw CommandFailure(message: "--url needs an index URL without a user name or password.")
+            }
+            url = parsed
+        }
+        return .buildSource(packages: path(arguments[0]), output: path(arguments[1]), previous: options["--previous"].map(path),
+                            url: url, name: options["--name"]?.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }

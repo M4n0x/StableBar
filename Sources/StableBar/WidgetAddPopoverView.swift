@@ -92,7 +92,7 @@ struct WidgetAddPopoverView: View {
         VStack(alignment: .leading, spacing: 10) {
             if showsTitle { Text(title).font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary) }
             if let review = model.setup.review {
-                PackagesView(store: store, reviewing: review.inspection, onEnable: { inspection, settings in
+                PackagesView(store: store, reviewing: review.inspection, reviewingSourceID: review.sourceID, onEnable: { inspection, settings in
                     addedID = try model.setup.enable(inspection, settings: settings, position: review.position, before: review.before)
                 }, onAdded: {
                     if let addedID { model.didAdd(addedID) }

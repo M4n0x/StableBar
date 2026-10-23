@@ -60,4 +60,14 @@ final class ConfigurationEditsTests: XCTestCase {
         var ids: [String] = []
         XCTAssertEqual(try edit.applying(to: main, widgetIDs: &ids), main)
     }
+
+    func testPackageSourceEditsUpsertAndRemoveByID() throws {
+        var ids: [String] = []
+        let acme: [String: ConfigurationValue] = ["id": .string("acme"), "name": .string("Acme"), "url": .string("https://a.example/index.json")]
+        var root = try ConfigurationEdit(action: .packageSource, properties: acme).applying(to: [:], widgetIDs: &ids)
+        root = try ConfigurationEdit(action: .packageSource, properties: acme.merging(["name": .string("Acme Inc")]) { $1 }).applying(to: root, widgetIDs: &ids)
+        XCTAssertEqual(root["packageSources"], .array([.object(acme.merging(["name": .string("Acme Inc")]) { $1 })]))
+        root = try ConfigurationEdit(action: .packageSource, id: "acme").applying(to: root, widgetIDs: &ids)
+        XCTAssertNil(root["packageSources"])
+    }
 }

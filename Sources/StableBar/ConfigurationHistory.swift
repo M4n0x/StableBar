@@ -66,7 +66,8 @@ final class ConfigurationHistory {
     }
 
     private func inEditingProfile(_ edit: ConfigurationEdit) throws -> ConfigurationEdit {
-        guard let editingProfile, ![.profile, .profiles].contains(edit.action) else { return edit }
+        // Sources apply to every profile, so they stay in the main configuration.
+        guard let editingProfile, ![.profile, .profiles, .packageSource].contains(edit.action) else { return edit }
         switch edit.action {
         case .reorder: throw CommandFailure(message: "A profile keeps your bar’s order. Click Done to reorder widgets.")
         case .theme: throw CommandFailure(message: "A profile can’t change the theme. Click Done to choose a theme for your bar.")
