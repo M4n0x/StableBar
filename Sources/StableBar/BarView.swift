@@ -370,6 +370,34 @@ struct WidgetView: View {
         }
     }
 
+    /// Opens the widget's hover popup, hover controls or tooltip when the pointer enters it, closes
+    /// them when it leaves, and runs the widget's mouse actions.
+    private func hoverChanged(_ inside: Bool, tooltip: String?, output: ScriptOutput?) {
+        guard store.barEditing.allowsWidgetActions else { return }
+        hovered = inside
+        if !inside {
+            store.popup.hover(false, store: store, anchor: popupAnchor) {}
+        } else if let popup = widgetPopup(widget, store: store), popup.openOnHover {
+            store.popup.hover(inside, store: store, anchor: popupAnchor) {
+                store.popup.open(popup, widget: widget, defaults: popupDefaults.inheriting(defaults),
+                                 store: store, anchor: popupAnchor, onHover: true)
+            }
+        } else if !inlineHoverControls, widget.hoverLayout != nil || (isSound && output?.values?["volume"] != nil) {
+            store.popup.hover(inside, store: store, anchor: popupAnchor) {
+                store.popup.showControls(widget: widget, defaults: popupDefaults.inheriting(defaults), store: store,
+                                         anchor: popupAnchor) { style in hoverControls(style) }
+            }
+        } else if widget.hoverLayout == nil, let tooltip, !tooltip.isEmpty {
+            store.popup.hover(inside, store: store, anchor: popupAnchor) {
+                store.popup.showTooltip(tooltip, widget: widget, defaults: popupDefaults.inheriting(defaults),
+                                        store: store, anchor: popupAnchor)
+            }
+        }
+        if let command = inside ? widget.actions?.mouseEntered : widget.actions?.mouseExited {
+            runAction(command, sender: inside ? "mouse.entered" : "mouse.exited")
+        }
+    }
+
     /// How the widget's text, field and symbol blocks show changes.
     private var motion: BlockMotion {
         BlockMotion(transition: widget.transition ?? defaultTransition,
@@ -459,31 +487,7 @@ struct WidgetView: View {
         }
         .offset(x: style.offsetX ?? 0, y: style.offsetY ?? 0)
         .opacity(style.opacity ?? 1)
-        .onHover { inside in
-            guard store.barEditing.allowsWidgetActions else { return }
-            hovered = inside
-            if !inside {
-                store.popup.hover(false, store: store, anchor: popupAnchor) {}
-            } else if let popup = widgetPopup(widget, store: store), popup.openOnHover {
-                store.popup.hover(inside, store: store, anchor: popupAnchor) {
-                    store.popup.open(popup, widget: widget, defaults: popupDefaults.inheriting(defaults),
-                                     store: store, anchor: popupAnchor, onHover: true)
-                }
-            } else if !inlineHoverControls, widget.hoverLayout != nil || (isSound && output?.values?["volume"] != nil) {
-                store.popup.hover(inside, store: store, anchor: popupAnchor) {
-                    store.popup.showControls(widget: widget, defaults: popupDefaults.inheriting(defaults), store: store,
-                                             anchor: popupAnchor) { style in hoverControls(style) }
-                }
-            } else if widget.hoverLayout == nil, let tooltip, !tooltip.isEmpty {
-                store.popup.hover(inside, store: store, anchor: popupAnchor) {
-                    store.popup.showTooltip(tooltip, widget: widget, defaults: popupDefaults.inheriting(defaults),
-                                            store: store, anchor: popupAnchor)
-                }
-            }
-            if let command = inside ? widget.actions?.mouseEntered : widget.actions?.mouseExited {
-                runAction(command, sender: inside ? "mouse.entered" : "mouse.exited")
-            }
-        }
+        .onHover { hoverChanged($0, tooltip: tooltip, output: output) }
         .animation(hoverAnimation(hovered, reduceMotion: reduceMotion), value: hovered)
         .animation(reduceMotion ? nil : animation.value, value: style)
         .animation(reduceMotion ? nil : animation.value, value: widget.content == .activeApp ? store.activeApp : nil)
