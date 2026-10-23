@@ -38,6 +38,7 @@ final class BarStore: NSObject {
     var contributions: [String: [ConfigurationContribution]] = [:]
     var widgetPackageNames: [String: String] = [:]
     var widgetPackageIDs: [String: String] = [:]
+    var builtInWidgetIDs: Set<String> = []
     var activeProfiles: [String] = []
     var profiles: [ConfigurationProfile] = []
     var pinnedProfile: String?
@@ -583,6 +584,7 @@ final class BarStore: NSObject {
         pinnedProfile = loader.pinnedProfile
         widgetPackageNames = loader.widgetPackageNames
         widgetPackageIDs = loader.widgetPackageIDs
+        builtInWidgetIDs = loader.builtInWidgetIDs
         contributions = loader.contributions
         if effectiveDocument == loader.document {
             origins = loader.origins
@@ -708,7 +710,7 @@ final class BarStore: NSObject {
                 || widget.overlay?.usesModeStates(roles: configuration.roles) == true
                 || script?.output.styles?.values.contains(where: \.usesModeStates) == true
             let animation = script?.output.animation ?? widget.animation ?? configuration.bar.animation
-            let state = dataState(script?.output, rules: widget.rules)
+            let state = widgetDataState(script?.output, widget: widget, providers: configuration.providers)
             var screenStyles: [String: ResolvedWidgetStyle] = [:]
             for (kind, look) in configuration.screenLooks {
                 guard let own = look.widgets.first(where: { $0.id == widget.id }) else { continue }
