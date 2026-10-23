@@ -16,8 +16,8 @@
       "onClick": "open -a 'System Settings'"
     },
     {
-      "id": "active-app",
-      "type": "activeApp",
+      "id": "app-menu",
+      "type": "appMenu",
       "position": "left"
     },
     {
