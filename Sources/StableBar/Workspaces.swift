@@ -141,7 +141,7 @@ final class WorkspaceStore {
     private(set) var tracksWorkspaces = true
     var isRunning: Bool { task != nil }
     private var refreshTask: Task<Void, Never>?
-    private var moveTask: Task<Void, Never>?
+    private(set) var moveTask: Task<Void, Never>?
     private var refreshPending = false
     private var stopping = false
     private var task: Task<Void, Never>?

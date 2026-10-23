@@ -132,6 +132,7 @@ func workspaceWindowDragShowsEmptyTargetsAndKeepsWindowGrouping(windows: Bool) a
     fixture.store.barEditing.begin()
     await fixture.settle()
     #expect(workspaceDragSources(fixture.host).isEmpty)
+    #expect(workspaceDropTargets(fixture.host).isEmpty)
     #expect(!fixture.panel.isVisible)
 }
 
@@ -164,6 +165,7 @@ func workspaceWindowDragDisablesWhenTheManagerBecomesUnsupported(source: Workspa
     #expect(store.windowDrag.active == nil)
     #expect(store.windowDrag.target == nil)
     #expect(workspaceDragSources(fixture.host).isEmpty)
+    #expect(workspaceDropTargets(fixture.host).isEmpty)
     #expect(store.windowDrag.begin(source: unsupported, windows: item.windows) == nil)
     #expect(!store.canMoveWindows(payload, to: "2"))
     #expect(store.moveWindows(payload, to: "2") == nil)
@@ -176,35 +178,123 @@ func workspaceWindowDragDisablesWhenTheManagerBecomesUnsupported(source: Workspa
     (view as? WorkspaceWindowDragSourceView).map { [$0] } ?? view.subviews.flatMap(workspaceDragSources)
 }
 
-@Test @MainActor func workspaceWindowDropMovesIconsToTheDestination() async throws {
+@MainActor private func workspaceDropTargets(_ view: NSView) -> [WorkspaceWindowDropTargetView] {
+    (view as? WorkspaceWindowDropTargetView).map { [$0] } ?? view.subviews.flatMap(workspaceDropTargets)
+}
+
+@Test(arguments: [false, true]) @MainActor
+func workspaceWindowDropMovesIconsToTheDestination(windows: Bool) async throws {
     let configuration = try JSONDecoder().decode(Configuration.self, from: Data(##"""
     {"bar":{"height":40,"style":{"background":"#1e1e24"}},"widgets":[
-      {"id":"spaces","type":"workspaces","position":"left","workspace":{"windows":true,"titleLength":20}},
+      {"id":"spaces","type":"workspaces","position":"left","workspace":{"windows":\##(windows),"titleLength":20}},
       {"id":"clock","type":"text","text":"14:32","position":"right"}]}
     """##.utf8))
     let fixture = OffscreenBar(configuration: configuration,
         display: BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil), width: 600)
     defer { fixture.close() }
-    let move = try WorkspaceMoveFixture(source: .aerospace, movedIDs: [73], store: fixture.store.workspaceStore, destination: "2")
+    let move = try WorkspaceMoveFixture(source: .aerospace, movedIDs: windows ? [73] : [73, 74],
+                                        store: fixture.store.workspaceStore, destination: "2")
     defer { move.close() }
     func capture(_ name: String) throws {
-        if ProcessInfo.processInfo.environment["STABLEBAR_RENDER_OUTPUT"] != nil { _ = try fixture.bitmap(name: name) }
+        if ProcessInfo.processInfo.environment["STABLEBAR_RENDER_OUTPUT"] != nil {
+            _ = try fixture.bitmap(name: "\(name)-\(windows ? "windows" : "apps")")
+        }
     }
     move.store.workspaces[1] = Workspace(name: "2", isFocused: false, isVisible: false, monitor: 1)
     await fixture.settle()
     try capture("workspace-window-drag-before")
     let item = try #require(workspaceDragSources(fixture.host).first)
     let payload = try #require(move.store.windowDrag.begin(source: .aerospace, windows: item.windows))
-    move.store.windowDrag.target = "2"
+    await fixture.settle()
+    let target = try #require(workspaceDropTargets(fixture.host).first(where: { $0.workspace == "2" }))
+    #expect(target.registeredDraggedTypes.contains(WorkspaceWindowDragSourceView.pasteboardType))
+    for x in [target.bounds.minX + 0.5, target.bounds.midX] {
+        let point = target.convert(NSPoint(x: x, y: target.bounds.midY), to: fixture.host.superview)
+        var hit = fixture.host.hitTest(point)
+        while let view = hit, !view.registeredDraggedTypes.contains(WorkspaceWindowDragSourceView.pasteboardType) {
+            hit = view.superview
+        }
+        #expect(hit === target, "The label and cell padding must route the drag to the workspace destination")
+    }
+    let info = WorkspaceDraggingInfo(source: item, token: payload.token.uuidString, window: fixture.panel)
+    defer { info.draggingPasteboard.releaseGlobally() }
+    let origin = try #require(workspaceDropTargets(fixture.host).first(where: { $0.workspace == "1" }))
+    #expect(origin.draggingEntered(info).isEmpty)
+    #expect(!origin.performDragOperation(info))
+    #expect(target.draggingEntered(info) == .move)
+    #expect(move.store.windowDrag.target == "2")
+    #expect(target.prepareForDragOperation(info))
     await fixture.settle()
     try capture("workspace-window-drag-target")
-    let task = try #require(move.store.moveWindows(payload, to: "2"))
+    #expect(target.performDragOperation(info))
+    let task = try #require(move.store.moveTask)
+    #expect(!target.performDragOperation(info))
     await task.value
     await fixture.settle()
-    #expect(workspaceDragSources(fixture.host).map { $0.windows.map(\.id) } == [[74], [75], [73]])
+    #expect(workspaceDragSources(fixture.host).map { $0.windows.map(\.id) } == (windows ? [[74], [75], [73]] : [[75], [73, 74]]))
     #expect(move.store.workspaces.first(where: \.isFocused)?.name == "1")
     try capture("workspace-window-drag-after")
     #expect(!fixture.panel.isVisible)
+}
+
+@Test @MainActor func workspaceNativeDropRejectsForeignAndCancelledDrags() throws {
+    let store = WorkspaceStore()
+    defer { store.stop() }
+    store.workspaces = dragWorkspaces()
+    let windows = Array(store.workspaces[0].windows.prefix(1))
+    let payload = try #require(store.windowDrag.begin(source: .aerospace, windows: windows))
+    let source = WorkspaceWindowDragSourceView(rootView: AnyView(Text("Finder")))
+    source.store = store
+    let target = WorkspaceWindowDropTargetView(rootView: AnyView(Text("2")))
+    target.store = store
+    target.workspace = "2"
+    let wrongToken = WorkspaceDraggingInfo(source: source, token: UUID().uuidString)
+    let external = WorkspaceDraggingInfo(source: nil, token: payload.token.uuidString)
+    let valid = WorkspaceDraggingInfo(source: source, token: payload.token.uuidString)
+    defer {
+        for info in [wrongToken, external, valid] { info.draggingPasteboard.releaseGlobally() }
+    }
+    for info in [wrongToken, external] {
+        #expect(target.draggingEntered(info).isEmpty)
+        #expect(!target.prepareForDragOperation(info))
+        #expect(!target.performDragOperation(info))
+    }
+    #expect(target.draggingEntered(valid) == .move)
+    target.draggingExited(valid)
+    #expect(store.windowDrag.target == nil)
+    store.windowDrag.end(payload)
+    #expect(target.draggingUpdated(valid).isEmpty)
+    #expect(!target.performDragOperation(valid))
+    #expect(store.moveTask == nil)
+}
+
+@MainActor private final class WorkspaceDraggingInfo: NSObject, NSDraggingInfo {
+    let draggingSource: Any?
+    let draggingDestinationWindow: NSWindow?
+    let draggingPasteboard = NSPasteboard.withUniqueName()
+    let draggingSourceOperationMask: NSDragOperation = .move
+    let draggingSequenceNumber = 1
+    let draggingLocation = NSPoint.zero
+    let draggedImageLocation = NSPoint.zero
+    nonisolated var draggedImage: NSImage? { nil }
+    var draggingFormation = NSDraggingFormation.none
+    var animatesToDestination = false
+    var numberOfValidItemsForDrop = 1
+    var springLoadingHighlight: NSSpringLoadingHighlight { .none }
+
+    init(source: Any?, token: String, window: NSWindow? = nil) {
+        draggingSource = source
+        draggingDestinationWindow = window
+        super.init()
+        draggingPasteboard.setString(token, forType: WorkspaceWindowDragSourceView.pasteboardType)
+    }
+
+    func slideDraggedImage(to screenPoint: NSPoint) {}
+    nonisolated override func namesOfPromisedFilesDropped(atDestination dropDestination: URL) -> [String]? { nil }
+    func resetSpringLoading() {}
+    func enumerateDraggingItems(options enumOpts: NSDraggingItemEnumerationOptions = [], for view: NSView?,
+                                classes classArray: [AnyClass], searchOptions: [NSPasteboard.ReadingOptionKey: Any],
+                                using block: @escaping (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void) {}
 }
 
 private func dragWorkspaces(destination: String = "2") -> [Workspace] {

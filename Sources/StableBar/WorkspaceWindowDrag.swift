@@ -1,7 +1,6 @@
 import AppKit
 import Observation
 import SwiftUI
-import UniformTypeIdentifiers
 
 @MainActor @Observable
 final class WorkspaceWindowDragSession {
@@ -13,7 +12,6 @@ final class WorkspaceWindowDragSession {
     }
 
     static let typeIdentifier = "com.stablebar.workspace-window-move"
-    static let contentType = UTType(exportedAs: typeIdentifier)
     private(set) var active: Payload?
     var target: String?
 
@@ -120,7 +118,7 @@ class WorkspaceWindowDragSourceView: WidgetHostingView, NSDraggingSource {
     }
 }
 
-struct WorkspaceWindowDrop: ViewModifier, DropDelegate {
+struct WorkspaceWindowDrop: ViewModifier {
     let store: WorkspaceStore
     let workspace: String
     let enabled: Bool
@@ -128,36 +126,71 @@ struct WorkspaceWindowDrop: ViewModifier, DropDelegate {
     @ViewBuilder
     func body(content: Content) -> some View {
         if enabled && store.source.supportsWindowMoves {
-            content.onDrop(of: [WorkspaceWindowDragSession.contentType], delegate: self)
+            WorkspaceWindowDropTarget(store: store, workspace: workspace) { content }
         } else {
             content
         }
     }
 
-    func validateDrop(info: DropInfo) -> Bool {
-        enabled && store.source.supportsWindowMoves
-            && info.hasItemsConforming(to: [WorkspaceWindowDragSession.contentType])
-            && store.windowDrag.active.map { store.canMoveWindows($0, to: workspace) } == true
+}
+
+/// The source and destination share AppKit's pasteboard and synchronous drop lifecycle.
+private struct WorkspaceWindowDropTarget<Content: View>: NSViewRepresentable {
+    let store: WorkspaceStore
+    let workspace: String
+    @ViewBuilder let content: () -> Content
+
+    func makeNSView(context: Context) -> WorkspaceWindowDropTargetView {
+        let view = WorkspaceWindowDropTargetView(rootView: AnyView(content()))
+        view.registerForDraggedTypes([WorkspaceWindowDragSourceView.pasteboardType])
+        return view
     }
 
-    func dropEntered(info: DropInfo) {
-        if validateDrop(info: info) { store.windowDrag.target = workspace }
+    func updateNSView(_ view: WorkspaceWindowDropTargetView, context: Context) {
+        view.rootView = AnyView(content().environment(\.self, context.environment))
+        view.store = store
+        view.workspace = workspace
     }
 
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        let accepts = validateDrop(info: info)
-        if !accepts && store.windowDrag.target == workspace { store.windowDrag.target = nil }
-        return DropProposal(operation: accepts ? .move : .cancel)
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: WorkspaceWindowDropTargetView, context: Context) -> CGSize? {
+        nsView.fittingSize
+    }
+}
+
+final class WorkspaceWindowDropTargetView: WidgetHostingView {
+    weak var store: WorkspaceStore?
+    var workspace = ""
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { draggingUpdated(sender) }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard acceptedPayload(sender) != nil else {
+            clearTarget()
+            return []
+        }
+        store?.windowDrag.target = workspace
+        return .move
     }
 
-    func dropExited(info: DropInfo) {
-        if store.windowDrag.target == workspace { store.windowDrag.target = nil }
-    }
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) { clearTarget() }
 
-    func performDrop(info: DropInfo) -> Bool {
-        // AppKit allows one drag at a time. Only our native source creates this
-        // live session; commands use its captured windows, never external data.
-        guard validateDrop(info: info), let payload = store.windowDrag.active else { return false }
+    override func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool { acceptedPayload(sender) != nil }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        guard let payload = acceptedPayload(sender), let store else { return false }
         return store.moveWindows(payload, to: workspace) != nil
+    }
+
+    private func acceptedPayload(_ sender: any NSDraggingInfo) -> WorkspaceWindowDragSession.Payload? {
+        guard let store, let source = sender.draggingSource as? WorkspaceWindowDragSourceView,
+              source.store === store, sender.draggingSourceOperationMask.contains(.move),
+              let payload = store.windowDrag.active,
+              sender.draggingPasteboard.string(forType: WorkspaceWindowDragSourceView.pasteboardType) == payload.token.uuidString,
+              store.canMoveWindows(payload, to: workspace) else { return nil }
+        return payload
+    }
+
+    private func clearTarget() {
+        if store?.windowDrag.target == workspace { store?.windowDrag.target = nil }
     }
 }
