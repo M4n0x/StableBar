@@ -345,6 +345,7 @@ final class WidgetPopup {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
+        panel.animationBehavior = .none
         panel.autorecalculatesKeyViewLoop = true
         panel.isMovableByWindowBackground = popup.pinnable
         panel.level = .floating
@@ -380,6 +381,7 @@ final class WidgetPopup {
             morph.ignoresMouseEvents = true
             morph.hidesOnDeactivate = false
             morph.isReleasedWhenClosed = false
+            morph.animationBehavior = .none
             morph.level = panel.level
             morph.collectionBehavior = panel.collectionBehavior
             morph.appearance = panel.appearance
@@ -444,7 +446,7 @@ final class WidgetPopup {
                 change.toValue = opacity
                 change.beginTime = start + animation.duration * delay
                 change.duration = animation.duration * duration
-                change.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                change.timingFunction = animation.timingFunction
                 change.fillMode = .backwards
                 view.alphaValue = opacity
                 view.layer!.add(change, forKey: "opacity")
@@ -659,8 +661,10 @@ final class WidgetPopup {
             panel.contentView!.layer!.mask = nil
             panel.displayIfNeeded()
         }
+        morph.panel.contentView!.isHidden = true
         shadowWindow?.alphaValue = 1
         CATransaction.flush()
+        morph.panel.hasShadow = false
         panel?.hasShadow = true
         panel?.invalidateShadow()
         morph.link.invalidate()
@@ -680,6 +684,7 @@ final class WidgetPopup {
         window.ignoresMouseEvents = true
         window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
+        window.animationBehavior = .none
         window.level = panel.level
         window.collectionBehavior = panel.collectionBehavior
         window.appearance = panel.appearance
