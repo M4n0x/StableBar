@@ -69,6 +69,10 @@ final class RuntimeControl {
         return response.result!
     }
 
+    static func isRunning(url: URL) -> Bool {
+        CFMessagePortCreateRemote(nil, name(url) as CFString) != nil
+    }
+
     private static func name(_ url: URL) -> String {
         let path = url.resolvingSymlinksInPath().standardizedFileURL.path
         let hash = SHA256.hash(data: Data(path.utf8)).prefix(16).map { String(format: "%02x", $0) }.joined()

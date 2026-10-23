@@ -42,3 +42,16 @@ Without `id`, `unset` can also address widget definitions by their ID and profil
 ## Install the command
 
 **Settings → General → Command line** installs a `stablebar` command in `/usr/local/bin`, which is on the `PATH` of every Mac, so `stablebar --query` works in any terminal. macOS asks for an administrator password when that folder needs one. The section shows **Installed** once the first `stablebar` on your login shell's `PATH` opens this copy of StableBar, whether StableBar installed it or it links to the app. The command is a short script that runs the copy of StableBar it was installed from, so the button is available only once StableBar is in Applications. When the command opens another copy, for example after you moved StableBar, the section names that copy and **Install** points the command at this one. A `stablebar` command that StableBar didn't install is left as it is. To remove the command, run `sudo rm /usr/local/bin/stablebar`.
+
+## Triage
+
+`triage` hands a problem with your bar, or an idea for StableBar, to a coding agent in the terminal:
+
+```sh
+StableBar triage
+StableBar triage --agent claude --model opus
+```
+
+It runs Claude Code (`claude`) or Codex (`codex`), whichever is on your `PATH`, and asks which when both are; `--agent` picks one, and `--model` passes a model to it. The agent asks what's going on, looks at your configuration, running bar, displays and crash reports, reads StableBar's source at your version, and searches the issues on GitHub. Then it offers to fix your setup, comment on an existing issue or file a new one. It changes your configuration or posts on GitHub only after you say yes. With `--config PATH`, it looks at that configuration.
+
+StableBar first writes what the agent starts from into `~/Library/Caches/StableBar/triage/`: the facts it found about this Mac and the [playbook](../.github/triage/PLAYBOOK.md) the agent follows. The agent switches to the playbook on `main` when it's newer. When neither agent is installed, StableBar prints where these files are, so you can paste the prompt into another agent.
