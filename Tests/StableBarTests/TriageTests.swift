@@ -17,6 +17,14 @@ import Testing
     #expect(model == "opus")
 }
 
+@Test func triageGathersItsFactsWithACommandTheParserRecognizes() throws {
+    let url = URL(filePath: "/tmp/custom.json")
+    guard case let .triageContext(parsed) = try LaunchCommand(arguments: Triage.contextArguments(configuration: url)) else {
+        Issue.record("Expected triage context command"); return
+    }
+    #expect(parsed == url)
+}
+
 @Test func triageRejectsUnknownAgentsAndStrayArguments() {
     for arguments in [["triage", "--agent", "gemini"], ["triage", "--agent"], ["triage", "extra"],
                       ["triage", "--agent", "claude", "--agent", "codex"], ["triage", "--persist"]] {

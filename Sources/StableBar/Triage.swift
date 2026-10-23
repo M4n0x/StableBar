@@ -90,8 +90,7 @@ enum Triage {
         let selected = try choose(from: TriageAgent.installed(path: path), requested: requested, ask: terminal ? { agents in
             try pick(from: agents, read: { readLine() }, write: { print($0, terminator: ""); fflush(stdout) })
         } : nil)
-        let files = try prepare(.gather(configuration: configuration, sourceCache: folder.appending(path: "source"), path: path),
-                                in: folder)
+        let files = try writeContextInHelper(configuration: configuration)
         guard let selected else {
             print("""
             Neither claude nor codex was found on PATH.
@@ -107,6 +106,38 @@ enum Triage {
         print("Starting \(selected.agent.label). It will ask what is going on.\n")
         fflush(stdout)
         try launch(selected, arguments: arguments(model: model, promptFile: files.prompt), in: files.prompt.deletingLastPathComponent())
+    }
+
+    /// The arguments of the copy of this command that writes the context: `StableBar --config PATH --triage-context`.
+    static func contextArguments(configuration: URL) -> [String] {
+        ["--config", configuration.path, "--triage-context"]
+    }
+
+    /// Gathers the facts, writes `context.md` and `prompt.md`, and returns their folder.
+    @MainActor static func writeContext(configuration: URL) throws -> URL {
+        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        let files = try prepare(.gather(configuration: configuration, sourceCache: folder.appending(path: "source"), path: path),
+                                in: folder)
+        return files.prompt.deletingLastPathComponent()
+    }
+
+    /// Writes the context in a short-lived copy of this command. Reading the displays connects a process to the window
+    /// server, and Launch Services then counts it as a running StableBar until it exits, even once `execv` has made it the
+    /// agent: an update would try to reopen the agent instead of relaunching the bar.
+    private static func writeContextInHelper(configuration: URL) throws -> (context: URL, prompt: URL) {
+        let helper = Process()
+        helper.executableURL = Bundle.main.executableURL ?? URL(filePath: CommandLine.arguments[0])
+        helper.arguments = contextArguments(configuration: configuration)
+        let output = Pipe()
+        helper.standardOutput = output
+        try helper.run()
+        let written = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        helper.waitUntilExit()
+        guard helper.terminationStatus == 0, !written.isEmpty else {
+            throw CommandFailure(message: "Could not gather the facts about this Mac.")
+        }
+        return files(in: URL(filePath: written))
     }
 
     /// The agent to run: the requested one, the only one installed, or the user's pick when `ask` can ask.
@@ -165,10 +196,14 @@ enum Triage {
     static func prepare(_ facts: TriageFacts, in folder: URL) throws -> (context: URL, prompt: URL) {
         let run = folder.appending(path: facts.generatedAt.formatted(.iso8601).replacingOccurrences(of: ":", with: "-"))
         try FileManager.default.createDirectory(at: run, withIntermediateDirectories: true)
-        let context = run.appending(path: "context.md"), prompt = run.appending(path: "prompt.md")
+        let (context, prompt) = files(in: run)
         try Data(Self.context(facts).utf8).write(to: context)
         try Data(seedPrompt(contextFile: context).utf8).write(to: prompt)
         return (context, prompt)
+    }
+
+    static func files(in run: URL) -> (context: URL, prompt: URL) {
+        (run.appending(path: "context.md"), run.appending(path: "prompt.md"))
     }
 
     /// The whole launch argument. The playbook stays in `prompt.md` so the command line stays one short line.
