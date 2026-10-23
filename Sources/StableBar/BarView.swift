@@ -658,21 +658,23 @@ struct WorkspaceView: View {
                 .padding(.leading, style.paddingLeading ?? style.paddingHorizontal ?? 7)
                 .padding(.trailing, style.paddingTrailing ?? style.paddingHorizontal ?? 7)
                 .frame(width: style.width.map { CGFloat($0) }, height: style.height.map { CGFloat($0) })
-                .overlay(alignment: .bottom) {
-                    if indicator == .underline && workspace.isVisible && styles.underline.placement != .belowBar {
-                        RoundedRectangle(cornerRadius: styles.underline.cornerRadius ?? 0)
-                            .fill(styles.underline.background?.shapeStyle ?? AnyShapeStyle(appearance.accent))
-                            .frame(width: styles.underline.width.map { CGFloat($0) }, height: styles.underline.height ?? 2)
-                            .matchedGeometryEffect(id: "workspace-underline", in: selection)
-                            .offset(x: styles.underline.offsetX ?? 0, y: styles.underline.offsetY ?? 0)
-                    }
-                }
                 .padding(padding)
                 .background {
                     Button { workspaceStore.select(workspace) } label: {
                         Color.clear.contentShape(Rectangle())
                     }
                     .accessibilityLabel("Switch to workspace \(workspace.label)")
+                }
+                .buttonStyle(.plain)
+                .modifier(WorkspaceWindowDrop(store: workspaceStore, workspace: workspace.name, enabled: canDragWindows))
+                .overlay(alignment: .bottom) {
+                    if indicator == .underline && workspace.isVisible && styles.underline.placement != .belowBar {
+                        RoundedRectangle(cornerRadius: styles.underline.cornerRadius ?? 0)
+                            .fill(styles.underline.background?.shapeStyle ?? AnyShapeStyle(appearance.accent))
+                            .frame(width: styles.underline.width.map { CGFloat($0) }, height: styles.underline.height ?? 2)
+                            .matchedGeometryEffect(id: "workspace-underline", in: selection)
+                            .offset(x: styles.underline.offsetX ?? 0, y: (styles.underline.offsetY ?? 0) - padding.bottom)
+                    }
                 }
                 .background {
                     if indicator == .background && workspace.isFocused {
@@ -691,7 +693,6 @@ struct WorkspaceView: View {
                             .allowsHitTesting(false)
                     }
                 }
-                .modifier(WorkspaceWindowDrop(store: workspaceStore, workspace: workspace.name, enabled: canDragWindows))
                 .anchorPreference(key: BarAnchorPreference.self, value: .bounds) { anchor in
                     guard !measuring, indicator == .underline, workspace.isVisible, styles.underline.placement == .belowBar else {
                         return BarAnchors()
@@ -702,7 +703,6 @@ struct WorkspaceView: View {
                         style: styles.underline, color: styles.underline.background?.firstColor.color ?? appearance.accent,
                         animation: animation)])
                 }
-                .buttonStyle(.plain)
                 .onHover { hoveredWorkspace = $0 ? workspace.name : nil }
                 .animation(hoverAnimation(hovered, reduceMotion: reduceMotion), value: hovered)
             }
