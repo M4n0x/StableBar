@@ -9,9 +9,10 @@ struct PopupConfiguration: Decodable, Sendable {
     var openOnHover = false
     var dismissOnAction = true
     var dismissOnControl = false
+    var pinnable = false
     var animation: WidgetAnimation?
 
-    enum CodingKeys: String, CodingKey, CaseIterable { case height, style, layout, alignment, offset, openOnHover, dismissOnAction, dismissOnControl, animation }
+    enum CodingKeys: String, CodingKey, CaseIterable { case height, style, layout, alignment, offset, openOnHover, dismissOnAction, dismissOnControl, pinnable, animation }
 
     init(height: Double? = nil, style: WidgetStyle, layout: PopupBlock) {
         self.height = height
@@ -36,6 +37,7 @@ struct PopupConfiguration: Decodable, Sendable {
         openOnHover = try values.decodeIfPresent(Bool.self, forKey: .openOnHover) ?? openOnHover
         dismissOnAction = try values.decodeIfPresent(Bool.self, forKey: .dismissOnAction) ?? dismissOnAction
         dismissOnControl = try values.decodeIfPresent(Bool.self, forKey: .dismissOnControl) ?? dismissOnControl
+        pinnable = try values.decodeIfPresent(Bool.self, forKey: .pinnable) ?? pinnable
         animation = try values.decodeIfPresent(WidgetAnimation.self, forKey: .animation)
     }
 }
@@ -51,7 +53,11 @@ indirect enum PopupContent: Sendable {
     case slider(title: String, source: String, minimum: Double, maximum: Double, step: Double, command: String)
     case toggle(title: String, source: String, command: String)
     case segmented(title: String, source: String, options: [PopupControlOption], command: String)
+    /// A pill that opens a panel: the groups in `lists[groupsSource]` beside the chosen group's options and levels, rows of
+    /// `lists[optionsSource]` and `lists[levelsSource]` that name it in `group`. `fields[source]` is the chosen group.
+    case chooser(title: String, source: String, groupsSource: String, optionsSource: String, levelsSource: String?, command: String)
     case search(title: String, source: String, fields: [String]?, row: PopupBlock)
+    case input(title: String, placeholder: String?, autofocus: Bool, command: String)
     case menu
     case divider
     case image(path: String, source: String?, fit: ImageFit)
@@ -83,6 +89,14 @@ struct PopupBlock: Decodable, Sendable {
     let quitField: String?
     let hideWhenEmpty: String?
     let scrollSpeed: Double?
+    /// Whether a field block shows all of its text over as many lines as it needs, selectable.
+    let wraps: Bool
+    /// The height past which a wrapping field block scrolls.
+    let maxHeight: Double?
+    /// Whether a field block shows inline Markdown: bold, italics, code and links.
+    let markdown: Bool
+    /// Whether light sweeps across a text or field block, as while something works.
+    let shimmer: Bool
     /// Whether a field block draws tabular digits. Configured field blocks do; the default layouts of
     /// widgets whose built-in look used proportional digits don't.
     let monospacedDigits: Bool
@@ -99,6 +113,7 @@ struct PopupBlock: Decodable, Sendable {
         case type, role, style, alignment, children, text, field, height, source, row, title, onClick
         case path, fit, name, animation, styleSource, styleField, onClickField, lineWidth
         case hideWhenEmpty, scrollSpeed, min, max, step, onChange, options, searchFields, open, openField, quitField, transition
+        case placeholder, onSubmit, autofocus, wrap, maxHeight, markdown, shimmer, groupsSource, optionsSource, levelsSource
     }
 
     init(content: PopupContent, role: PresentationRole? = nil, style: WidgetStyle = WidgetStyle(), hideWhenEmpty: String? = nil, monospacedDigits: Bool = true,
@@ -117,6 +132,10 @@ struct PopupBlock: Decodable, Sendable {
         quitField = nil
         self.hideWhenEmpty = hideWhenEmpty
         scrollSpeed = nil
+        wraps = false
+        maxHeight = nil
+        markdown = false
+        shimmer = false
         self.monospacedDigits = monospacedDigits
         self.keepsLineHeight = keepsLineHeight
         self.widestSymbol = widestSymbol
@@ -151,6 +170,13 @@ struct PopupBlock: Decodable, Sendable {
         if let scrollSpeed, scrollSpeed <= 0 {
             throw DecodingError.dataCorruptedError(forKey: .scrollSpeed, in: values, debugDescription: "Scroll speed must be greater than zero.")
         }
+        wraps = try values.decodeIfPresent(Bool.self, forKey: .wrap) ?? false
+        maxHeight = try values.decodeIfPresent(Double.self, forKey: .maxHeight)
+        if let maxHeight, maxHeight <= 0 {
+            throw DecodingError.dataCorruptedError(forKey: .maxHeight, in: values, debugDescription: "maxHeight must be greater than zero.")
+        }
+        markdown = try values.decodeIfPresent(Bool.self, forKey: .markdown) ?? false
+        shimmer = try values.decodeIfPresent(Bool.self, forKey: .shimmer) ?? false
         monospacedDigits = true
         keepsLineHeight = false
         widestSymbol = nil
@@ -192,11 +218,22 @@ struct PopupBlock: Decodable, Sendable {
             content = .segmented(title: try values.decode(String.self, forKey: .title),
                                  source: try values.decode(String.self, forKey: .source), options: options,
                                  command: try values.decode(String.self, forKey: .onChange))
+        case "chooser":
+            content = .chooser(title: try values.decode(String.self, forKey: .title), source: try values.decode(String.self, forKey: .source),
+                               groupsSource: try values.decode(String.self, forKey: .groupsSource),
+                               optionsSource: try values.decode(String.self, forKey: .optionsSource),
+                               levelsSource: try values.decodeIfPresent(String.self, forKey: .levelsSource),
+                               command: try values.decode(String.self, forKey: .onChange))
         case "search":
             content = .search(title: try values.decode(String.self, forKey: .title),
                               source: try values.decode(String.self, forKey: .source),
                               fields: try values.decodeIfPresent([String].self, forKey: .searchFields),
                               row: try values.decode(PopupBlock.self, forKey: .row))
+        case "input":
+            content = .input(title: try values.decode(String.self, forKey: .title),
+                             placeholder: try values.decodeIfPresent(String.self, forKey: .placeholder),
+                             autofocus: try values.decodeIfPresent(Bool.self, forKey: .autofocus) ?? false,
+                             command: try values.decode(String.self, forKey: .onSubmit))
         case "menu": content = .menu
         case "divider": content = .divider
         case "image":
@@ -226,6 +263,19 @@ struct PopupBlock: Decodable, Sendable {
             default:
                 throw DecodingError.dataCorruptedError(forKey: .transition, in: values,
                                                        debugDescription: "Transitions apply to text, field and symbol blocks.")
+            }
+        }
+        if wraps || markdown || maxHeight != nil {
+            guard case .field = content, wraps || maxHeight == nil else {
+                throw DecodingError.dataCorruptedError(forKey: .wrap, in: values,
+                                                       debugDescription: "wrap and markdown apply to field blocks, and maxHeight to field blocks that wrap.")
+            }
+        }
+        if shimmer {
+            switch content {
+            case .text, .field: break
+            default:
+                throw DecodingError.dataCorruptedError(forKey: .shimmer, in: values, debugDescription: "shimmer applies to text and field blocks.")
             }
         }
     }
