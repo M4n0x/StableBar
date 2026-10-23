@@ -195,7 +195,7 @@ private final class MenuReadFixture: @unchecked Sendable {
     func image(title: String, pid: pid_t) throws -> CGImage {
         let item = AppMenuItem(title: title, element: AXUIElementCreateApplication(pid))
         let renderer = ImageRenderer(content: AppMenuView(appMenu: appMenu, items: [item], isAppleMenu: true,
-            appearance: WidgetAppearance(WidgetStyle(), defaults: WidgetStyle()), padding: EdgeInsets(), requestAccess: {}))
+            appearance: WidgetAppearance(WidgetStyle(), defaults: WidgetStyle()), padding: EdgeInsets(), open: { _, _ in }, requestAccess: {}))
         return try #require(renderer.cgImage)
     }
     let first = try image(title: "Apple", pid: 1)
@@ -214,7 +214,7 @@ private final class MenuReadFixture: @unchecked Sendable {
     func content(hovering: Bool) -> AppMenuView {
         AppMenuView(appMenu: menu, items: menu.items, expandOnHover: true, hovering: hovering, expanded: hovering,
                     appearance: WidgetAppearance(WidgetStyle(), defaults: WidgetStyle()),
-                    padding: EdgeInsets(), requestAccess: {}) { expanded = $0 }
+                    padding: EdgeInsets(), open: { _, _ in }, requestAccess: {}) { expanded = $0 }
     }
     let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 500, height: 40),
                           styleMask: [.borderless], backing: .buffered, defer: false)

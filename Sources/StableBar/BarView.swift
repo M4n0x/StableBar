@@ -167,7 +167,11 @@ struct BarView: View {
                             }
                         } else if popup == nil && command == nil, let items = menuItems {
                             ForEach(items, id: \.self) { item in
-                                Button(item.title) { store.appMenu.open(item, at: NSEvent.mouseLocation, in: nil) }
+                                Button(item.title) {
+                                    guard let popup = store.appMenu.popup(for: item) else { return }
+                                    store.popup.toggle(popup, widget: widget, defaults: config.popupDefaults.inheriting(config.defaults),
+                                                       store: store, anchor: overflowAnchor)
+                                }
                             }
                         } else {
                             Button(overflowTitle(widget)) {
@@ -487,6 +491,11 @@ struct WidgetView: View {
         .accessibilityIdentifier(widget.id)
     }
 
+    private func openAppMenu(_ item: AppMenuItem, anchor: NSView) {
+        guard let popup = store.appMenu.popup(for: item) else { return }
+        store.popup.toggle(popup, widget: widget, defaults: popupDefaults.inheriting(defaults), store: store, anchor: anchor)
+    }
+
     private func runAction(_ command: String, sender: String, button: String? = nil) {
         let context = WidgetActionContext(sender: sender, button: button, modifiers: NSEvent.modifierFlags, display: monitor)
         store.runAction(command, widget: widget, event: ScriptEvent(sender: sender, environment: context.environment))
@@ -506,7 +515,8 @@ struct WidgetView: View {
             AppMenuView(appMenu: store.appMenu, items: store.appMenu.items, expandOnHover: expandOnHover, hovering: hovered,
                         expanded: store.presentations[widget.id]?.expandedDisplays.contains(monitor) == true,
                         appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
-                        padding: padding, requestAccess: store.windowClearance.requestAccess) { expanded in
+                        padding: padding, openAnchor: store.presentations[widget.id]?.popupAnchor, open: openAppMenu,
+                        requestAccess: store.windowClearance.requestAccess) { expanded in
                 if !measuring && expandOnHover {
                     store.presentations[widget.id]?.setExpanded(expanded, on: monitor, animation: reduceMotion ? nil : motion.animation)
                 }
@@ -514,7 +524,8 @@ struct WidgetView: View {
         case .appleMenu where widget.layout == nil:
             AppMenuView(appMenu: store.appMenu, items: [store.appMenu.appleMenu].compactMap { $0 }, isAppleMenu: true,
                         appearance: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()),
-                        padding: padding, requestAccess: store.windowClearance.requestAccess)
+                        padding: padding, openAnchor: store.presentations[widget.id]?.popupAnchor, open: openAppMenu,
+                        requestAccess: store.windowClearance.requestAccess)
         case .provider where isSound && inlineHoverControls:
             SoundWidgetView(widget: widget, store: store, monitor: monitor,
                             style: resolution.layoutStyle(configured: false, hovered: hovered, open: open),
@@ -778,10 +789,11 @@ struct AppMenuView: View {
     var isAppleMenu = false
     let appearance: WidgetAppearance
     let padding: EdgeInsets
+    var openAnchor: ObjectIdentifier?
+    let open: (AppMenuItem, NSView) -> Void
     let requestAccess: () -> Void
     var expansionChanged: (Bool) -> Void = { _ in }
     @State private var hoveredItem: AppMenuItem?
-    @State private var openTitle: Int?
     @State private var anchors: [Int: NSView] = [:]
 
     var body: some View {
@@ -794,19 +806,22 @@ struct AppMenuView: View {
                 .help("Allow StableBar in Privacy & Security → Accessibility to show the app's menus. Click to ask for access; later clicks open System Settings.")
             }
             ForEach(Array(items.prefix(expandOnHover && !expanded ? 1 : items.count).enumerated()), id: \.offset) { index, item in
+                let anchor = anchors[index].map(ObjectIdentifier.init)
                 AppMenuTitle(item: item, index: index, isAppleMenu: isAppleMenu, appearance: appearance, padding: padding,
-                             highlighted: openTitle.map { $0 == index } ?? (hoveredItem == item), anchors: $anchors) {
-                    appMenu.open(index, of: items, at: items.indices.map { anchors[$0]! }) { openTitle = $0 }
-                    openTitle = nil
+                             highlighted: openAnchor.map { $0 == anchor } ?? (hoveredItem == item), anchors: $anchors) {
+                    open(item, anchors[index]!)
                 }
-                .onHover { hoveredItem = $0 ? item : nil }
+                .onHover { inside in
+                    hoveredItem = inside ? item : nil
+                    if inside, openAnchor != nil, openAnchor != anchor { open(item, anchors[index]!) }
+                }
                 .transition(.opacity)
             }
         }
         .fixedSize(horizontal: true, vertical: false)
         .clipped()
         .onHover { if $0 { appMenu.refresh() } }
-        .onChange(of: hovering || openTitle != nil, initial: true) { _, expanded in expansionChanged(expanded) }
+        .onChange(of: hovering || openAnchor != nil, initial: true) { _, expanded in expansionChanged(expanded) }
         .onDisappear { expansionChanged(false) }
     }
 }
@@ -847,7 +862,7 @@ private struct AppMenuTitle: View {
     }
 }
 
-private struct MenuAnchor: NSViewRepresentable {
+struct MenuAnchor: NSViewRepresentable {
     let view: NSView
 
     func makeNSView(context: Context) -> NSView { view }

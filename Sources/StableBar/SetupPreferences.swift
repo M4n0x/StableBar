@@ -154,7 +154,7 @@ struct SetupPreferences: Equatable {
 
         var detail: String {
             switch self {
-            case .minimal: "The active app and the time on the Built-in theme."
+            case .minimal: "App menus and the time on the Built-in theme."
             case .developer: "Workspaces, CPU and memory on dark Blueprint."
             case .workday: "Your next meeting and today's agenda on Léman."
             case .notch: "A black bar on the top edge that hides the notch."
@@ -273,7 +273,7 @@ struct SetupPreferences: Equatable {
                 appended.append(id)
                 let anchor = configuration.widgets.first { existing in
                     switch existing.content {
-                    case .activeApp: widget["position"] == .string("left")
+                    case .activeApp, .appMenu: widget["position"] == .string("left")
                     case .clock: widget["position"] == .string("right")
                     default: false
                     }
