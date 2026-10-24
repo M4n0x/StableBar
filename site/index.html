@@ -73,6 +73,7 @@ root.classList.add("js");
   <symbol id="p-check" viewBox="0 0 12 12"><path d="m2 6.4 2.6 2.6L10 3.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 </svg>
 
+<a class="skip" href="#main">Skip to content</a>
 <div class="page">
   <header class="top">
     <a class="brand" href="#"><img src="images/icon-64.png" alt="">StableBar</a>
@@ -81,13 +82,14 @@ root.classList.add("js");
       <a href="https://github.com/Seb-GRAF/stablebar-packages">Store</a>
       <a class="gh" href="https://github.com/Seb-GRAF/StableBar/tree/main/examples">Examples</a>
       <a class="gh" href="https://github.com/Seb-GRAF/StableBar">GitHub</a>
-      <button class="mode" id="mode" aria-label="Switch between light and dark">
-        <svg class="moon" viewBox="0 0 20 20"><path d="M16.5 12.2A7 7 0 0 1 7.8 3.5a7 7 0 1 0 8.7 8.7Z"/></svg>
-        <svg class="sun" viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.6"/><path d="M10 1.8v1.8M10 16.4v1.8M1.8 10h1.8M16.4 10h1.8M4.2 4.2l1.3 1.3M14.5 14.5l1.3 1.3M4.2 15.8l1.3-1.3M14.5 5.5l1.3-1.3"/></svg>
+      <button class="mode" id="mode" aria-label="Dark mode" aria-pressed="true">
+        <svg class="moon" viewBox="0 0 20 20" aria-hidden="true"><path d="M16.5 12.2A7 7 0 0 1 7.8 3.5a7 7 0 1 0 8.7 8.7Z"/></svg>
+        <svg class="sun" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="3.6"/><path d="M10 1.8v1.8M10 16.4v1.8M1.8 10h1.8M16.4 10h1.8M4.2 4.2l1.3 1.3M14.5 14.5l1.3 1.3M4.2 15.8l1.3-1.3M14.5 5.5l1.3-1.3"/></svg>
       </button>
     </nav>
   </header>
 
+  <main id="main">
   <section class="hero">
     <h1>A native, configurable<br class="wide"> menu bar for macOS.</h1>
     <p class="lede">Themes, widgets and popups, set up in the app or in plain JSON.</p>
@@ -105,28 +107,28 @@ root.classList.add("js");
             <div class="w apple" data-key="apple" data-pri="1" role="img" aria-label="Apple menu"><svg style="width:13px;height:15px;fill:currentColor"><use href="#i-apple"/></svg></div>
             <div class="w ws" data-key="ws" data-pri="never">
               <span class="ind"></span>
-              <span class="wsi" data-ws="1">1 <i class="ai c1"></i></span>
-              <span class="wsi on" data-ws="2">2 <i class="ai c2"></i><i class="ai c3"></i></span>
-              <span class="wsi" data-ws="3">3 <i class="ai c4"></i><i class="ai c5"></i></span>
-              <span class="wsi" data-ws="4">4 <i class="ai c6"></i></span>
+              <button class="wsi" data-ws="1" aria-label="Workspace 1" aria-pressed="false">1 <i class="ai c1"></i></button>
+              <button class="wsi on" data-ws="2" aria-label="Workspace 2" aria-pressed="true">2 <i class="ai c2"></i><i class="ai c3"></i></button>
+              <button class="wsi" data-ws="3" aria-label="Workspace 3" aria-pressed="false">3 <i class="ai c4"></i><i class="ai c5"></i></button>
+              <button class="wsi" data-ws="4" aria-label="Workspace 4" aria-pressed="false">4 <i class="ai c6"></i></button>
             </div>
             <div class="w app finder" data-key="app" data-pri="2"><i class="ai c7"></i><span class="name">Finder</span><span class="menus"><span><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span></span></span></div>
             <div class="w app site" data-key="site" data-pri="8" data-pop="site"><img src="images/icon-64.png" alt=""><span class="name">StableBar</span><span class="menus"><span><a href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/README.md">Guide</a><a href="https://github.com/Seb-GRAF/stablebar-packages">Store</a><a href="https://github.com/Seb-GRAF/StableBar/tree/main/examples">Examples</a><a href="https://github.com/Seb-GRAF/StableBar">GitHub</a></span></span></div>
           </div>
           <div class="g" id="gr">
-            <button class="w more" data-key="more" data-pop="more" aria-label="More widgets" hidden>•••</button>
-            <button class="w np" data-key="np" data-pri="3" data-pop="np" aria-label="Now playing"><i class="art"></i><span class="track">Midnight City · M83</span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
-            <button class="w" data-key="meeting" data-pri="1" data-pop="agenda"><svg><use href="#i-cal"/></svg>Design review&nbsp;&nbsp;10:30</button>
-            <button class="w" data-key="system" data-pri="0" data-pop="system"><svg><use href="#i-cpu"/></svg>18%&nbsp;&nbsp;<svg><use href="#i-mem"/></svg>54%</button>
-            <button class="w" data-key="sound" data-pri="0" data-pop="controls" aria-label="Sound"><svg><use href="#i-snd"/></svg></button>
-            <div class="w" data-key="battery" data-pri="1"><svg style="width:19px"><use href="#i-bat"/></svg>82%</div>
+            <button class="w more" data-key="more" data-pop="more" aria-expanded="false" aria-label="More widgets" hidden>•••</button>
+            <button class="w np" data-key="np" data-pri="3" data-pop="np" aria-expanded="false" aria-label="Now playing: Midnight City · M83"><i class="art"></i><span class="track">Midnight City · M83</span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
+            <button class="w" data-key="meeting" data-pri="1" data-pop="agenda" aria-expanded="false"><svg><use href="#i-cal"/></svg>Design review&nbsp;&nbsp;10:30</button>
+            <button class="w" data-key="system" data-pri="0" data-pop="system" aria-expanded="false"><svg><use href="#i-cpu"/></svg><span class="vh">CPU </span>18%<span class="vh">,</span>&nbsp;&nbsp;<svg><use href="#i-mem"/></svg><span class="vh">memory </span>54%</button>
+            <button class="w" data-key="sound" data-pri="0" data-pop="controls" aria-expanded="false" aria-label="Sound"><svg><use href="#i-snd"/></svg></button>
+            <div class="w" data-key="battery" data-pri="1"><svg style="width:19px"><use href="#i-bat"/></svg><span class="vh">Battery </span>82%</div>
             <div class="w num clock" data-key="clock" data-pri="5" data-format="full">Thu 22 Oct&nbsp;&nbsp;09:41</div>
             <a class="w dl" data-key="dl" data-pri="9" href="https://github.com/Seb-GRAF/StableBar/releases/latest"><span><svg><use href="#i-down"/></svg>Download</span></a>
           </div>
         </div>
 
         <div class="pop" id="pop">
-          <div class="pane menu" data-id="more" role="menu">
+          <div class="pane menu" data-id="more">
             <p>More widgets</p>
             <button data-for="np" data-open="np"><i class="art"></i>Midnight City · M83</button>
             <button data-for="meeting" data-open="agenda"><svg><use href="#i-cal"/></svg>Design review&nbsp;&nbsp;10:30</button>
@@ -137,7 +139,7 @@ root.classList.add("js");
             <button data-for="app"><i class="ai c7"></i>Finder</button>
             <button data-for="apple">Apple menu</button>
           </div>
-          <div class="pane menu" data-id="site" role="menu">
+          <div class="pane menu" data-id="site">
             <a href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/README.md">User guide</a>
             <a href="https://github.com/Seb-GRAF/stablebar-packages">Widget store</a>
             <a href="https://github.com/Seb-GRAF/StableBar/tree/main/examples">Examples</a>
@@ -182,7 +184,7 @@ root.classList.add("js");
             <p class="hd">Controls</p>
             <label class="ctl"><span>Level</span><input type="range" min="0" max="100" value="38" aria-label="Level"></label>
             <label class="check"><input type="checkbox" checked>Enabled</label>
-            <div class="ctl"><span>Mode</span><div class="seg"><button>Quiet</button><button class="on">Balanced</button><button>Focus</button></div></div>
+            <div class="ctl"><span>Mode</span><div class="seg"><button aria-pressed="false">Quiet</button><button class="on" aria-pressed="true">Balanced</button><button aria-pressed="false">Focus</button></div></div>
             <div class="sep"></div>
             <input class="search" placeholder="Find an app" aria-label="Find an app">
             <div class="apps"><div>Finder</div><div>Calendar</div><div>Activity Monitor</div><div>Terminal</div></div>
@@ -191,15 +193,15 @@ root.classList.add("js");
       </div>
 
       <div class="layer theme-layer">
-        <div class="win theme-win">
-          <div class="tb"><span class="tl"><i></i><i></i><i></i></span><b>Theme</b><span class="save">Save as Theme…</span></div>
+        <div class="win theme-win" role="group" aria-labelledby="theme-title">
+          <div class="tb"><span class="tl"><i></i><i></i><i></i></span><b id="theme-title">Theme</b><span class="save">Save as Theme…</span></div>
           <div class="cards" id="cards"></div>
         </div>
       </div>
       <div class="layer term-layer">
-        <div class="win term">
+        <div class="win term" role="group" aria-label="Terminal">
           <div class="tb"><span class="tl"><i></i><i></i><i></i></span><span class="title">zsh</span></div>
-          <pre><button data-run="popup"><span class="p">%</span> StableBar --popup agenda</button><button data-run="seconds"><span class="p">%</span> StableBar --set clock '{"format":"HH:mm:ss"}'</button><div class="out" id="out">Click a line to run it on the bar above.</div></pre>
+          <pre><button data-run="popup"><span class="p" aria-hidden="true">%</span> StableBar --popup agenda</button><button data-run="seconds"><span class="p" aria-hidden="true">%</span> StableBar --set clock '{"format":"HH:mm:ss"}'</button><div class="out" id="out" aria-live="polite">Click a line to run it on the bar above.</div></pre>
         </div>
       </div>
     </div>
@@ -266,7 +268,7 @@ root.classList.add("js");
           <p class="hd">Controls</p>
           <label class="ctl"><span>Level</span><input type="range" min="0" max="100" value="62" aria-label="Level"></label>
           <label class="check"><input type="checkbox" checked>Enabled</label>
-          <div class="ctl"><span>Mode</span><div class="seg"><button>Quiet</button><button class="on">Balanced</button><button>Focus</button></div></div>
+          <div class="ctl"><span>Mode</span><div class="seg"><button aria-pressed="false">Quiet</button><button class="on" aria-pressed="true">Balanced</button><button aria-pressed="false">Focus</button></div></div>
           <div class="sep"></div>
           <input class="search" placeholder="Find an app" aria-label="Find an app">
           <div class="apps"><div>Finder</div><div>Calendar</div><div>Activity Monitor</div><div>Terminal</div></div>
@@ -298,13 +300,13 @@ root.classList.add("js");
     <div class="fig scripts">
       <div class="code">
         <div class="fn"><span>widgets/disk.sh</span><span>sh</span></div>
-<pre><span class="c">#!/bin/sh</span>
+<pre tabindex="0"><span class="c">#!/bin/sh</span>
 used=$(df -h / | awk 'NR == 2 { print $5 }')
 printf '{"text":"%s","icon":"internaldrive"}' "$used"</pre>
       </div>
       <div class="code">
         <div class="fn"><span>config.json</span><span>json</span></div>
-<pre>{
+<pre tabindex="0">{
   "id": "disk", "type": "script",
   "position": "right", "interval": 300,
   "command": "~/.config/stablebar/widgets/disk.sh"
@@ -376,7 +378,7 @@ printf '{"text":"%s","icon":"internaldrive"}' "$used"</pre>
       <div class="win dmg" id="dmg">
         <div class="tb"><span class="tl"><i></i><i></i><i></i></span><span class="title">StableBar</span></div>
         <div class="stage">
-          <div class="slot"><div class="ico"><img class="app-ico" id="app-ico" src="images/icon-256.png" alt="StableBar" draggable="false"></div>StableBar</div>
+          <div class="slot"><div class="ico"><img class="app-ico" id="app-ico" src="images/icon-256.png" alt="" draggable="false"></div>StableBar</div>
           <div class="arrow"><svg viewBox="0 0 72 14" aria-hidden="true"><path d="M1 7h68M63 1.5 69 7l-6 5.5"/></svg>Drag to install</div>
           <div class="slot"><div class="ico"><svg class="folder" id="folder" viewBox="0 0 80 64" aria-hidden="true"><path d="M4 12a6 6 0 0 1 6-6h18l6 6h36a6 6 0 0 1 6 6v36a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6z" fill="#3b8ee8"/><path d="M4 22a6 6 0 0 1 6-6h60a6 6 0 0 1 6 6v32a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6z" fill="#62adf5"/><path d="M33 47h14M40 30v13M35 38l5 5 5-5" fill="none" stroke="#2f7dd6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>Applications</div>
         </div>
@@ -384,6 +386,7 @@ printf '{"text":"%s","icon":"internaldrive"}' "$used"</pre>
       </div>
     </div>
   </section>
+  </main>
 
   <footer>
     <span>StableBar is a free, open-source alternative to SketchyBar. It is available under the MIT License, including commercial use and redistribution.</span>
