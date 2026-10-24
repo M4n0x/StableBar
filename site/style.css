@@ -241,11 +241,9 @@ h1 .wide { display: none; }
 .ws-text .ind { display: none; }
 #bar .wsi.on { background: none; }
 #bar .wsi.on::after { content: none; }
-.ai { width: 12px; height: 12px; border-radius: 3.5px; display: inline-block; flex: none; }
-.ai.c1 { background: #3d8bfd; } .ai.c2 { background: #1f1f21; box-shadow: inset 0 0 0 1px #ffffff40; } .ai.c3 { background: #8a8a92; }
-.ai.c4 { background: #e5484d; } .ai.c5 { background: #2f80ed; } .ai.c6 { background: #fc3c44; } .ai.c7 { background: linear-gradient(#45a6ff, #1f6fe0); }
+/* Workspace app icons, drawn at 14 points with their padding as on the real bar */
+.ai { width: 14px; height: 14px; flex: none; pointer-events: none; }
 .app .name { font-weight: 700; }
-.app img { width: 16px; height: 16px; }
 .menus { display: grid; grid-template-columns: 0fr; transition: grid-template-columns .3s var(--ease); }
 .menus > span { overflow: hidden; display: flex; gap: 14px; }
 .menus > span > :first-child { margin-left: 6px; }
