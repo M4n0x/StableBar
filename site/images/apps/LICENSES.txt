@@ -1,0 +1,78 @@
+App icons in the demo bar's workspaces
+
+Each icon is resized from the original in its project's repository and used under the license given
+with it below. The names and icons belong to their owners and appear only to show apps open in a
+workspace.
+
+finder.svg is drawn for this page after the Finder icon in macOS. Finder and macOS are trademarks of
+Apple Inc.
+
+
+chromium.webp, from
+https://chromium.googlesource.com/chromium/src/+/195c30006270e47fdcab85253c4b23be6b535dfe/chrome/app/theme/chromium/mac/app.icns
+
+Copyright 2015 The Chromium Authors
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the name of Google LLC nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+ghostty.webp, from
+https://github.com/ghostty-org/ghostty/blob/8ef0ec1238220a5a714be452ed2844f0691fcf83/images/icons/icon_128@2x.png
+Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors
+
+ollama.webp, from
+https://github.com/ollama/ollama/blob/675150d6ad2747df1e218ef59de9194bc4a7e538/app/darwin/Ollama.app/Contents/Resources/icon.icns
+Copyright (c) Ollama
+
+t3-code.webp, from
+https://github.com/pingdotgg/t3code/blob/d53873b6a4799e87afd63c8d288ef0089f5a3748/assets/prod/black-macos-1024.png
+Copyright (c) 2026 T3 Tools Inc.
+
+vscodium.webp, from
+https://github.com/VSCodium/vscodium/blob/be70704abf84fc6c7721f94478dfcccd2dc6163e/src/stable/resources/darwin/code.icns
+Copyright (c) 2018-present The VSCodium contributors
+Copyright (c) 2018-present Peter Squicciarini
+
+These four are used under the MIT License:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

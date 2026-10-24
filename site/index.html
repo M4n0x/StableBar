@@ -107,13 +107,13 @@ root.classList.add("js");
             <div class="w apple" data-key="apple" data-pri="1" role="img" aria-label="Apple menu"><svg style="width:13px;height:15px;fill:currentColor"><use href="#i-apple"/></svg></div>
             <div class="w ws" data-key="ws" data-pri="never">
               <span class="ind"></span>
-              <button class="wsi" data-ws="1" aria-label="Workspace 1" aria-pressed="false">1 <i class="ai c1"></i></button>
-              <button class="wsi on" data-ws="2" aria-label="Workspace 2" aria-pressed="true">2 <i class="ai c2"></i><i class="ai c3"></i></button>
-              <button class="wsi" data-ws="3" aria-label="Workspace 3" aria-pressed="false">3 <i class="ai c4"></i><i class="ai c5"></i></button>
-              <button class="wsi" data-ws="4" aria-label="Workspace 4" aria-pressed="false">4 <i class="ai c6"></i></button>
+              <button class="wsi" data-ws="1" aria-label="Workspace 1" aria-pressed="false">1 <img class="ai" src="images/apps/ghostty.webp" alt="" width="14" height="14"></button>
+              <button class="wsi on" data-ws="2" aria-label="Workspace 2" aria-pressed="true">2 <img class="ai" src="images/apps/t3-code.webp" alt="" width="14" height="14"><img class="ai" src="images/apps/finder.svg" alt="" width="14" height="14"></button>
+              <button class="wsi" data-ws="3" aria-label="Workspace 3" aria-pressed="false">3 <img class="ai" src="images/apps/vscodium.webp" alt="" width="14" height="14"><img class="ai" src="images/apps/chromium.webp" alt="" width="14" height="14"></button>
+              <button class="wsi" data-ws="4" aria-label="Workspace 4" aria-pressed="false">4 <img class="ai" src="images/apps/ollama.webp" alt="" width="14" height="14"></button>
             </div>
-            <div class="w app finder" data-key="app" data-pri="2"><i class="ai c7"></i><span class="name">Finder</span><span class="menus"><span><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span></span></span></div>
-            <div class="w app site" data-key="site" data-pri="8" data-pop="site"><img src="images/icon-64.png" alt=""><span class="name">StableBar</span><span class="menus"><span><a href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/README.md">Guide</a><a href="https://github.com/Seb-GRAF/stablebar-packages">Store</a><a href="https://github.com/Seb-GRAF/StableBar/tree/main/examples">Examples</a><a href="https://github.com/Seb-GRAF/StableBar">GitHub</a></span></span></div>
+            <div class="w app finder" data-key="app" data-pri="2"><span class="name">Finder</span><span class="menus"><span><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span></span></span></div>
+            <div class="w app site" data-key="site" data-pri="8" data-pop="site"><span class="name">StableBar</span><span class="menus"><span><a href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/README.md">Guide</a><a href="https://github.com/Seb-GRAF/stablebar-packages">Store</a><a href="https://github.com/Seb-GRAF/StableBar/tree/main/examples">Examples</a><a href="https://github.com/Seb-GRAF/StableBar">GitHub</a></span></span></div>
           </div>
           <div class="g" id="gr">
             <button class="w more" data-key="more" data-pop="more" aria-expanded="false" aria-label="More widgets" hidden>•••</button>
@@ -136,7 +136,7 @@ root.classList.add("js");
             <button data-for="sound" data-open="controls"><svg><use href="#i-snd"/></svg>Sound</button>
             <button data-for="battery"><svg><use href="#i-bat"/></svg>Battery 82%</button>
             <button data-for="clock" class="clock" data-format="full">Thu 22 Oct&nbsp;&nbsp;09:41</button>
-            <button data-for="app"><i class="ai c7"></i>Finder</button>
+            <button data-for="app">Finder</button>
             <button data-for="apple">Apple menu</button>
           </div>
           <div class="pane menu" data-id="site">
@@ -326,8 +326,8 @@ printf '{"text":"%s","icon":"internaldrive"}' "$used"</pre>
       <figure class="cap monitor" data-theme="leman">
         <div class="bar ws-tint" aria-hidden="true">
           <div class="g gl">
-            <div class="w ws"><span class="wsi">1 <i class="ai c1"></i></span><span class="wsi on">2 <i class="ai c2"></i><i class="ai c3"></i></span><span class="wsi">3 <i class="ai c4"></i><i class="ai c5"></i></span><span class="wsi">4 <i class="ai c6"></i></span></div>
-            <div class="w app"><i class="ai c7"></i><span class="name">Finder</span></div>
+            <div class="w ws"><span class="wsi">1 <img class="ai" src="images/apps/ghostty.webp" alt="" width="14" height="14"></span><span class="wsi on">2 <img class="ai" src="images/apps/t3-code.webp" alt="" width="14" height="14"><img class="ai" src="images/apps/finder.svg" alt="" width="14" height="14"></span><span class="wsi">3 <img class="ai" src="images/apps/vscodium.webp" alt="" width="14" height="14"><img class="ai" src="images/apps/chromium.webp" alt="" width="14" height="14"></span><span class="wsi">4 <img class="ai" src="images/apps/ollama.webp" alt="" width="14" height="14"></span></div>
+            <div class="w app"><span class="name">Finder</span></div>
           </div>
           <div class="g">
             <div class="w meeting"><svg><use href="#i-cal"/></svg>Design review&nbsp;&nbsp;10:30</div>
