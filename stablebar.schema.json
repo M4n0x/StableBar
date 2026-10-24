@@ -1319,6 +1319,8 @@
                 "activeApp",
                 "appMenu",
                 "appleMenu",
+                "controlCenter",
+                "menuBarItems",
                 "clock",
                 "text",
                 "script",

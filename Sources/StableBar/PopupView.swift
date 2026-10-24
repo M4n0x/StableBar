@@ -5,6 +5,7 @@ struct PopupView: View {
     let style: WidgetStyle
     let store: BarStore
     let widget: WidgetConfiguration
+    var backgrounds: PopupBackgrounds?
     @Environment(\.screenKind) private var screenKind
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -44,10 +45,21 @@ struct PopupView: View {
                     store.appMenu.openSubmenu(element, beside: row) { submenu in
                         PopupView(popup: submenu, style: style, store: store, widget: widget).environment(\.screenKind, screenKind)
                     }
-                }, pressMenuItem: { element in
+                }, pressMenuItem: { entry in
                     store.popup.close()
-                    store.appMenu.press(element)
-                }, states: states, update: store.update) { command, environment in
+                    store.appMenu.press(entry)
+                }, openMenuBarItem: { [screenKind] element, anchor in
+                    guard let element else { return store.innerPopup.close() }
+                    let look = store.configuration!.onScreen(screenKind)
+                    store.innerPopup.toggle(store.appMenu.popup(forMenuBarItem: element), widget: widget,
+                                            defaults: look.popupDefaults.inheriting(look.defaults), store: store, anchor: anchor)
+                }, hoverMenuBarItem: { [screenKind] title, anchor, inside in
+                    let look = store.configuration!.onScreen(screenKind)
+                    store.innerPopup.hover(inside, store: store, anchor: anchor) {
+                        store.innerPopup.showTooltip(title, widget: widget, defaults: look.popupDefaults.inheriting(look.defaults),
+                                                     store: store, anchor: anchor)
+                    }
+                }, menuBarItemAnchor: store.presentations[widget.id]?.innerPopupAnchor, states: states, update: store.update) { command, environment in
                     if environment.isEmpty ? popup.dismissOnAction : popup.dismissOnControl { store.popup.close() }
                     store.runAction(command, widget: widget,
                                     event: ScriptEvent(sender: environment.isEmpty ? "mouse.clicked" : "control.changed", environment: environment))
@@ -85,7 +97,7 @@ struct PopupView: View {
             }
         }
         .modifier(PopupBackground(style: presentationStyle, glass: store.configuration?.bar(on: screenKind).glass ?? GlassSettings(),
-                                  backgrounds: store.popup.backgrounds))
+                                  backgrounds: backgrounds ?? store.popup.backgrounds))
         .accessibilityIdentifier("\(widget.id)-popup")
     }
 }
@@ -137,7 +149,10 @@ struct BlockContext {
     /// beside the block.
     var openSubmenu: (AXUIElement?, NSView) -> Void = { _, _ in }
     /// Presses an app menu block's item.
-    var pressMenuItem: (AXUIElement) -> Void = { _ in }
+    var pressMenuItem: (AppMenuEntry) -> Void = { _ in }
+    var openMenuBarItem: (AXUIElement?, NSView) -> Void = { _, _ in }
+    var hoverMenuBarItem: (String, NSView, Bool) -> Void = { _, _, _ in }
+    var menuBarItemAnchor: ObjectIdentifier?
     /// The widget's states, such as `open`; each block adds its own hover.
     var states = StyleStates()
     /// False when the inherited style already has the widget's hover and open states, as in default
@@ -453,6 +468,9 @@ struct PopupBlockView: View {
             }
         case let .appMenu(entries):
             AppMenuList(entries: entries, appearance: appearance, openSubmenu: context.openSubmenu, press: context.pressMenuItem)
+        case let .menuBarItems(entries):
+            MenuBarItemsRow(entries: entries, appearance: appearance, openAnchor: context.menuBarItemAnchor, open: context.openMenuBarItem,
+                            hover: context.hoverMenuBarItem, press: context.pressMenuItem)
         case let .essentials(kind, timeZone):
             EssentialsDetails(kind: kind, timeZone: timeZone, fields: fields, context: context, appearance: appearance)
         }
@@ -960,7 +978,7 @@ struct AppMenuList: View {
     let entries: [AppMenuEntry]
     let appearance: WidgetAppearance
     let openSubmenu: (AXUIElement?, NSView) -> Void
-    let press: (AXUIElement) -> Void
+    let press: (AppMenuEntry) -> Void
     @State private var submenu: Int?
 
     var body: some View {
@@ -976,7 +994,7 @@ struct AppMenuList: View {
                         submenu = opens ? index : nil
                         openSubmenu(opens ? entry.element : nil, row)
                     } press: {
-                        press(entry.element)
+                        press(entry)
                     }
                 }
             }
@@ -1019,6 +1037,57 @@ private struct AppMenuRow: View {
         .task(id: hovered) {
             guard hovered, (try? await Task.sleep(for: .milliseconds(200))) != nil else { return }
             rest(anchor)
+        }
+    }
+}
+
+struct MenuBarItemsRow: View {
+    let entries: [AppMenuEntry]
+    let appearance: WidgetAppearance
+    let openAnchor: ObjectIdentifier?
+    let open: (AXUIElement?, NSView) -> Void
+    let hover: (String, NSView, Bool) -> Void
+    let press: (AppMenuEntry) -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                MenuBarItemButton(entry: entry, appearance: appearance, openAnchor: openAnchor) { anchor in
+                    if entry.hasSubmenu { open(entry.element, anchor) } else { press(entry) }
+                } hover: { anchor, inside in
+                    if inside, openAnchor != nil, openAnchor != ObjectIdentifier(anchor) {
+                        open(entry.hasSubmenu ? entry.element : nil, anchor)
+                    }
+                    hover(entry.title, anchor, inside)
+                }
+            }
+        }
+    }
+}
+
+private struct MenuBarItemButton: View {
+    let entry: AppMenuEntry
+    let appearance: WidgetAppearance
+    let openAnchor: ObjectIdentifier?
+    let click: (NSView) -> Void
+    let hover: (NSView, Bool) -> Void
+    @State private var hovered = false
+    @State private var anchor = NSView()
+
+    var body: some View {
+        Button { click(anchor) } label: {
+            Image(nsImage: entry.icon!).resizable().scaledToFit().frame(width: 18, height: 18)
+                .padding(5)
+                .background(hovered || openAnchor == ObjectIdentifier(anchor) ? appearance.hoverBackground : AnyShapeStyle(Color.clear),
+                            in: RoundedRectangle(cornerRadius: max(appearance.cornerRadius - 4, 0)))
+                .background(MenuAnchor(view: anchor))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(entry.title)
+        .onHover { inside in
+            hovered = inside
+            hover(anchor, inside)
         }
     }
 }

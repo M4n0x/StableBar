@@ -6,13 +6,15 @@
 | `activeApp` | Frontmost app name and icon | — |
 | `appMenu` | Frontmost app's menus; click a title to open its menu | `expandOnHover`: show only the app name until hovered (default `false`) |
 | `appleMenu` | Apple logo; click to open the Apple menu | — |
+| `controlCenter` | Control Center icon; click to open macOS Control Center | — |
+| `menuBarItems` | Ellipsis; click to list the items in the macOS menu bar, with their apps' icons, and open one | — |
 | `clock` | Local date/time, updated each minute, or each second when the format shows seconds | `format`: DateFormatter format |
 | `text` | Static text and optional icon | `text` |
 | `script` | Output of a shell command | `command`, `interval` in seconds or `null` for event-only updates |
 | `provider` | Shared command, stream or native data | `provider`: key from the top-level `providers` object |
 | `system`, `network`, `battery`, `audio`, `calendar` | Native CPU and memory, network, battery, audio output or calendar data | — |
 
-**Add widget** includes Clock & date, Active app, Apple menu, App menus, Battery, Sound, System monitor, Network, Calendar, Workspaces, Text and Spacer. Text starts with “New widget”. Apple menu and App menus need Accessibility access; Calendar asks for Calendar access; Workspaces needs AeroSpace, yabai, [OmniWM](#omniwm-workspaces) or [macOS Spaces](#macos-spaces-workspaces). Script starts with a clock command you can change through **More → Edit as JSON…**.
+**Add widget** includes Clock & date, Active app, Apple menu, App menus, Control Center, Menu bar items, Battery, Sound, System monitor, Network, Calendar, Workspaces, Text and Spacer. Text starts with “New widget”. Apple menu, App menus, Control Center and Menu bar items need Accessibility access; Calendar asks for Calendar access; Workspaces needs AeroSpace, yabai, [OmniWM](#omniwm-workspaces) or [macOS Spaces](#macos-spaces-workspaces). Script starts with a clock command you can change through **More → Edit as JSON…**.
 
 The AeroSpace connection subscribes to workspace, monitor, window and focus events. It loads an initial snapshot, coalesces pending events and reconnects after a disconnect with exponential backoff, capped at five minutes, and at once when AeroSpace launches. Ten seconds of connection resets the backoff. The accent color marks the focused workspace; an outline marks a workspace visible on another monitor. Empty, inactive workspaces are hidden. App icons are deduplicated per workspace unless `workspace.windows` is enabled. Active-app updates come from NSWorkspace notifications.
 
@@ -173,6 +175,12 @@ The module sets the `appGlyphs` token to the font's map of app names to ligature
 ```
 
 Your own `tokens.appGlyphs` merges into the module's map, so `{ "tokens": { "appGlyphs": { "com.example.Notes": ":notes:" } } }` adds or changes one app. The module's `sketchybarAppFontVersion` token names the font release it was generated from; install that release or a newer one. `scripts/update-app-glyphs.sh` regenerates the module from the font's latest release.
+
+## Menu bar items
+
+A `controlCenter` widget opens macOS Control Center. A `menuBarItems` widget shows an ellipsis; click it to see every item in the macOS menu bar as a row of icons, in menu bar order. Each icon is its app's icon, or a system symbol for Battery, Clock, Control Center and Search. Rest the pointer on an icon to see its name. Click the ellipsis again to close the row.
+
+Clicking an icon whose app has an ordinary menu opens that menu below it, in your theme's popup style. While a menu is open, move the pointer to another icon to switch to its menu. Items that draw their own panel, such as Control Center, Battery or Clock, open their panel as macOS does. To open them, StableBar briefly brings out the hidden menu bar and keeps it invisible until the item closes. Both widgets need Accessibility access. StableBar's own menu bar icon isn't listed.
 
 ## Tooltips
 

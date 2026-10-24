@@ -361,6 +361,8 @@ enum WidgetContent: Equatable, Sendable {
     case activeApp
     case appMenu(expandOnHover: Bool)
     case appleMenu
+    case controlCenter
+    case menuBarItems
     case clock(format: String)
     case text(String)
     case script(command: String, interval: Double?)
@@ -455,6 +457,8 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
         case "activeApp": content = .activeApp
         case "appMenu": content = .appMenu(expandOnHover: try values.decodeIfPresent(Bool.self, forKey: .expandOnHover) ?? false)
         case "appleMenu": content = .appleMenu
+        case "controlCenter": content = .controlCenter
+        case "menuBarItems": content = .menuBarItems
         case "clock": content = .clock(format: try values.decodeIfPresent(String.self, forKey: .format) ?? "EEE d MMM  HH:mm")
         case "text": content = .text(try values.decode(String.self, forKey: .text))
         case "script":

@@ -1,6 +1,22 @@
 import AppKit
 import ApplicationServices
 
+@_silgen_name("CGSMainConnectionID") private func CGSMainConnectionID() -> Int32
+@_silgen_name("CGSSetMenuBarInsetAndAlpha")
+private func CGSSetMenuBarInsetAndAlpha(_ connection: Int32, _: Double, _: Double, _ alpha: Float) -> CGError
+
+private let setMenuBarVisibilityOverride = unsafeBitCast(
+    dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SLSSetMenuBarVisibilityOverrideOnDisplay")!,
+    to: (@convention(c) (Int32, CGDirectDisplayID, Bool) -> CGError).self)
+
+func setMenuBarHidden(_ hidden: Bool) {
+    _ = CGSSetMenuBarInsetAndAlpha(CGSMainConnectionID(), 0, 1, hidden ? 0 : 1)
+}
+
+func setMenuBarShown(_ shown: Bool, on display: CGDirectDisplayID) {
+    _ = setMenuBarVisibilityOverride(CGSMainConnectionID(), display, shown)
+}
+
 struct MenuBarHover {
     let milliseconds: Double
     let menuBars: [CGRect]

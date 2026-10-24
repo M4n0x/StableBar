@@ -25,6 +25,9 @@ extension WidgetConfiguration {
             text = formatter.string(from: date)
         case .activeApp:
             text = activeApp ?? "Desktop"
+        case .controlCenter, .menuBarItems:
+            text = ""
+            icon = icon ?? content.symbol
         case .script, .provider:
             text = output?.text ?? "…"
             icon = output?.icon ?? icon
@@ -59,7 +62,7 @@ extension WidgetConfiguration {
         let icon = label.icon.map { _ in PopupBlock(content: .symbol(name: "", source: "icon")) }
         let text = PopupBlock(content: .field("text"), hideWhenEmpty: "text")
         switch content {
-        case .text:
+        case .text, .controlCenter, .menuBarItems:
             return PopupBlock(content: .row([icon, text].compactMap { $0 }), keepsLineHeight: true)
         case .clock:
             return PopupBlock(content: .row([icon, PopupBlock(content: .field("text"), hideWhenEmpty: "text")].compactMap { $0 }),

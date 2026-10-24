@@ -880,7 +880,7 @@ private struct RelayProbe {
     #expect(registry.permissions(for: try configuration(#"""
     {"widgets":[{"id":"power","type":"battery","position":"right","enabled":false},{"id":"cpu","type":"system","position":"right"}]}
     """#)).isEmpty)
-    for type in ["appMenu", "appleMenu"] {
+    for type in ["appMenu", "appleMenu", "controlCenter", "menuBarItems"] {
         #expect(registry.permissions(for: try configuration(#"""
         {"widgets":[{"id":"menus","type":"\#(type)","position":"left"},{"id":"power","type":"battery","position":"right"}]}
         """#)) == [calendars, .accessibility])
