@@ -72,15 +72,17 @@ function mini() {
 const cards = document.getElementById("cards");
 const store = document.querySelector("#board .store");
 for (const [id, name, ws] of THEMES) {
-  const card = `<button class="card" data-theme-pick="${id}"><div class="shot ${ws}" data-theme="${id}">${mini()}</div><div class="nm">${name}<svg viewBox="0 0 12 12"><use href="#p-check"/></svg></div></button>`;
+  const card = `<button class="card" data-theme-pick="${id}"><div class="shot ${ws}" data-theme="${id}" aria-hidden="true">${mini()}</div><div class="nm">${name}<svg viewBox="0 0 12 12"><use href="#p-check"/></svg></div></button>`;
   cards.insertAdjacentHTML("beforeend", card);
   store.insertAdjacentHTML("beforebegin", card);
 }
 const showAll = document.getElementById("show-all");
 showAll.textContent = `Show all ${THEMES.length} themes`;
 showAll.addEventListener("click", () => {
-  document.getElementById("board").classList.add("all");
+  const board = document.getElementById("board");
+  board.classList.add("all");
   showAll.remove();
+  board.children[8].focus();
 });
 
 function setTheme(id) {
@@ -145,7 +147,10 @@ function open(id) {
   pop.classList.toggle("morph", Boolean(from && openId));
   pop.classList.toggle("open", Boolean(openId));
   for (const p of panes) p.classList.toggle("on", p.dataset.id === openId);
-  for (const w of bar.querySelectorAll("[data-pop]")) w.classList.toggle("open", w.dataset.pop === openId || (openId && anchorFor(openId) === w));
+  for (const w of bar.querySelectorAll("[data-pop]")) {
+    w.classList.toggle("open", w.dataset.pop === openId || Boolean(openId && anchorFor(openId) === w));
+    if (w.matches("button")) w.setAttribute("aria-expanded", w.classList.contains("open"));
+  }
   place();
 }
 for (const w of bar.querySelectorAll("[data-pop]")) w.addEventListener("click", e => {
@@ -155,7 +160,13 @@ for (const w of bar.querySelectorAll("[data-pop]")) w.addEventListener("click", 
 });
 for (const b of menu.querySelectorAll("[data-open]")) b.addEventListener("click", e => { e.stopPropagation(); open(b.dataset.open); });
 document.addEventListener("click", e => { if (openId && !e.target.closest(".pop, .win, .card, .w")) open(openId); });
-document.addEventListener("keydown", e => { if (e.key === "Escape" && openId) open(openId); });
+/* Escape closes the popup and returns focus to its widget */
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape" || !openId) return;
+  const from = pop.contains(document.activeElement) && anchorFor(openId);
+  open(openId);
+  if (from) from.focus();
+});
 
 /* Workspaces: the focus highlight slides to the one you click, as on the real bar */
 const ind = bar.querySelector(".ind");
@@ -165,7 +176,10 @@ function slide() {
   ind.style.setProperty("--w", `${on.offsetWidth}px`);
 }
 for (const el of bar.querySelectorAll(".wsi")) el.addEventListener("click", () => {
-  bar.querySelectorAll(".wsi").forEach(e => e.classList.toggle("on", e === el));
+  bar.querySelectorAll(".wsi").forEach(e => {
+    e.classList.toggle("on", e === el);
+    e.setAttribute("aria-pressed", e === el);
+  });
   slide();
 });
 
@@ -179,7 +193,10 @@ finder.addEventListener("mouseleave", () => { finder.classList.remove("expand");
 
 /* Controls */
 for (const seg of document.querySelectorAll(".seg")) for (const b of seg.querySelectorAll("button")) b.addEventListener("click", () => {
-  seg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  seg.querySelectorAll("button").forEach(x => {
+    x.classList.toggle("on", x === b);
+    x.setAttribute("aria-pressed", x === b);
+  });
 });
 for (const s of document.querySelectorAll(".search")) s.addEventListener("input", () => {
   const q = s.value.toLowerCase();
@@ -344,12 +361,14 @@ for (const el of document.querySelectorAll(".pops, .board, .scripts, .setup, .in
 
 /* Light and dark: starts from the system setting, remembers the visitor's choice */
 const themeColor = document.querySelector('meta[name="theme-color"]');
+const modeButton = document.getElementById("mode");
 function setMode(mode) {
   root.dataset.mode = mode;
   themeColor.content = mode === "light" ? "#f5f0e8" : "#15110d";
+  modeButton.setAttribute("aria-pressed", mode === "dark");
 }
 setMode(root.dataset.mode);
-document.getElementById("mode").addEventListener("click", () => {
+modeButton.addEventListener("click", () => {
   const mode = root.dataset.mode === "light" ? "dark" : "light";
   localStorage.setItem("mode", mode);
   if (document.startViewTransition && !reduce.matches) document.startViewTransition(() => setMode(mode));
