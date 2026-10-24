@@ -8,6 +8,8 @@ enum WidgetDisplayName {
         case .activeApp: type = "activeApp"
         case .appMenu: type = "appMenu"
         case .appleMenu: type = "appleMenu"
+        case .controlCenter: type = "controlCenter"
+        case .menuBarItems: type = "menuBarItems"
         case .provider(let name): type = providers[name]?.type ?? name
         case .workspaces: type = "workspaces"
         case .text: type = "text"

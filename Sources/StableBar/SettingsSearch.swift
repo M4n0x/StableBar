@@ -14,7 +14,7 @@ enum SettingsSearchResult: String, CaseIterable, Identifiable {
     private var details: (String, CustomizationSection, String, String) {
         switch self {
         case .login: ("Open at login", .general, "General", "startup launch")
-        case .menuBar: ("Native menu bar reveal delay", .general, "General › Native menu bar", "macOS hide hover throttle wait seconds milliseconds accessibility")
+        case .menuBar: ("Native menu bar reveal delay", .general, "General › Native menu bar", "macOS hide hover throttle wait seconds milliseconds accessibility always invisible")
         case .windows: ("Keep windows clear of the bar", .general, "General", "windows notifications overlap clearance accessibility")
         case .hover: ("Hover delay and controls", .general, "General › Hover", "tooltip wait milliseconds popup inline slider volume")
         case .workspaces: ("Workspace manager", .general, "General", "aerospace yabai omniwm spaces mission control desktops source reconnect connection")

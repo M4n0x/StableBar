@@ -182,9 +182,18 @@ struct BarView: View {
                                                     event: ScriptEvent(sender: "mouse.clicked", environment: ["BUTTON": "left", "SID": String(display.id)]))
                                 } else if let open = widget.open {
                                     OpenTarget(open)!.open()
+                                } else if widget.content == .controlCenter {
+                                    store.appMenu.openControlCenter()
+                                } else if widget.content == .menuBarItems {
+                                    Task {
+                                        guard let popup = await store.appMenu.menuBarItemsPopup() else { return }
+                                        store.popup.toggle(popup, widget: widget, defaults: config.popupDefaults.inheriting(config.defaults),
+                                                           store: store, anchor: overflowAnchor)
+                                    }
                                 }
                             }
-                            .disabled(popup == nil && command == nil && widget.open == nil)
+                            .disabled(popup == nil && command == nil && widget.open == nil
+                                      && widget.content != .controlCenter && widget.content != .menuBarItems)
                         }
                     }
                 }
@@ -364,6 +373,19 @@ struct WidgetView: View {
                 .buttonStyle(.plain)
         } else if let open = widget.open {
             Button { if store.barEditing.allowsWidgetActions { OpenTarget(open)!.open() } } label: { tile }
+                .buttonStyle(.plain)
+        } else if widget.content == .controlCenter {
+            Button { if store.barEditing.allowsWidgetActions { store.appMenu.openControlCenter() } } label: { tile }
+                .buttonStyle(MouseDownButtonStyle())
+        } else if widget.content == .menuBarItems {
+            Button {
+                guard store.barEditing.allowsWidgetActions else { return }
+                if store.presentations[widget.id]?.popupAnchor == ObjectIdentifier(popupAnchor) { return store.popup.close() }
+                Task {
+                    guard let popup = await store.appMenu.menuBarItemsPopup() else { return }
+                    store.popup.toggle(popup, widget: widget, defaults: popupDefaults.inheriting(defaults), store: store, anchor: popupAnchor)
+                }
+            } label: { tile }
                 .buttonStyle(.plain)
         } else {
             tile
@@ -863,6 +885,14 @@ private struct AppMenuTitle: View {
         .buttonStyle(.plain)
         .animation(hoverAnimation(highlighted, reduceMotion: reduceMotion), value: highlighted)
         .onAppear { anchors[index] = anchor }
+    }
+}
+
+private struct MouseDownButtonStyle: PrimitiveButtonStyle {
+    func makeBody(configuration: PrimitiveButtonStyleConfiguration) -> some View {
+        configuration.label.onLongPressGesture(minimumDuration: 0, perform: {}) { pressing in
+            if pressing { configuration.trigger() }
+        }
     }
 }
 

@@ -74,6 +74,7 @@ indirect enum PopupContent: Sendable {
     case appUpdate
     /// An app's menu, drawn by an app menu widget's popup. Configurations can't use it.
     case appMenu([AppMenuEntry])
+    case menuBarItems([AppMenuEntry])
     case essentials(EssentialsPopup, timeZone: String?)
 }
 

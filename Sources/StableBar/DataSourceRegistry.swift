@@ -52,14 +52,14 @@ extension SourcePermission {
                                             detail: "Calendar widgets show your next meeting and today's agenda. macOS asks for access the first time one updates.",
                                             symbol: "calendar", privacyPane: "Privacy_Calendars")
     static let accessibility = SourcePermission(title: "Accessibility",
-                                                detail: "App menus and the Apple menu read the frontmost app's menus and open them.",
+                                                detail: "App menus and the Apple menu read the frontmost app's menus and open them. Control Center and Menu bar items open items in the macOS menu bar.",
                                                 symbol: "accessibility", privacyPane: "Privacy_Accessibility")
 }
 
 extension WidgetContent {
     var permissions: [SourcePermission] {
         switch self {
-        case .appMenu, .appleMenu: [.accessibility]
+        case .appMenu, .appleMenu, .controlCenter, .menuBarItems: [.accessibility]
         default: []
         }
     }

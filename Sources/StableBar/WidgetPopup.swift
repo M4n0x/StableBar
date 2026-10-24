@@ -164,6 +164,7 @@ final class WidgetPopup {
     private var widgetID: String?
     private weak var store: BarStore?
     private weak var anchor: NSView?
+    private weak var parentPopup: PopupPanel?
     private var localMonitor: Any?
     private var globalMonitor: Any?
     private var moveObserver: Any?
@@ -288,6 +289,7 @@ final class WidgetPopup {
         let animation = bar.motion.popupAnimation
         let from = morphSource(on: window, bar: bar, animation: animation)
         close()
+        parentPopup = window as? PopupPanel
         let frame = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
         let top = popupAttachmentTop(anchor: frame, window: window.frame, geometry: (window as? BarPanel)?.barGeometry)
         let style = resolveStyle([defaults, widget.style], states: StyleStates(mode: store.modePresentation(on: kind)))
@@ -335,6 +337,7 @@ final class WidgetPopup {
         } else {
             reveal(panel, shadow: shadow, onHover: true, with: animation)
         }
+        attachToParentPopup()
     }
 
     func open(_ popup: PopupConfiguration, widget: WidgetConfiguration, defaults: WidgetStyle,
@@ -350,6 +353,7 @@ final class WidgetPopup {
         let pinsAgain = !onHover && spots[widget.id]?.pinned == true
         let from = pinsAgain ? nil : morphSource(on: window, bar: bar, animation: animation)
         close()
+        parentPopup = window as? PopupPanel
         pinned = !onHover
         hoveredAnchor = onHover ? anchor : nil
         let frame = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
@@ -369,7 +373,7 @@ final class WidgetPopup {
                                                   width: width + shadowInset * 2, height: 0),
                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: PopupCanvas(size: panel.size, inset: shadowInset) {
-            PopupView(popup: popup, style: style, store: store, widget: widget)
+            PopupView(popup: popup, style: style, store: store, widget: widget, backgrounds: backgrounds)
                 .environment(\.screenKind, ScreenKind(BarDisplay(screen: screen)))
                 .frame(idealWidth: width, maxWidth: .infinity)
                 .onPreferenceChange(PopupHeightPreference.self) { [weak self, weak panel] contentHeight in
@@ -415,7 +419,11 @@ final class WidgetPopup {
         shadowWindow = shadow
         widgetID = widget.id
         self.store = store
-        store.setPopupVisibleWidget(widget.id, anchor: anchor)
+        if parentPopup == nil {
+            store.setPopupVisibleWidget(widget.id, anchor: anchor)
+        } else {
+            store.setInnerPopupAnchor(anchor, of: widget.id)
+        }
         self.anchor = anchor
         self.animation = animation
         transition = bar.popupTransition ?? bar.motion.popupTransition
@@ -427,7 +435,12 @@ final class WidgetPopup {
         } else {
             reveal(panel, shadow: shadow, onHover: onHover, with: animation)
         }
+        attachToParentPopup()
         if pinsAgain { pin() }
+    }
+
+    private func attachToParentPopup() {
+        for window in [shadowWindow, panel].compactMap({ $0 }) { parentPopup?.addChildWindow(window, ordered: .above) }
     }
 
     /// Moves and reshapes the open popup or tooltip `from` into `panel`, the next one on the same bar: a card with the
@@ -771,7 +784,12 @@ final class WidgetPopup {
     func close() {
         stopWatching()
         if let widgetID { pins.resized.remove(widgetID) }
-        store?.setPopupVisibleWidget(nil)
+        if parentPopup == nil {
+            store?.setPopupVisibleWidget(nil)
+        } else if let widgetID {
+            store?.setInnerPopupAnchor(nil, of: widgetID)
+        }
+        parentPopup = nil
         store = nil
         finishMorph()
         dismiss([panel, shadowWindow].compactMap { $0 }, transition: transition, source: source, animation: animation)

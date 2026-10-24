@@ -20,6 +20,8 @@ struct GeneralSettingsView: View {
                             unset: { editor.change(ConfigurationEdit(action: .unset, properties: ["bar": .object($0)])) })
                         bar.number("Reveal delay", "menuBarRevealDelay", default: 0, in: 0...10000, step: 100, unit: "ms",
                                    hint: "Wait at the top edge before showing the hidden macOS menu bar. 0 adds no delay. Requires Accessibility access.")
+                        bar.toggle("Always hide", "hideMenuBar", default: false,
+                                   hint: "Keep the macOS menu bar invisible while StableBar runs, even at the top edge.")
                     }
                     .id(SettingsSearchResult.menuBar.id)
                     SettingsGroup("Windows and notifications") {

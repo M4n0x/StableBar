@@ -1319,6 +1319,8 @@
                 "activeApp",
                 "appMenu",
                 "appleMenu",
+                "controlCenter",
+                "menuBarItems",
                 "clock",
                 "text",
                 "script",
@@ -1702,6 +1704,10 @@
         "menuBarRevealDelay": {
           "$ref": "#/definitions/number",
           "description": "Milliseconds to hold at the top edge before revealing the hidden macOS menu bar. Requires Accessibility access. 0 adds no delay."
+        },
+        "hideMenuBar": {
+          "$ref": "#/definitions/boolean",
+          "description": "Keep the macOS menu bar invisible while StableBar runs, even at the top edge. Quitting StableBar shows it again. Disabled by default."
         },
         "hoverDelay": {
           "$ref": "#/definitions/number",

@@ -14,6 +14,7 @@ final class BarStore: NSObject {
     let menuBarDelay = MenuBarDelay()
     let appMenu = AppMenu()
     let popup: WidgetPopup
+    let innerPopup = WidgetPopup()
     var update: AppUpdate?
     /// The main configuration: the shared bar of every screen setup without its own.
     let sharedConfigurationURL: URL
@@ -767,9 +768,15 @@ final class BarStore: NSObject {
     func setPopupVisibleWidget(_ id: String?, anchor: NSView? = nil) {
         popupWidgetID = id
         appMenu.closeSubmenus(after: nil)
+        innerPopup.close()
         let anchor = anchor.map(ObjectIdentifier.init)
         for (widgetID, presentation) in presentations { presentation.setPopupAnchor(widgetID == id ? anchor : nil) }
         updateSuspension()
+    }
+
+    func setInnerPopupAnchor(_ anchor: NSView?, of id: String) {
+        appMenu.closeSubmenus(after: nil)
+        presentations[id]?.setInnerPopupAnchor(anchor.map(ObjectIdentifier.init))
     }
 
     func setInspectedWidget(_ id: String?) {
@@ -1101,6 +1108,7 @@ final class WidgetPresentation {
     private(set) var display: DisplaySelection?
     /// The view that anchors this widget's open popup: only that instance shows `open`.
     private(set) var popupAnchor: ObjectIdentifier?
+    private(set) var innerPopupAnchor: ObjectIdentifier?
     /// Fields from the latest output's `temporary`, shown over the widget's own until they expire.
     private(set) var temporaryFields: [String: String]?
     /// The `temporary` that shows.
@@ -1135,6 +1143,10 @@ final class WidgetPresentation {
 
     func setPopupAnchor(_ anchor: ObjectIdentifier?) {
         if popupAnchor != anchor { popupAnchor = anchor }
+    }
+
+    func setInnerPopupAnchor(_ anchor: ObjectIdentifier?) {
+        if innerPopupAnchor != anchor { innerPopupAnchor = anchor }
     }
 
     /// Shows the `temporary` of a new output for its duration. `output` numbers the output, so the
