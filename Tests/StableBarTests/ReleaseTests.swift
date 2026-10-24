@@ -72,6 +72,121 @@ func releaseVersionRejectsABuildNumberThatIsNotOneToThreeIntegers(build: String)
     #expect(try Data(contentsOf: plist) == original)
 }
 
+// The whole suite runs in parallel, and on CI a single git command there has taken over ten seconds.
+private let historyTimeout = 60.0
+
+private struct ReleaseHistory {
+    let repository = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+
+    init() async throws {
+        let scripts = repository.appending(path: "scripts")
+        try FileManager.default.createDirectory(at: scripts, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: URL(filePath: setVersion).deletingLastPathComponent()
+            .appending(path: "unchanged-app.sh"), to: scripts.appending(path: "unchanged-app.sh"))
+        try await git(["init", "--quiet"])
+        try await git(["add", "."])
+        try await git(["commit", "--quiet", "-m", "chore: start"])
+    }
+
+    func remove() {
+        try? FileManager.default.removeItem(at: repository)
+    }
+
+    @discardableResult
+    func git(_ arguments: [String]) async throws -> Data {
+        try await runCommand("/usr/bin/git", arguments: [
+            "-C", repository.path,
+            "-c", "user.name=StableBar Tests",
+            "-c", "user.email=tests@example.invalid",
+            "-c", "init.defaultBranch=main",
+            "-c", "commit.gpgSign=false",
+            "-c", "tag.gpgSign=false",
+            "-c", "core.hooksPath=/dev/null"
+        ] + arguments, timeout: historyTimeout)
+    }
+
+    func commit(_ message: String, changing path: String) async throws {
+        let file = repository.appending(path: path)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(UUID().uuidString.utf8).write(to: file)
+        try await git(["add", "."])
+        try await git(["commit", "--quiet", "-m", message])
+    }
+
+    /// The release whose app the newest commit still ships, or nil when the script says the app changed.
+    /// Any other failure, such as a timeout, is an error, so it can't pass for a changed app.
+    func unchangedApp() async throws -> String? {
+        do {
+            let output = try await runCommand(repository.appending(path: "scripts/unchanged-app.sh").path,
+                                              arguments: [], timeout: historyTimeout)
+            return String(decoding: output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch let failure as CommandFailure where failure.message == "Command exited with status 1." {
+            return nil
+        }
+    }
+}
+
+// CI publishes no beta for such a commit, and a stable release ships it as the beta before it.
+@Test func unchangedAppNamesTheBetaWhenLaterCommitsChangeOnlyDocsCIAndTests() async throws {
+    let history = try await ReleaseHistory()
+    defer { history.remove() }
+    try await history.commit("feat: add a clock", changing: "Sources/StableBar/Clock.swift")
+    try await history.git(["tag", "v0.8.0-beta.20261024075505.382"])
+    try await history.commit("ci(deps): bump the actions group", changing: ".github/workflows/ci.yml")
+    try await history.git(["tag", "appcast"])
+    try await history.git(["switch", "--quiet", "-c", "docs/clock"])
+    try await history.commit("docs: explain the clock", changing: "docs/clock.md")
+    try await history.commit("test: cover the clock", changing: "Tests/StableBarTests/ClockTests.swift")
+    try await history.git(["switch", "--quiet", "main"])
+    try await history.git(["merge", "--quiet", "--no-ff", "-m", "Merge pull request #1 from someone/docs/clock", "docs/clock"])
+    #expect(try await history.unchangedApp() == "v0.8.0-beta.20261024075505.382")
+}
+
+@Test func unchangedAppNamesTheBetaOfTheNewestCommit() async throws {
+    let history = try await ReleaseHistory()
+    defer { history.remove() }
+    try await history.commit("fix: keep the clock visible", changing: "Sources/StableBar/Clock.swift")
+    try await history.git(["tag", "v0.8.0-beta.20261024075505.382"])
+    #expect(try await history.unchangedApp() == "v0.8.0-beta.20261024075505.382")
+}
+
+@Test(arguments: [
+    ("docs: explain the clock in its help", "Sources/StableBar/Clock.swift"),
+    ("docs: describe the night theme", "Resources/themes/night.json"),
+    ("ci: lay out the DMG", "scripts/package.sh"),
+    ("ci(deps): bump Sparkle", "Package.resolved"),
+    ("fix: correct the guide", "docs/clock.md"),
+    ("refactor: tidy the guide", "docs/clock.md"),
+    ("docs!: rename the guide", "docs/clock.md")
+])
+func unchangedAppRejectsCommitsThatCanChangeTheApp(message: String, path: String) async throws {
+    let history = try await ReleaseHistory()
+    defer { history.remove() }
+    try await history.git(["tag", "v0.8.0-beta.20261024075505.382"])
+    try await history.commit("docs: explain the clock", changing: "docs/clock.md")
+    try await history.commit(message, changing: path)
+    #expect(try await history.unchangedApp() == nil)
+}
+
+@Test func unchangedAppRejectsAMergeThatChangesTheApp() async throws {
+    let history = try await ReleaseHistory()
+    defer { history.remove() }
+    try await history.git(["tag", "v0.8.0-beta.20261024075505.382"])
+    try await history.git(["switch", "--quiet", "-c", "docs/clock"])
+    try await history.commit("docs: explain the clock", changing: "docs/clock.md")
+    try await history.git(["switch", "--quiet", "main"])
+    try await history.git(["merge", "--quiet", "--no-ff", "--no-commit", "docs/clock"])
+    try await history.commit("Merge pull request #1 from someone/docs/clock", changing: "Sources/StableBar/Clock.swift")
+    #expect(try await history.unchangedApp() == nil)
+}
+
+@Test func unchangedAppNeedsARelease() async throws {
+    let history = try await ReleaseHistory()
+    defer { history.remove() }
+    try await history.commit("docs: explain the clock", changing: "docs/clock.md")
+    #expect(try await history.unchangedApp() == nil)
+}
+
 @Test @MainActor func updateChangesReadGeneratedAndChangelogNotes() {
     #expect(AppUpdate.changes(in: """
         ## What's Changed
