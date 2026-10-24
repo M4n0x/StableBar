@@ -52,6 +52,12 @@ Set `bar.menuBarRevealDelay` in JSON, including in an included file or a profile
 { "bar": { "menuBarRevealDelay": 2000 } }
 ```
 
+## Hide the native menu bar
+
+**Settings → General → Native menu bar → Always hide** keeps the macOS menu bar invisible while StableBar runs, even when the pointer reaches the top edge. Quitting StableBar shows it again. In JSON, set `"bar": { "hideMenuBar": true }`.
+
+Without it, the menu bar shows on hover as usual. StableBar makes it invisible only while its [Control Center and Menu bar items](widgets.md#menu-bar-items) widgets open an item, and shows it again once the item closes.
+
 ## Keeping windows clear of the bar
 
 macOS provides no public API for a custom bar to reserve screen space. Without a tiling window manager, enable **Settings → General → Windows and notifications → Keep windows clear of the bar** (`bar.keepWindowsClear`, off by default) and allow StableBar in **System Settings → Privacy & Security → Accessibility**. StableBar then moves overlapping ordinary windows below the bar and reduces their height when needed to keep them above the Dock. It follows each display's bar height, offset and scale, and waits until you finish dragging before adjusting a window. See [the window clearance example](../examples/window-clearance/config.json).

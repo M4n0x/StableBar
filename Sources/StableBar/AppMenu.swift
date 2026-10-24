@@ -30,6 +30,9 @@ final class AppMenu: NSObject {
     @ObservationIgnored private var submenus: [PopupPanel] = []
     @ObservationIgnored private(set) var readTask: Task<Void, Never>?
     @ObservationIgnored private var menuBarPresses = 0
+    @ObservationIgnored var hidesMenuBar = false {
+        didSet { if hidesMenuBar != oldValue { setMenuBarHidden(hidesMenuBar) } }
+    }
 
     init(checkAccess: @escaping () -> Bool = { AXIsProcessTrusted() },
          readAttribute: @escaping @Sendable (String, AXUIElement) -> CFTypeRef? = { name, element in
@@ -267,7 +270,7 @@ final class AppMenu: NSObject {
                     try? await sleep(.milliseconds(100))
                 }
             }.value
-            if press == menuBarPresses { setMenuBarHidden(false) }
+            if press == menuBarPresses, !hidesMenuBar { setMenuBarHidden(false) }
         }
     }
 

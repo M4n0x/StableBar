@@ -376,6 +376,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             CGRect(x: $0.frame.minX, y: screens[0].frame.maxY - $0.frame.maxY, width: $0.frame.width,
                    height: max(NSStatusBar.system.thickness, $0.safeAreaInsets.top))
         })
+        store.appMenu.hidesMenuBar = config.bar.hideMenuBar
         if store.barEditing.isActive {
             if editingKeyboard.start(store: store) {
                 let screen = screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
@@ -482,5 +483,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         control?.stop()
         systemContext?.stop()
         store.stop()
+        store.appMenu.hidesMenuBar = false
     }
 }
