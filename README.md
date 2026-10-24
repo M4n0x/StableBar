@@ -4,7 +4,7 @@
 
 # StableBar
 
-A native, configurable bar for macOS.<br>
+A native, configurable menu bar for macOS.<br>
 Themes, widgets and popups, set up in the app or in plain JSON.
 
 [![Latest release](https://img.shields.io/github/v/release/Seb-GRAF/StableBar?label=release&color=f5821f)](https://github.com/Seb-GRAF/StableBar/releases/latest)
