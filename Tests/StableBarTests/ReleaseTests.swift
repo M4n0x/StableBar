@@ -72,6 +72,9 @@ func releaseVersionRejectsABuildNumberThatIsNotOneToThreeIntegers(build: String)
     #expect(try Data(contentsOf: plist) == original)
 }
 
+// The whole suite runs in parallel, and on CI a single git command there has taken over ten seconds.
+private let historyTimeout = 60.0
+
 private struct ReleaseHistory {
     let repository = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
 
@@ -99,7 +102,7 @@ private struct ReleaseHistory {
             "-c", "commit.gpgSign=false",
             "-c", "tag.gpgSign=false",
             "-c", "core.hooksPath=/dev/null"
-        ] + arguments)
+        ] + arguments, timeout: historyTimeout)
     }
 
     func commit(_ message: String, changing path: String) async throws {
@@ -111,11 +114,13 @@ private struct ReleaseHistory {
     }
 
     /// The release whose app the newest commit still ships, or nil when the script says the app changed.
+    /// Any other failure, such as a timeout, is an error, so it can't pass for a changed app.
     func unchangedApp() async throws -> String? {
         do {
-            let output = try await runCommand(repository.appending(path: "scripts/unchanged-app.sh").path, arguments: [])
+            let output = try await runCommand(repository.appending(path: "scripts/unchanged-app.sh").path,
+                                              arguments: [], timeout: historyTimeout)
             return String(decoding: output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        } catch is CommandFailure {
+        } catch let failure as CommandFailure where failure.message == "Command exited with status 1." {
             return nil
         }
     }
