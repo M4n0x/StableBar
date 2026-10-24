@@ -2,6 +2,9 @@ import Foundation
 import Testing
 @testable import StableBar
 
+// The whole suite runs in parallel, and on CI a single git command here has taken over ten seconds.
+private let fixtureTimeout = 60.0
+
 private struct BuildMetadataFixture {
     let directory: URL
     let repository: URL
@@ -50,7 +53,7 @@ private struct BuildMetadataFixture {
             "-c", "commit.gpgSign=false",
             "-c", "tag.gpgSign=false",
             "-c", "core.hooksPath=/dev/null"
-        ] + arguments)
+        ] + arguments, timeout: fixtureTimeout)
         return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -63,7 +66,7 @@ private struct BuildMetadataFixture {
 
     func package(release: Bool = false, signed: Bool = false) async throws -> Bundle {
         _ = try await runCommand(repository.appending(path: "scripts/prepare-app-info.sh").path,
-            arguments: [packagedPlist.path], environment: [
+            arguments: [packagedPlist.path], timeout: fixtureTimeout, environment: [
                 "STABLEBAR_RELEASE_BUILD": release ? "1" : "0",
                 "SIGNING_IDENTITY": signed ? "Developer ID Application: StableBar Tests" : ""
             ])
