@@ -29,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       build: ${{ steps.revision.outputs.build }}
+      app: ${{ steps.changes.outputs.app }}
+      packaging: ${{ steps.changes.outputs.packaging }}
     steps:
       - name: Skip superseded pushes
         id: revision
@@ -42,6 +44,25 @@ jobs:
           else
             echo "build=true" >> "$GITHUB_OUTPUT"
           fi
+      - uses: actions/checkout@v7
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      # A pull request compiles the release and draws the docs images only when it changes what they
+      # build from: the files scripts/unchanged-app.sh compares, or this workflow. Packaging reads
+      # only the scripts and resources. HEAD merges the pull request into its base, HEAD^.
+      - name: Find what the pull request changes
+        id: changes
+        if: github.event_name == 'pull_request'
+        run: |
+          changed=$(git diff --name-only HEAD^ HEAD)
+          if grep -qE '^(Sources/|Resources/|Package\.(swift|resolved)$|scripts/|\.github/workflows/ci\.yml$)' <<< "$changed"; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          fi
+          if grep -qE '^(Resources/|scripts/|\.github/workflows/ci\.yml$)' <<< "$changed"; then
+            echo "packaging=true" >> "$GITHUB_OUTPUT"
+          fi
 
   test:
     name: Test
@@ -53,6 +74,14 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # Parses each script with the shell its first line names, without running it.
+      - name: Check script syntax
+        shell: zsh -e {0}
+        run: |
+          for script in scripts/*.sh examples/**/*.sh; do
+            interpreter=$(sed -n '1s/^#!//p' $script)
+            $interpreter -n $script
+          done
       - name: Identify Swift toolchain
         id: swift
         run: echo "version=$({ swift --version; xcodebuild -version; xcrun --show-sdk-version; } | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
@@ -69,10 +98,12 @@ jobs:
       - name: Test
         run: swift test --skip-build
 
+  # Runs on main, and on pull requests that change the app, so a release-only failure shows up
+  # before it merges and leaves main without a beta.
   build:
     name: Build release
     needs: current
-    if: needs.current.outputs.build == 'true' && github.ref == 'refs/heads/main'
+    if: needs.current.outputs.build == 'true' && (github.ref == 'refs/heads/main' || needs.current.outputs.app == 'true')
     runs-on: macos-26
     timeout-minutes: 20
     steps:
@@ -82,7 +113,8 @@ jobs:
       - name: Identify Swift toolchain
         id: swift
         run: echo "version=$({ swift --version; xcodebuild -version; xcrun --show-sdk-version; } | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v6
+      - uses: actions/cache/restore@v6
+        id: cache
         with:
           path: .build
           key: ${{ runner.os }}-${{ runner.arch }}-release-${{ steps.swift.outputs.version }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-${{ github.sha }}
@@ -90,6 +122,13 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-release-${{ steps.swift.outputs.version }}-${{ hashFiles('Package.swift', 'Package.resolved') }}-
       - name: Compile release
         run: swift build -c release --disable-keychain
+      # Pull requests start from main's cache and save none of their own, so they don't push main's
+      # out of the repository's 10 GB.
+      - uses: actions/cache/save@v6
+        if: github.event_name != 'pull_request' && steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: .build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
       - name: Archive release binary
         run: tar -cf release-build.tar -C .build/release StableBar Sparkle.framework -C "$GITHUB_WORKSPACE/.build/artifacts/sparkle/Sparkle" bin
       - uses: actions/upload-artifact@v7
@@ -98,8 +137,9 @@ jobs:
           path: release-build.tar
           retention-days: 1
 
-  # Draws the images in docs/images from each push to main, so a broken render shows up before a
-  # stable release needs it. The release commits them beside CHANGELOG.md.
+  # Draws the images in docs/images from each push to main, and from pull requests that change the
+  # app, so a broken render shows up before a stable release needs it. The release commits them
+  # beside CHANGELOG.md.
   docs-images:
     name: Docs images
     env:
@@ -127,6 +167,48 @@ jobs:
           name: docs-images
           path: docs/images/*.webp
           retention-days: 1
+
+  # Builds the DMG as the beta does, for pull requests that change the scripts, resources or this
+  # workflow. Pull requests get no Developer ID, so the app is ad-hoc signed; only the beta and
+  # release jobs sign and notarize.
+  package:
+    name: Package
+    env:
+      STABLEBAR_PREBUILT_DIR: release-build
+      VERSION: 0.0.0-pr.${{ github.event.pull_request.number }}
+    needs: [current, build]
+    if: github.event_name == 'pull_request' && needs.current.outputs.packaging == 'true'
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-build
+      - name: Extract release binary
+        run: |
+          mkdir release-build
+          tar -xf release-build.tar -C release-build
+      - name: Build the installer
+        run: |
+          brew install create-dmg
+          ./scripts/set-version.sh "$VERSION" "$GITHUB_RUN_NUMBER"
+          STABLEBAR_RELEASE_BUILD=1 ./scripts/package.sh
+      - name: Check the installer
+        run: |
+          hdiutil verify dist/StableBar.dmg
+          volume=$(mktemp -d)
+          hdiutil attach dist/StableBar.dmg -nobrowse -readonly -mountpoint "$volume"
+          app="$volume/StableBar.app"
+          codesign --verify --deep --strict "$app"
+          stamped="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' -c 'Print :CFBundleVersion' "$app/Contents/Info.plist" | paste -sd ' ' -)"
+          if [[ "$stamped" != "$VERSION $GITHUB_RUN_NUMBER" ]]; then
+            echo "::error::The app is version $stamped, not $VERSION $GITHUB_RUN_NUMBER."
+            exit 1
+          fi
+          "$app/Contents/MacOS/StableBar" --validate Resources/config.json
 
   commits:
     name: Commit messages

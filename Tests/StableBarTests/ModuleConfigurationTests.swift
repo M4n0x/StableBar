@@ -428,13 +428,14 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     #expect(configuration.providers["machine"]?.command == nil)
 }
 
+private func schemaProperties(_ definition: ConfigurationValue?) throws -> Set<String> {
+    Set(try (definition?.decoded([String: ConfigurationValue].self)["properties"] ?? .object([:])).decoded([String: ConfigurationValue].self).keys)
+}
+
 @Test func schemaListsTheSamePropertiesAsTheDecoders() throws {
     let url = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         .appending(path: "stablebar.schema.json")
     let schema = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: url))
-    func properties(_ definition: ConfigurationValue?) throws -> Set<String> {
-        Set(try (definition?.decoded([String: ConfigurationValue].self)["properties"] ?? .object([:])).decoded([String: ConfigurationValue].self).keys)
-    }
     let definitions = try schema["definitions"]!.decoded([String: ConfigurationValue].self)
     let decoders: [String: [CodingKey]] = [
         "style": WidgetStyle.CodingKeys.allCases, "widget": WidgetConfiguration.CodingKeys.allCases, "bar": BarSettings.CodingKeys.allCases,
@@ -449,10 +450,19 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
         "packageSource": PackageSource.CodingKeys.allCases
     ]
     for (name, keys) in decoders {
-        #expect(try properties(definitions[name]) == Set(keys.map(\.stringValue) + (name == "widget" ? ["template"] : [])), "\(name)")
+        #expect(try schemaProperties(definitions[name]) == Set(keys.map(\.stringValue) + (name == "widget" ? ["template"] : [])), "\(name)")
     }
-    #expect(try properties(.object(schema)) == Set(Configuration.CodingKeys.allCases.map(\.stringValue)
+    #expect(try schemaProperties(.object(schema)) == Set(Configuration.CodingKeys.allCases.map(\.stringValue)
         + ["$schema", "tokens", "packages", "packageSources", "theme", "includes", "profiles", "profile", "widgetOrder"]))
+}
+
+@Test func packageSchemaListsTheSamePropertiesAsTheManifestDecoder() throws {
+    let url = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appending(path: "package.schema.json")
+    let schema = try JSONDecoder().decode([String: ConfigurationValue].self, from: Data(contentsOf: url))
+    #expect(try schemaProperties(.object(schema)) == Set(WidgetPackageManifest.CodingKeys.allCases.map(\.stringValue)))
+    let setting = try schema["definitions"]?.decoded([String: ConfigurationValue].self)["setting"]
+    #expect(try schemaProperties(setting) == Set(WidgetPackageSetting.CodingKeys.allCases.map(\.stringValue)))
 }
 
 @Test func menuBarItemsOpenOnHoverUnlessSetToOpenOnClick() throws {
@@ -489,8 +499,49 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
     #expect(interactive.defaults.states?["open"]?.borderWidth == 1)
     #expect(interactive.widgets.first { $0.id == "application" }?.transition == .roll)
     _ = try loader.load(repository.appending(path: "Resources/config.json"))
-    _ = try WidgetPackageStore(directory: repository.appending(path: "examples/packages"))
-        .inspect(repository.appending(path: "examples/packages/local-clock"))
+}
+
+/// Finds the examples itself, so a new one is checked without an entry here.
+@Test func everyExampleLoadsBesideTheExamplePackages() throws {
+    let repository = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let examples = repository.appending(path: "examples")
+    let files = FileManager.default
+    let scratch = files.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? files.removeItem(at: scratch) }
+    let installed = scratch.appending(path: "packages")
+    let packages = WidgetPackageStore(directory: installed)
+    for package in try files.contentsOfDirectory(at: examples.appending(path: "packages"), includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+        #expect(throws: Never.self, "packages/\(package.lastPathComponent)") { try packages.install(package) }
+    }
+    // Loads a configuration as StableBar --validate does, from a folder holding `sources` and the installed packages.
+    func validate(_ name: String, _ sources: [URL], configuration: String = "config.json", contents: String? = nil) {
+        let directory = scratch.appending(path: UUID().uuidString)
+        do {
+            try files.createDirectory(at: directory, withIntermediateDirectories: false)
+            try files.copyItem(at: installed, to: directory.appending(path: "packages"))
+            for source in sources { try files.copyItem(at: source, to: directory.appending(path: source.lastPathComponent)) }
+            if let contents { try Data(contents.utf8).write(to: directory.appending(path: configuration)) }
+            var loader = ConfigurationLoader()
+            loader.themesDirectory = repository.appending(path: "Resources/themes")
+            _ = try loader.load(directory.appending(path: configuration))
+        } catch {
+            Issue.record("\(name): \(errorMessage(error))")
+        }
+    }
+    for example in try files.contentsOfDirectory(at: examples, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles) {
+        let name = example.lastPathComponent
+        if name == "packages" { continue }
+        if name == "modules" {
+            // Saved beside a configuration and included, as the guide shows.
+            for module in try files.contentsOfDirectory(at: example, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+                validate("modules/\(module.lastPathComponent)", [module], contents: #"{"includes":["\#(module.lastPathComponent)"],"widgets":[]}"#)
+            }
+        } else if try example.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true {
+            validate(name, try files.contentsOfDirectory(at: example, includingPropertiesForKeys: nil, options: .skipsHiddenFiles))
+        } else if example.pathExtension == "json" {
+            validate(name, [example], configuration: name)
+        }
+    }
 }
 
 @Test func schemaListsTheRegisteredSourceTypes() throws {
