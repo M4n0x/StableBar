@@ -126,6 +126,8 @@ h1 .wide { display: none; }
 .cta:hover { background: #ff9233; }
 .cta svg { width: 15px; height: 18px; fill: currentColor; }
 .req { font-size: 13.5px; line-height: 1.45; color: var(--text-3); }
+.brew { margin-top: 14px; }
+.req code { font: 400 .92em/1 var(--mono); color: var(--text); white-space: nowrap; }
 
 /* ---------- The desk: the product, at real scale ---------- */
 .desk {
