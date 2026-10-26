@@ -664,12 +664,19 @@ struct Configuration: Decodable, Sendable {
             if let id = expanded["id"], let properties = overrides[try id.decoded(String.self)] {
                 expanded.merge(properties) { $1.overriding($0) }
             }
+            let id = expanded["id"].flatMap { try? $0.decoded(String.self) } ?? "?"
             do {
-                var widget = try JSONDecoder().decode(WidgetConfiguration.self, from: JSONEncoder().encode(expanded))
-                if widget.content == .workspaces { widget.workspace = try workspaceDefaults.merging(expanded["workspace"]) }
+                var widget = try NewerConfiguration.$path.withValue(["widgets", id]) {
+                    try JSONDecoder().decode(WidgetConfiguration.self, from: JSONEncoder().encode(expanded))
+                }
+                if widget.content == .workspaces {
+                    widget.workspace = try NewerConfiguration.$path.withValue(["widgets", id, "workspace"]) {
+                        try workspaceDefaults.merging(expanded["workspace"])
+                    }
+                }
                 return widget
             } catch {
-                throw CommandFailure(message: "widgets.\(expanded["id"].flatMap { try? $0.decoded(String.self) } ?? "?"): \(errorMessage(error))")
+                throw CommandFailure(message: "widgets.\(id): \(errorMessage(error))")
             }
         }
         let screens = try values.decodeIfPresent([String: ScreenConfiguration].self, forKey: .screens) ?? [:]

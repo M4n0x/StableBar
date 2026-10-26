@@ -92,7 +92,7 @@ These optional `package.json` keys describe a package, and the review shows them
 | `author` | Person, organization or handle |
 | `repository` | `https` URL of the package's source |
 | `screenshot` | Path inside the package to a PNG or JPEG |
-| `minimumVersion` | Oldest StableBar version that can run it, such as `0.6.0`. An older StableBar refuses to review or install it. |
+| `minimumVersion` | Oldest StableBar version that can run it, such as `0.6.0`. An older StableBar refuses to review or install it. One that finds it already installed, after a rollback for example, loads the package and skips the properties it doesn't know (see [Files from a newer StableBar](configuration.md#files-from-a-newer-stablebar)). |
 | `requires` | Command-line tools needed on the login shell's PATH, such as `jq` or `gh`. The review names the ones it cannot find. |
 | `permissions` | macOS permissions: `calendars`, `automation`, `accessibility`, `bluetooth` or `location` |
 | `hosts` | Hostnames the package contacts, such as `api.github.com` |

@@ -151,7 +151,8 @@
       ]
     },
     "$schema": {
-      "type": "string"
+      "type": "string",
+      "description": "This schema. Saving from Settings, setup or the command line pins it to the tag of the StableBar version that saved the file, which tells an older version that the file was written for a newer one."
     },
     "workspaceSource": {
       "type": "string",

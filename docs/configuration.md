@@ -6,11 +6,13 @@ StableBar reads one JSON file, by default `~/.config/stablebar/config.json`, and
 
 Save the configuration to apply changes. Direct saves and atomic file replacements are watched, including files imported with `includes`. Invalid edits retain the last working configuration and show an error indicator; click it to open Settings, which shows the error. Script instances, their last output, and graph history survive style-only changes, including when a script has an error.
 
-Unknown properties are errors, so a misspelled key cannot be silently ignored. The last working configuration stays in place and the error names the property, for example `widgets.clock: style.fontsize: Unknown property.` For completion and validation in editors that support JSON Schema, start a configuration file with:
+Unknown properties are errors, so a misspelled key cannot be silently ignored. The last working configuration stays in place and the error names the property, for example `widgets.clock: style.fontsize: Unknown property.` The exception is a file written for a newer StableBar; see [Files from a newer StableBar](#files-from-a-newer-stablebar). For completion and validation in editors that support JSON Schema, start a configuration file with:
 
 ```json
 "$schema": "https://raw.githubusercontent.com/Seb-GRAF/StableBar/main/stablebar.schema.json"
 ```
+
+Saving from Settings, setup or the command line pins it to the version that saved the file.
 
 - `bar`: `height`, `offset`, `margin`, `inset`, `spacing`, `background`, `motion`, `popupTransition` and `morphPopups` (see [Animation](create-a-widget.md#animation)), `inlineHoverControls` (see [Controls on hover](create-a-widget.md#controls-on-hover)), `hoverDelay` (milliseconds, see [Tooltips](widgets.md#tooltips)), `animationDuration` (seconds), `displayScale`, `appearance` (`light` or `dark` keeps the bar and its popups in that appearance; omit it to follow the system).
 - `defaults`: styles inherited by every widget.
@@ -28,6 +30,18 @@ Backgrounds (`background`, `hoverBackground`, a state's `background` and `bar.ba
 ```json
 "defaults": { "background": { "gradient": { "colors": ["@token.accent", "#eb6f92"], "angle": 120, "locations": [0, 0.6] } } }
 ```
+
+## Files from a newer StableBar
+
+A beta, a newer StableBar on another Mac that shares your dotfiles, or a version you rolled back from can write properties that an older StableBar doesn't know. To tell them from typos, a file records the version it was written for in `$schema`. When Settings, setup or a command-line edit changes a configuration file, it points `$schema` at the schema of the version that saved it, such as `https://raw.githubusercontent.com/Seb-GRAF/StableBar/v0.10.0/stablebar.schema.json`, and adds `$schema` to a file without one. Editors then check the file against that version's properties. The pin only moves forward: an older StableBar leaves a newer version's schema in place, and a `$schema` that points elsewhere, such as a local copy, stays as you wrote it. Every StableBar accepts any `$schema`, so the pin never stops an older version from reading the file. To mark a shared include, pin its `$schema` the same way by hand.
+
+When a file the configuration reads is pinned to a newer version than the one running, or uses a package whose [`minimumVersion`](packages.md#store) is newer, StableBar loads the configuration and skips the properties it doesn't know, in every file. The menu-bar icon's menu, the bar's context menu, the banner in Settings and `--validate` list them:
+
+```text
+This configuration was written for StableBar 0.10.0, so 0.9.0 skips bar.motion. Update StableBar to use them.
+```
+
+Skipped properties stay in the file, and edits made in the older version keep them. A profile condition it doesn't know never matches, so that profile applies only when you pin it with `profile`. If the configuration still fails to load, for example on a widget type the older version lacks, the error ends with the version the file was written for. Package manifests stay strict. In files written for the running version or an older one, unknown properties remain errors. Versions released before StableBar read newer files this way stop at the first unknown property in every case.
 
 ## Modules, templates and overrides
 

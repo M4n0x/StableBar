@@ -94,6 +94,13 @@ struct DiagnosticsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
                     Divider()
+                } else if let warning = store.configurationWarning {
+                    Label(warning, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(SettingsPalette.warning)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                    Divider()
                 }
                 if let widget = widgets.first(where: { $0.id == selectedID }) {
                     details(widget)

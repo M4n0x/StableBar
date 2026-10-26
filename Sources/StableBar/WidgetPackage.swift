@@ -234,7 +234,11 @@ struct WidgetPackageStore: Sendable {
 
     func manifest(at source: URL) throws -> WidgetPackageManifest {
         let file = try packageFile("package.json", inside: source)
-        return try JSONDecoder().decode(WidgetPackageManifest.self, from: Data(contentsOf: file))
+        // A manifest is what installing reviewed, such as permissions, so it stays strict even in a configuration
+        // written for a newer release: skipping a property could drop a restriction.
+        return try NewerConfiguration.$current.withValue(nil) {
+            try JSONDecoder().decode(WidgetPackageManifest.self, from: Data(contentsOf: file))
+        }
     }
 
     func validateContents(at source: URL) throws {

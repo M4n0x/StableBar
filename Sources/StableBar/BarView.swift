@@ -147,7 +147,7 @@ struct BarView: View {
                 Text("StableBar")
                 if store.barEditing.isAvailable { Button(store.barEditing.menuTitle, action: store.barEditing.toggle) }
                 Button("Try Themes…") { store.onTryThemes?(display.id) }
-                if let error = store.configurationError ?? store.workspaceStore.error {
+                if let error = store.configurationError ?? store.workspaceStore.error ?? store.configurationWarning {
                     Divider()
                     Text(error)
                 }

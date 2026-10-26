@@ -38,13 +38,15 @@ struct ProfileConditions: Codable, Equatable, Sendable {
     var displayCount: Int?
     var externalDisplay: Bool?
     var app: String?
+    /// A condition from a newer release, which this one can't check, so the profile never matches on its own.
+    var unknownCondition = false
 
     enum CodingKeys: String, CodingKey, CaseIterable { case appearance, onBattery, displayCount, externalDisplay, app }
 
     init() {}
 
     init(from decoder: Decoder) throws {
-        try decoder.rejectUnknownKeys(CodingKeys.self)
+        unknownCondition = try !decoder.rejectUnknownKeys(CodingKeys.self).isEmpty
         let values = try decoder.container(keyedBy: CodingKeys.self)
         appearance = try values.decodeIfPresent(String.self, forKey: .appearance)
         onBattery = try values.decodeIfPresent(Bool.self, forKey: .onBattery)
@@ -54,7 +56,8 @@ struct ProfileConditions: Codable, Equatable, Sendable {
     }
 
     func matches(_ context: ConfigurationContext) -> Bool {
-        (appearance == nil || appearance == context.appearance)
+        !unknownCondition
+            && (appearance == nil || appearance == context.appearance)
             && (onBattery == nil || onBattery == context.onBattery)
             && (displayCount == nil || displayCount == context.displayCount)
             && (externalDisplay == nil || externalDisplay == context.externalDisplay)

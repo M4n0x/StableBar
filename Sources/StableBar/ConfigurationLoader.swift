@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 indirect enum ConfigurationValue: Codable, Sendable, Equatable {
     case object([String: ConfigurationValue])
@@ -61,11 +62,80 @@ struct ConfigurationKey: CodingKey {
 }
 
 extension Decoder {
-    func rejectUnknownKeys<Key: CodingKey & CaseIterable>(_: Key.Type, allowing extra: [String] = []) throws {
+    /// Throws for a property this release doesn't know, unless a file of the configuration was written for a newer
+    /// release, and returns the properties it skipped.
+    @discardableResult
+    func rejectUnknownKeys<Key: CodingKey & CaseIterable>(_: Key.Type, allowing extra: [String] = []) throws -> [String] {
         let container = try container(keyedBy: ConfigurationKey.self)
         let known = Set(Key.allCases.map(\.stringValue) + extra)
-        if let key = container.allKeys.first(where: { !known.contains($0.stringValue) }) {
+        let unknown = container.allKeys.filter { !known.contains($0.stringValue) }
+        for key in unknown where NewerConfiguration.current?.skip(codingPath + [key]) != true {
             throw DecodingError.dataCorruptedError(forKey: key, in: container, debugDescription: "Unknown property.")
+        }
+        return unknown.map(\.stringValue)
+    }
+}
+
+/// StableBar's schema, which saving pins to the tag of the release that saved a file. Every release accepts any
+/// `$schema`, so the stamp never stops an older one from reading the file.
+enum ConfigurationSchema {
+    private static let prefix = "https://raw.githubusercontent.com/Seb-GRAF/StableBar/"
+    private static let file = "/stablebar.schema.json"
+
+    static func url(release: String) -> String { "\(prefix)v\(release)\(file)" }
+
+    /// The release a `$schema` pinned to a tag names; nil for `main`, a branch or a schema of one's own.
+    static func release(_ schema: ConfigurationValue?) -> String? {
+        guard let reference = reference(schema), reference.hasPrefix("v"), reference.dropFirst().first?.isNumber == true else { return nil }
+        return String(reference.dropFirst())
+    }
+
+    /// The `$schema` of a file `release` saves: the schema at its tag, unless the file already names a newer release
+    /// or a schema of its own.
+    static func stamped(_ schema: ConfigurationValue?, savedBy release: String) -> ConfigurationValue {
+        if let schema, reference(schema) == nil { return schema }
+        if let schema, let pinned = self.release(schema), compareReleases(pinned, release) != .orderedAscending { return schema }
+        return .string(url(release: release))
+    }
+
+    private static func reference(_ schema: ConfigurationValue?) -> String? {
+        guard case let .string(url)? = schema, url.hasPrefix(prefix), url.hasSuffix(file), url.count > prefix.count + file.count else { return nil }
+        let reference = url.dropFirst(prefix.count).dropLast(file.count)
+        return reference.contains("/") ? nil : String(reference)
+    }
+}
+
+/// While a configuration loads: the newest release its files were written for, when it's newer than this one, and
+/// the properties skipped because this release doesn't know them. Nested decodes see it too.
+final class NewerConfiguration: Sendable {
+    @TaskLocal static var current: NewerConfiguration?
+    /// Where a nested decode sits in the configuration, so a skipped property keeps its full path.
+    @TaskLocal static var path: [String] = []
+
+    let appVersion: String
+    private let state = OSAllocatedUnfairLock<(version: String?, skipped: Set<String>)>(initialState: (nil, []))
+
+    init(appVersion: String) {
+        self.appVersion = appVersion
+    }
+
+    var version: String? { state.withLock { $0.version } }
+    var skipped: [String] { state.withLock { $0.skipped.sorted() } }
+
+    func written(for release: String) {
+        guard compareReleases(release, appVersion) == .orderedDescending else { return }
+        state.withLock { state in
+            if state.version.map({ compareReleases(release, $0) == .orderedDescending }) ?? true { state.version = release }
+        }
+    }
+
+    /// Skips an unknown property once a file written for a newer release has been read; until then it's an error.
+    func skip(_ codingPath: [CodingKey]) -> Bool {
+        let path = (Self.path + codingPath.map { $0.intValue.map(String.init) ?? $0.stringValue }).joined(separator: ".")
+        return state.withLock { state in
+            guard state.version != nil else { return false }
+            state.skipped.insert(path)
+            return true
         }
     }
 }
@@ -254,6 +324,12 @@ let bundledThemesDirectory = Bundle.main.url(forResource: "themes", withExtensio
 
 struct ConfigurationLoader {
     var themesDirectory = bundledThemesDirectory
+    /// The release that reads the configuration; without one, as in development builds, every file is read strictly.
+    var appVersion = AppVersion.release
+    /// The newest release a file of the configuration was written for, when it's newer than `appVersion`.
+    private(set) var newerVersion: String?
+    /// The properties skipped because a file was written for a newer release and this one doesn't know them.
+    private(set) var skippedProperties: [String] = []
     private(set) var dependencies: Set<URL> = []
     private(set) var document: [String: ConfigurationValue] = [:]
     private(set) var origins: [String: ConfigurationOrigin] = [:]
@@ -275,25 +351,60 @@ struct ConfigurationLoader {
     private var packageIDs: [String: String] = [:]
     private var essentialsPopupNames: [String: String] = [:]
 
+    /// What the bar warns about when it skipped properties of a configuration written for a newer release.
+    var newerVersionWarning: String? {
+        guard let newerVersion, let appVersion, !skippedProperties.isEmpty else { return nil }
+        let listed = skippedProperties.prefix(5).joined(separator: ", ")
+            + (skippedProperties.count > 5 ? " and \(skippedProperties.count - 5) more" : "")
+        return "This configuration was written for StableBar \(newerVersion), so \(appVersion) skips \(listed). Update StableBar to use them."
+    }
+
     mutating func load(_ url: URL, data: Data? = nil,
                        context: ConfigurationContext = ConfigurationContext(),
                        previewTheme: ConfigurationLayer? = nil) throws -> Configuration {
-        var configuration = try ConfigurationValue.object(compose(url, data: data, context: context, previewTheme: previewTheme)).decoded(Configuration.self)
-        screenDocuments = [:]
-        for kind in configuration.screensWithOwnLook {
-            var loader = self
-            let document = try loader.compose(url, data: data, context: context, previewTheme: previewTheme, screen: kind)
-            do { configuration.screenLooks[kind.rawValue] = try ConfigurationValue.object(document).decoded(Configuration.self) }
-            catch { throw CommandFailure(message: "screens.\(kind.rawValue): \(errorMessage(error))") }
-            screenDocuments[kind.rawValue] = document
-            dependencies.formUnion(loader.dependencies)
+        try readingNewerFiles { loader in
+            var configuration = try ConfigurationValue.object(loader.compose(url, data: data, context: context, previewTheme: previewTheme))
+                .decoded(Configuration.self)
+            loader.screenDocuments = [:]
+            for kind in configuration.screensWithOwnLook {
+                var screenLoader = loader
+                let document = try screenLoader.compose(url, data: data, context: context, previewTheme: previewTheme, screen: kind)
+                do { configuration.screenLooks[kind.rawValue] = try ConfigurationValue.object(document).decoded(Configuration.self) }
+                catch { throw CommandFailure(message: "screens.\(kind.rawValue): \(errorMessage(error))") }
+                loader.screenDocuments[kind.rawValue] = document
+                loader.dependencies.formUnion(screenLoader.dependencies)
+            }
+            return configuration
         }
-        return configuration
     }
 
     mutating func compose(_ url: URL, data: Data? = nil,
                           context: ConfigurationContext = ConfigurationContext(),
                           previewTheme: ConfigurationLayer? = nil, screen: ScreenKind? = nil) throws -> [String: ConfigurationValue] {
+        try readingNewerFiles { try $0.composeFiles(url, data: data, context: context, previewTheme: previewTheme, screen: screen) }
+    }
+
+    /// Reads a file written for a newer release, a configuration file pinned to its tag or a package that needs it,
+    /// leniently: from then on, the properties this release doesn't know are skipped instead of rejected.
+    private mutating func readingNewerFiles<T>(_ body: (inout ConfigurationLoader) throws -> T) throws -> T {
+        if NewerConfiguration.current != nil { return try body(&self) }
+        guard let appVersion else {
+            (newerVersion, skippedProperties) = (nil, [])
+            return try body(&self)
+        }
+        let newer = NewerConfiguration(appVersion: appVersion)
+        defer { (newerVersion, skippedProperties) = (newer.version, newer.skipped) }
+        do {
+            return try NewerConfiguration.$current.withValue(newer) { try body(&self) }
+        } catch {
+            guard let version = newer.version else { throw error }
+            throw CommandFailure(message: "\(errorMessage(error)) This configuration was written for StableBar \(version), "
+                                 + "and this is \(appVersion). Update StableBar to load it.")
+        }
+    }
+
+    private mutating func composeFiles(_ url: URL, data: Data?, context: ConfigurationContext,
+                                       previewTheme: ConfigurationLayer?, screen: ScreenKind?) throws -> [String: ConfigurationValue] {
         dependencies = []
         activeProfiles = []
         packageBoundaries = [:]
@@ -558,6 +669,7 @@ struct ConfigurationLoader {
             throw ConfigurationCompositionError.includeCycle(path + [canonical])
         }
         var values = try JSONDecoder().decode([String: ConfigurationValue].self, from: data ?? Data(contentsOf: url))
+        if let release = ConfigurationSchema.release(values["$schema"]) { NewerConfiguration.current?.written(for: release) }
         let includes = try values.removeValue(forKey: "includes")?.decoded([String].self) ?? []
         var merged = ConfigurationLayer(values: ["widgets": .array([])], origins: [:])
         if boundary != nil, values["packages"] != nil { throw WidgetPackageError.nestedPackages }
@@ -580,6 +692,7 @@ struct ConfigurationLoader {
     mutating func readPackage(at directory: URL, manifest: WidgetPackageManifest,
                                       settings: [String: ConfigurationValue]) throws -> ConfigurationLayer {
         dependencies.insert(directory.appending(path: "package.json"))
+        if let minimumVersion = manifest.minimumVersion { NewerConfiguration.current?.written(for: minimumVersion) }
         let entry = try packageFile(manifest.entry, inside: directory)
         var layer = try read(entry, path: [], boundary: directory)
         switch manifest.kind {

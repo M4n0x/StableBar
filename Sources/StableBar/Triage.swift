@@ -187,6 +187,7 @@ enum Triage {
             var loader = ConfigurationLoader()
             let configuration = try loader.load(url)
             return "valid, \(count(configuration.widgets.count, "widget")) in \(count(loader.dependencies.count, "file"))"
+                + (loader.newerVersionWarning.map { "; \($0)" } ?? "")
         } catch {
             return "invalid: \(errorMessage(error))"
         }
