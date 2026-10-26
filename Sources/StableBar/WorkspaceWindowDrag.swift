@@ -90,12 +90,13 @@ class WorkspaceWindowDragSourceView: WidgetHostingView, NSDraggingSource {
         let item = NSPasteboardItem()
         item.setString(payload.token.uuidString, forType: Self.pasteboardType)
         let draggingItem = NSDraggingItem(pasteboardWriter: item)
-        let image = NSImage(size: bounds.size)
-        if let bitmap = bitmapImageRepForCachingDisplay(in: bounds) {
-            cacheDisplay(in: bounds, to: bitmap)
+        let frame = bounds.insetBy(dx: -bounds.height, dy: 0)
+        let image = NSImage(size: frame.size)
+        if let bitmap = bitmapImageRepForCachingDisplay(in: frame) {
+            cacheDisplay(in: frame, to: bitmap)
             image.addRepresentation(bitmap)
         }
-        draggingItem.setDraggingFrame(bounds, contents: image)
+        draggingItem.setDraggingFrame(frame, contents: image)
         beginWindowDrag(with: draggingItem, event: event)
     }
 

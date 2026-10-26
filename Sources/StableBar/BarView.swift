@@ -539,7 +539,11 @@ struct WidgetView: View {
                           padding: padding, configuration: widget.workspace, animation: widget.animation ?? defaultAnimation,
                           defaults: resolution.base,
                           modeAliases: store.configuration?.look(on: screenKind).modeAliases ?? [:], widgetID: widget.id,
-                          allowsWindowDragging: store.barEditing.allowsWidgetActions)
+                          allowsWindowDragging: store.barEditing.allowsWidgetActions) { inside, name, anchor in
+                store.popup.hover(inside, store: store, anchor: anchor) {
+                    store.popup.showTooltip(name, widget: widget, defaults: popupDefaults.inheriting(defaults), store: store, anchor: anchor)
+                }
+            }
         case let .appMenu(expandOnHover) where widget.layout == nil:
             let expands = expandOnHover && moreWidgetsAnchor == nil
             let appearance = WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle())
@@ -667,12 +671,14 @@ struct WorkspaceView: View {
     var modeAliases: [String: String] = [:]
     var widgetID = ""
     var allowsWindowDragging = true
+    var appNameTooltip: (Bool, String, NSView) -> Void = { _, _, _ in }
     @Environment(\.measuringBarWidths) private var measuring
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
     @Namespace private var selection
     @State private var hoveredWorkspace: String?
     @State private var appIcons = WorkspaceAppIcons()
+    @State private var magnifier = WorkspaceMagnifier()
 
     var body: some View {
         let workspaces = workspaceStore.workspaces(on: monitor,
@@ -687,35 +693,37 @@ struct WorkspaceView: View {
                 let hovered = hoveredWorkspace == workspace.name
                 let style = styles.label(hovered: hovered)
                 let glyph = styles.glyph(hovered: hovered)
+                let zoomedBelow = magnification.map { (glyph.height ?? 14) * ($0 - 1) } ?? 0
                 HStack(spacing: style.spacing ?? 4) {
                     Button { workspaceStore.select(workspace) } label: {
                         Text(workspace.label)
                     }
+                    .magnified(.label, by: magnifier, upTo: magnification)
                     .help("Switch to workspace \(workspace.label)")
                     .accessibilityLabel("Workspace \(workspace.label)\(workspace.isFocused ? ", focused" : workspace.isVisible ? ", visible" : "")")
                     .accessibilityAddTraits(workspace.isFocused ? .isSelected : [])
                     if configuration?.showApps != false {
                         if configuration?.windows == true {
                             ForEach(workspace.windows) { window in
-                                windowButton(windows: [window], action: { workspaceStore.focus(window) }) {
+                                windowButton(windows: [window], below: zoomedBelow, action: { workspaceStore.focus(window) }) {
                                     HStack(spacing: style.spacing ?? 4) {
-                                        appIcon(window.app, style: glyph)
+                                        appIcon(window.app, style: glyph, spacing: style.spacing ?? 4)
                                         if let length = configuration?.titleLength, length > 0 {
-                                            Text(String(window.title.prefix(length)))
+                                            Text(String(window.title.prefix(length))).magnified(.label, by: magnifier, upTo: magnification)
                                         }
                                     }
                                     .contentShape(Rectangle())
                                 }
-                                .help(window.title)
+                                .help(magnification == nil ? window.title : "")
                                 .accessibilityLabel("\(window.app.name): \(window.title)")
                             }
                         } else {
                             ForEach(workspace.apps) { app in
-                                windowButton(windows: workspace.windows.filter { $0.app.bundleID == app.bundleID },
+                                windowButton(windows: workspace.windows.filter { $0.app.bundleID == app.bundleID }, below: zoomedBelow,
                                              action: { workspaceStore.select(workspace) }) {
-                                    appIcon(app, style: glyph)
+                                    appIcon(app, style: glyph, spacing: style.spacing ?? 4)
                                 }
-                                .help(app.name)
+                                .help(magnification == nil ? app.name : "")
                             }
                         }
                     }
@@ -739,6 +747,7 @@ struct WorkspaceView: View {
                         RoundedRectangle(cornerRadius: styles.underline.cornerRadius ?? 0)
                             .fill(styles.underline.background?.shapeStyle ?? AnyShapeStyle(appearance.accent))
                             .frame(width: styles.underline.width.map { CGFloat($0) }, height: styles.underline.height ?? 2)
+                            .magnified(.background, by: magnifier, upTo: magnification)
                             .matchedGeometryEffect(id: "workspace-underline", in: selection)
                             .offset(x: styles.underline.offsetX ?? 0, y: (styles.underline.offsetY ?? 0) - padding.bottom)
                     }
@@ -747,10 +756,12 @@ struct WorkspaceView: View {
                     if indicator == .background && workspace.isFocused {
                         RoundedRectangle(cornerRadius: styles.resting.cornerRadius ?? max(appearance.cornerRadius - 4, 0))
                             .fill(styles.resting.background?.shapeStyle ?? AnyShapeStyle(appearance.accent))
+                            .magnified(.background, by: magnifier, upTo: magnification)
                             .matchedGeometryEffect(id: "focused-workspace", in: selection)
                     } else if indicator == .background && workspace.isVisible {
                         RoundedRectangle(cornerRadius: styles.resting.cornerRadius ?? max(appearance.cornerRadius - 4, 0))
                             .strokeBorder(styles.resting.borderColor?.color ?? appearance.accent, lineWidth: styles.resting.borderWidth ?? 1)
+                            .magnified(.background, by: magnifier, upTo: magnification)
                     }
                 }
                 .overlay {
@@ -777,38 +788,59 @@ struct WorkspaceView: View {
                 Image(systemName: "exclamationmark.triangle").padding(padding).help(error)
             }
         }
+        .contentShape(Rectangle())
+        .onContinuousHover(coordinateSpace: .global) { phase in
+            if workspaceStore.windowDrag.active == nil { magnifier.track(phase) }
+        }
+        .onChange(of: workspaceStore.windowDrag.active != nil) { _, dragging in
+            if dragging { magnifier.track(.ended) }
+        }
         .fixedSize(horizontal: true, vertical: false)
         .animation(reduceMotion ? nil : animation.value, value: workspaces)
     }
+
+    private var magnification: CGFloat? { configuration?.magnification.map { CGFloat($0) } }
 
     private var canDragWindows: Bool {
         allowsWindowDragging && !measuring && workspaceStore.source.supportsWindowMoves
     }
 
-    @ViewBuilder private func windowButton(windows: [WorkspaceWindow], action: @escaping () -> Void,
+    @ViewBuilder private func windowButton(windows: [WorkspaceWindow], below: CGFloat, action: @escaping () -> Void,
                                            @ViewBuilder label: @escaping () -> some View) -> some View {
         if canDragWindows && !windows.isEmpty {
             WorkspaceWindowDragSource(store: workspaceStore, windows: windows, action: action) {
-                Button(action: action, label: label).buttonStyle(.plain)
+                Button(action: action) { label().padding(.bottom, below).contentShape(Rectangle()) }.buttonStyle(.plain)
             }
+            .padding(.bottom, -below)
         } else {
-            Button(action: action, label: label)
+            Button(action: action) { label().padding(.bottom, below).contentShape(Rectangle()) }
+                .padding(.bottom, -below)
         }
     }
 
-    @ViewBuilder private func appIcon(_ app: WorkspaceApp, style: WidgetStyle) -> some View {
-        if let glyphs = configuration?.appGlyphs, let text = appGlyph(for: app, in: glyphs) {
-            Text(text)
-                .font(WidgetAppearance(style, defaults: WidgetStyle()).font)
-                .foregroundStyle(style.foreground?.color ?? appearance.foreground)
-        } else if let image = appIcons.image(for: app.bundleID,
-                                             size: NSSize(width: style.width ?? 14, height: style.height ?? 14),
-                                             scale: displayScale) {
-            Image(nsImage: image)
-                .renderingMode(.original)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: style.width ?? 14, height: style.height ?? 14)
+    @ViewBuilder private func appIcon(_ app: WorkspaceApp, style: WidgetStyle, spacing: CGFloat) -> some View {
+        let zoom = magnification ?? 1
+        let icon = Group {
+            if let glyphs = configuration?.appGlyphs, let text = appGlyph(for: app, in: glyphs) {
+                Text(text)
+                    .font(WidgetAppearance(style, defaults: WidgetStyle()).font)
+                    .foregroundStyle(style.foreground?.color ?? appearance.foreground)
+            } else if let image = appIcons.image(for: app.bundleID,
+                                                 size: NSSize(width: (style.width ?? 14) * zoom, height: (style.height ?? 14) * zoom),
+                                                 scale: displayScale) {
+                Image(nsImage: image)
+                    .renderingMode(.original)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: style.width ?? 14, height: style.height ?? 14)
+            }
+        }
+        if let magnification {
+            icon
+                .modifier(WorkspaceMagnification(magnifier: magnifier, part: .icon, maximum: magnification))
+                .modifier(AppNameTooltip(name: app.name, magnifier: magnifier, spacing: spacing, hover: appNameTooltip))
+        } else {
+            icon
         }
     }
 }
