@@ -88,6 +88,11 @@ struct StableBarApp {
                     exit(0)
                 }
                 dispatchMain()
+            case let .uninstall(removesConfiguration, showsMenuBar, confirmed):
+                Task {
+                    exit(await UninstallCommand.run(removesConfiguration: removesConfiguration, showsMenuBar: showsMenuBar, confirmed: confirmed))
+                }
+                dispatchMain()
             case .help:
                 print(LaunchCommand.usage)
             case let .run(url):
@@ -231,6 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        MenuBarAutoHide.forgetIfShown()
         NSApp.mainMenu = EditMenu.make()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "StableBar")

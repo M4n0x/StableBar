@@ -1,7 +1,7 @@
 import Foundation
 
 enum SettingsSearchResult: String, CaseIterable, Identifiable {
-    case login, menuBar, windows, hover, workspaces, access, configuration, commandLine, updates, help
+    case login, menuBar, windows, hover, workspaces, access, configuration, commandLine, updates, help, uninstall
     case barSize, barLook, barPlacement, screenSetups, everyWidget, widgetContent, widgetStyle, widgetBehavior, addWidget
     case theme, colors, glass, popups, animation, roles, workspaceStyle, modeAliases
     case profiles, library, store, packageSources, status
@@ -14,7 +14,7 @@ enum SettingsSearchResult: String, CaseIterable, Identifiable {
     private var details: (String, CustomizationSection, String, String) {
         switch self {
         case .login: ("Open at login", .general, "General", "startup launch")
-        case .menuBar: ("Native menu bar reveal delay", .general, "General › Native menu bar", "macOS hide hover throttle wait seconds milliseconds accessibility always invisible")
+        case .menuBar: ("Native menu bar auto-hide and reveal delay", .general, "General › Native menu bar", "macOS automatically hide show hover throttle wait seconds milliseconds accessibility always invisible")
         case .windows: ("Keep windows clear of the bar", .general, "General", "windows notifications overlap clearance accessibility")
         case .hover: ("Hover delay and controls", .general, "General › Hover", "tooltip wait milliseconds popup inline slider volume")
         case .workspaces: ("Workspace manager", .general, "General", "aerospace yabai omniwm spaces mission control desktops source reconnect connection")
@@ -23,6 +23,7 @@ enum SettingsSearchResult: String, CaseIterable, Identifiable {
         case .commandLine: ("Install the stablebar command", .general, "General › Command line", "terminal shell path cli script usr local bin")
         case .updates: ("Updates", .general, "General", "version release beta stable automatic download about package notification")
         case .help: ("Set up StableBar again", .general, "General", "onboarding setup guide help")
+        case .uninstall: ("Uninstall StableBar", .general, "General › Uninstall", "remove delete trash app menu bar auto-hide restore login keychain homebrew")
         case .barSize: ("Bar height and corners", .widgets, "Bar › Bar › Size", "tall size px pt radius rounded inset spacing")
         case .barLook: ("Bar background and border", .widgets, "Bar › Bar › Look", "color fill gradient edges line")
         case .barPlacement: ("Offset, margin and size on each screen", .widgets, "Bar › Bar › Placement", "position floating scale laptop monitor display")
