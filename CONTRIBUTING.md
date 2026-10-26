@@ -117,6 +117,8 @@ Both jobs sign and notarize the app with a Developer ID when the repository has 
 
 `scripts/publish-appcast.sh` adds each signed release to `appcast.xml` in the `appcast` prerelease, the feed every release checks, with betas on Sparkle's `beta` channel. Each item carries its GitHub release notes, whose bullet points the update tile's popup lists, and a link to the release.
 
+A stable release then sets the version and SHA-256 of the `stablebar` cask in [Seb-GRAF/homebrew-tap](https://github.com/Seb-GRAF/homebrew-tap). It pushes with the `HOMEBREW_TAP_TOKEN` secret: a fine-grained token for that repository only, with read and write access to its contents.
+
 Release jobs set `STABLEBAR_RELEASE_BUILD=1` when packaging to preserve their stamped version and build number. Other app builds get Development metadata from the checkout's Git revision, including changes since its nearest release tag and a `-dirty` suffix for local changes. Without Git metadata, the version is `0.0.0-dev`. This changes only the built app's plist; the tracked release plist stays untouched.
 
 ## Docs images
