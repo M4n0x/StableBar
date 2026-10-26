@@ -1402,6 +1402,10 @@
           "$ref": "#/definitions/boolean",
           "description": "Show only the app name until hovered in appMenu widgets. Off by default."
         },
+        "openOnHover": {
+          "$ref": "#/definitions/boolean",
+          "description": "Open the list of menu bar items when the pointer rests on menuBarItems widgets; false opens it on click. On by default."
+        },
         "text": {
           "$ref": "#/definitions/string"
         },

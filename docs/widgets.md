@@ -7,7 +7,7 @@
 | `appMenu` | Frontmost app's menus; click a title to open its menu | `expandOnHover`: show only the app name until hovered (default `false`) |
 | `appleMenu` | Apple logo; click to open the Apple menu | — |
 | `controlCenter` | Control Center icon; click to open macOS Control Center | — |
-| `menuBarItems` | Grid symbol; click to list the items in the macOS menu bar, with their apps' icons, and open one | — |
+| `menuBarItems` | Grid symbol; rest the pointer on it or click it to list the items in the macOS menu bar, with their apps' icons, and open one | `openOnHover`: list them when the pointer rests on it (default `true`); `false` lists them only on click |
 | `clock` | Local date/time, updated each minute, or each second when the format shows seconds | `format`: DateFormatter format |
 | `text` | Static text and optional icon | `text` |
 | `script` | Output of a shell command | `command`, `interval` in seconds or `null` for event-only updates |
@@ -179,9 +179,11 @@ Your own `tokens.appGlyphs` merges into the module's map, so `{ "tokens": { "app
 
 ## Menu bar items
 
-A `controlCenter` widget opens macOS Control Center. A `menuBarItems` widget shows a grid symbol; click it to see every item in the macOS menu bar as a row of icons, in menu bar order. Each icon is its app's icon, or a system symbol for Battery, Clock, Control Center and Search. Rest the pointer on an icon to see its name. Click the widget again to close the row.
+A `controlCenter` widget opens macOS Control Center. A `menuBarItems` widget shows a grid symbol; rest the pointer on it, for the [hover delay](#tooltips), to see every item in the macOS menu bar as a row of icons, in menu bar order. Each icon is its app's icon, or a system symbol for Battery, Clock, Control Center and Search. Rest the pointer on an icon to see its name. The row stays open while the pointer is over the widget or the row, and closes once it leaves both. Clicking the widget keeps the row open until you click elsewhere or click the widget again.
 
-Clicking an icon whose app has an ordinary menu opens that menu below it, in your theme's popup style. While a menu is open, move the pointer to another icon to switch to its menu. Items that draw their own panel, such as Control Center, Battery or Clock, open their panel as macOS does. To open them, StableBar briefly brings out the hidden menu bar and keeps it invisible until the item closes. Both widgets need Accessibility access. StableBar's own menu bar icon isn't listed.
+To list the items only on click, set `"openOnHover": false` or turn off **Open on hover** in the widget's **Settings → Bar → Behavior** inspector. Then click the widget to open the row and click it again to close it.
+
+Clicking an icon whose app has an ordinary menu opens that menu below it, in your theme's popup style. While a menu is open, move the pointer to another icon to switch to its menu. Items that draw their own panel, such as Control Center, Battery or Clock, open their panel as macOS does. To open them, StableBar briefly brings out the hidden menu bar and keeps it invisible until the item closes. Both widgets need Accessibility access; resting the pointer on Menu bar items doesn't ask for it, a click does. StableBar's own menu bar icon isn't listed.
 
 ## Tooltips
 

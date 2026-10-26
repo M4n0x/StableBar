@@ -198,15 +198,21 @@ final class WidgetPopup {
 
     func toggle(_ popup: PopupConfiguration, widget: WidgetConfiguration, defaults: WidgetStyle,
                 store: BarStore, anchor: NSView) {
-        guard store.barEditing.allowsWidgetActions else { return }
-        if self.anchor === anchor && widgetID == widget.id {
-            if pinned { close() } else { keepOpen() }
-            return
-        }
+        guard store.barEditing.allowsWidgetActions, !toggleIfOpen(widget.id, anchor: anchor) else { return }
         open(popup, widget: widget, defaults: defaults, store: store, anchor: anchor, onHover: false)
     }
 
-    func hover(_ inside: Bool, store: BarStore, anchor: NSView, show: @escaping () -> Void) {
+    /// Handles a click on the widget whose popup is open under `anchor`: one opened on hover stays open, one opened by a
+    /// click closes. False when that popup isn't open.
+    func toggleIfOpen(_ id: String, anchor: NSView) -> Bool {
+        guard self.anchor === anchor && widgetID == id else { return false }
+        if pinned { close() } else { keepOpen() }
+        return true
+    }
+
+    /// Shows what hovering `anchor` opens after the hover delay. A `show` that waits, such as to read its popup's content,
+    /// should check `Task.isCancelled` before opening: leaving the widget or closing the popup cancels it.
+    func hover(_ inside: Bool, store: BarStore, anchor: NSView, show: @escaping @MainActor () async -> Void) {
         guard !pinned else { return }
         if inside {
             hoverTask?.cancel()
@@ -217,7 +223,7 @@ final class WidgetPopup {
             hoverTask = Task {
                 do { try await Task.sleep(for: .milliseconds(delay)) } catch { return }
                 guard store.barEditing.allowsWidgetActions else { return }
-                show()
+                await show()
             }
         } else if hoveredAnchor === anchor {
             hoveredAnchor = nil

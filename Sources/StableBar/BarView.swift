@@ -372,10 +372,9 @@ struct WidgetView: View {
         } else if widget.content == .controlCenter {
             Button { if store.barEditing.allowsWidgetActions { store.appMenu.openControlCenter() } } label: { tile }
                 .buttonStyle(MouseDownButtonStyle())
-        } else if widget.content == .menuBarItems {
+        } else if case .menuBarItems = widget.content {
             Button {
-                guard store.barEditing.allowsWidgetActions else { return }
-                if store.presentations[widget.id]?.popupAnchor == ObjectIdentifier(clickAnchor) { return store.popup.close() }
+                guard store.barEditing.allowsWidgetActions, !store.popup.toggleIfOpen(widget.id, anchor: clickAnchor) else { return }
                 Task {
                     guard let popup = await store.appMenu.menuBarItemsPopup() else { return }
                     store.popup.toggle(popup, widget: widget, defaults: popupDefaults.inheriting(defaults), store: store, anchor: clickAnchor)
@@ -396,6 +395,13 @@ struct WidgetView: View {
             store.popup.hover(false, store: store, anchor: popupAnchor) {}
         } else if let popup = widgetPopup(widget, store: store), popup.openOnHover {
             store.popup.hover(inside, store: store, anchor: popupAnchor) {
+                store.popup.open(popup, widget: widget, defaults: popupDefaults.inheriting(defaults),
+                                 store: store, anchor: popupAnchor, onHover: true)
+            }
+        } else if case .menuBarItems(openOnHover: true) = widget.content, widgetPopup(widget, store: store) == nil,
+                  widget.onClick == nil, widget.open == nil {
+            store.popup.hover(inside, store: store, anchor: popupAnchor) {
+                guard let popup = await store.appMenu.menuBarItemsPopup(requestingAccess: false), !Task.isCancelled else { return }
                 store.popup.open(popup, widget: widget, defaults: popupDefaults.inheriting(defaults),
                                  store: store, anchor: popupAnchor, onHover: true)
             }
