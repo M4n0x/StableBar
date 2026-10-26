@@ -120,7 +120,7 @@ root.classList.add("js");
             <button class="w np" data-key="np" data-pri="3" data-pop="np" aria-expanded="false" aria-label="Now playing: Midnight City · M83"><i class="art"></i><span class="track">Midnight City · M83</span><span class="eq"><i></i><i></i><i></i><i></i></span></button>
             <button class="w" data-key="meeting" data-pri="1" data-pop="agenda" aria-expanded="false"><svg><use href="#i-cal"/></svg>Design review&nbsp;&nbsp;10:30</button>
             <button class="w" data-key="system" data-pri="0" data-pop="system" aria-expanded="false"><svg><use href="#i-cpu"/></svg><span class="vh">CPU </span>18%<span class="vh">,</span>&nbsp;&nbsp;<svg><use href="#i-mem"/></svg><span class="vh">memory </span>54%</button>
-            <button class="w" data-key="sound" data-pri="0" data-pop="controls" aria-expanded="false" aria-label="Sound"><svg><use href="#i-snd"/></svg></button>
+            <div class="w snd" data-key="sound" data-pri="0"><span class="slide"><span><input type="range" min="0" max="100" value="64" aria-label="Volume"><span class="pct num">64%</span></span></span><svg role="img" aria-label="Sound"><use href="#i-snd"/></svg></div>
             <div class="w" data-key="battery" data-pri="1"><svg style="width:19px"><use href="#i-bat"/></svg><span class="vh">Battery </span>82%</div>
             <div class="w num clock" data-key="clock" data-pri="5" data-format="full">Thu 22 Oct&nbsp;&nbsp;09:41</div>
             <a class="w dl" data-key="dl" data-pri="9" href="https://github.com/Seb-GRAF/StableBar/releases/latest"><span><svg><use href="#i-down"/></svg>Download</span></a>
@@ -133,7 +133,7 @@ root.classList.add("js");
             <button data-for="np" data-open="np"><i class="art"></i>Midnight City · M83</button>
             <button data-for="meeting" data-open="agenda"><svg><use href="#i-cal"/></svg>Design review&nbsp;&nbsp;10:30</button>
             <button data-for="system" data-open="system"><svg><use href="#i-cpu"/></svg>CPU 18%&nbsp;&nbsp;Memory 54%</button>
-            <button data-for="sound" data-open="controls"><svg><use href="#i-snd"/></svg>Sound</button>
+            <button data-for="sound"><svg><use href="#i-snd"/></svg>Sound</button>
             <button data-for="battery"><svg><use href="#i-bat"/></svg>Battery 82%</button>
             <button data-for="clock" class="clock" data-format="full">Thu 22 Oct&nbsp;&nbsp;09:41</button>
             <button data-for="app">Finder</button>
@@ -179,15 +179,6 @@ root.classList.add("js");
             <div class="meter"><i style="width:54%"></i></div>
             <div class="sep"></div>
             <div>Activity Monitor</div>
-          </div>
-          <div class="pane" data-id="controls" style="width:290px">
-            <p class="hd">Controls</p>
-            <label class="ctl"><span>Level</span><input type="range" min="0" max="100" value="38" aria-label="Level"></label>
-            <label class="check"><input type="checkbox" checked>Enabled</label>
-            <div class="ctl"><span>Mode</span><div class="seg"><button aria-pressed="false">Quiet</button><button class="on" aria-pressed="true">Balanced</button><button aria-pressed="false">Focus</button></div></div>
-            <div class="sep"></div>
-            <input class="search" placeholder="Find an app" aria-label="Find an app">
-            <div class="apps"><div>Finder</div><div>Calendar</div><div>Activity Monitor</div><div>Terminal</div></div>
           </div>
         </div>
       </div>

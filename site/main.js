@@ -5,23 +5,16 @@ const THEMES = [
   ["brutalist", "Brutalist", "ws-fill"],
   ["catppuccin", "Catppuccin", "ws-fill"],
   ["everforest", "Everforest", "ws-under"],
-  ["graphite", "Graphite", "ws-fill"],
   ["gruvbox", "Gruvbox", "ws-text"],
   ["handheld", "Handheld", "ws-fill"],
-  ["island", "Island", "ws-fill"],
   ["kanagawa", "Kanagawa", "ws-fill"],
   ["leman", "Léman", "ws-fill"],
-  ["menu-bar", "Menu Bar", "ws-fill"],
-  ["minimal", "Minimal", "ws-fill"],
   ["nord", "Nord", "ws-under"],
   ["notch", "Notch", "ws-text"],
-  ["paper", "Paper", "ws-fill"],
   ["phosphor", "Phosphor", "ws-fill"],
   ["platinum", "Platinum", "ws-fill"],
   ["rose-pine", "Rosé Pine", "ws-fill"],
-  ["slate", "Slate", "ws-fill"],
   ["synthwave", "Synthwave", "ws-under"],
-  ["terminal", "Terminal", "ws-fill"],
 ];
 const desk = document.getElementById("desk");
 const dock = document.getElementById("dock");
@@ -190,6 +183,22 @@ finder.addEventListener("mouseenter", () => {
   setTimeout(place, 320);
 });
 finder.addEventListener("mouseleave", () => { finder.classList.remove("expand"); setTimeout(place, 320); });
+
+/* Sound opens its volume slider on hover, when the bar has room for it */
+const sound = bar.querySelector(".snd");
+const volume = sound.querySelector("input");
+function expandSound(open) {
+  sound.classList.toggle("expand", open && needed() + sound.querySelector(".slide > span").scrollWidth + 7 <= bar.clientWidth);
+  setTimeout(place, 320);
+}
+sound.addEventListener("mouseenter", () => expandSound(true));
+sound.addEventListener("mouseleave", () => { if (!sound.querySelector(":focus-visible")) expandSound(false); });
+sound.addEventListener("focusin", () => expandSound(true));
+sound.addEventListener("focusout", () => { if (!sound.matches(":hover")) expandSound(false); });
+volume.addEventListener("input", () => {
+  sound.querySelector(".pct").textContent = `${volume.value}%`;
+  volume.style.setProperty("--v", `${volume.value}%`);
+});
 
 /* Controls */
 for (const seg of document.querySelectorAll(".seg")) for (const b of seg.querySelectorAll("button")) b.addEventListener("click", () => {
