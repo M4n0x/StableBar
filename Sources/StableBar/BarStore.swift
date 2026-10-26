@@ -5,6 +5,8 @@ import Observation
 final class BarStore: NSObject {
     var configuration: Configuration?
     var configurationError: String?
+    /// Properties the bar skips because a file was written for a newer release.
+    var configurationWarning: String?
     var actionErrors: [String: String] = [:]
     var activeApp = NSWorkspace.shared.frontmostApplication
     var activeDisplayID = 1
@@ -18,6 +20,8 @@ final class BarStore: NSObject {
     var update: AppUpdate?
     /// The main configuration: the shared bar of every screen setup without its own.
     let sharedConfigurationURL: URL
+    /// The release this bar runs as, which reads and stamps its files; nil in development builds.
+    let release: String?
     /// The file of the bar on the screens: the shared bar, or the current screen setup's own bar.
     private(set) var configurationURL: URL
     private(set) var screenSetup: ScreenSetup?
@@ -83,15 +87,17 @@ final class BarStore: NSObject {
 
     init(configurationURL: URL = LaunchCommand.configurationURL, registry: DataSourceRegistry = .builtIn,
          popup: WidgetPopup = WidgetPopup(), themesDirectory: URL? = bundledThemesDirectory,
-         customizationSaveDelay: Duration = .milliseconds(500)) {
+         customizationSaveDelay: Duration = .milliseconds(500), release: String? = AppVersion.release) {
         self.configurationURL = configurationURL
         sharedConfigurationURL = configurationURL
+        self.release = release
         self.customizationSaveDelay = customizationSaveDelay
         self.registry = registry
         self.popup = popup
         workspaceStore = WorkspaceStore()
         super.init()
         configurationLoader.themesDirectory = themesDirectory
+        configurationLoader.appVersion = release
         configurationWatcher.onChange = { [weak self] in self?.scheduleReload() }
         workspaceStore.onModeChange = { [weak self] mode in
             self?.updatePresentations()
@@ -269,7 +275,9 @@ final class BarStore: NSObject {
         let data = try configurationData(root)
         var loader = configurationLoader
         let next = try loader.load(configurationURL, data: data, context: context)
-        if persist { try writeConfiguration(configurationData(root, editing: Data(contentsOf: configurationURL)), to: configurationURL) }
+        if persist {
+            try writeConfiguration(configurationData(root, editing: Data(contentsOf: configurationURL), savedBy: release), to: configurationURL)
+        }
         sessionEdits = persist ? [] : allEdits
         configurationLoader = loader
         apply(next)
@@ -327,6 +335,14 @@ final class BarStore: NSObject {
         try FileManager.default.trashItem(at: ownBarURL(for: setup), resultingItemURL: nil)
     }
 
+    /// A loader for another file or a preview, reading as this bar does.
+    private func newLoader() -> ConfigurationLoader {
+        var loader = ConfigurationLoader()
+        loader.themesDirectory = themesDirectory
+        loader.appVersion = release
+        return loader
+    }
+
     func otherBars(applying edits: [ConfigurationEdit]) throws -> [(url: URL, before: Data, after: Data)] {
         var otherBars: [(url: URL, before: Data, after: Data)] = []
         for url in [sharedConfigurationURL] + screenSetupsWithOwnBars.map(ownBarURL(for:)) where url != configurationURL {
@@ -334,10 +350,9 @@ final class BarStore: NSObject {
             var root = try JSONDecoder().decode([String: ConfigurationValue].self, from: original)
             var ids: [String] = []
             for edit in edits { root = try edit.applying(to: root, widgetIDs: &ids) }
-            var other = ConfigurationLoader()
-            other.themesDirectory = themesDirectory
+            var other = newLoader()
             _ = try other.load(url, data: configurationData(root), context: context)
-            let data = try configurationData(root, editing: original)
+            let data = try configurationData(root, editing: original, savedBy: release)
             if data != original { otherBars.append((url, original, data)) }
         }
         return otherBars
@@ -376,7 +391,7 @@ final class BarStore: NSObject {
             }
         }
         let root = try editedDocument(edits, data: original, replaying: [])
-        return try configurationData(root, editing: original)
+        return try configurationData(root, editing: original, savedBy: release)
     }
 
     func setCustomizationEdits(_ edits: [ConfigurationEdit]) throws {
@@ -474,8 +489,7 @@ final class BarStore: NSObject {
         var otherBars: [(url: URL, data: Data)] = []
         let urls = [sharedConfigurationURL] + screenSetupsWithOwnBars.map(ownBarURL(for:))
         for url in urls where url != configurationURL {
-            var other = ConfigurationLoader()
-            other.themesDirectory = themesDirectory
+            var other = newLoader()
             let edits = try removingPackage(manifest, from: other.compose(url, context: context))
             if edits.isEmpty { continue }
             let original = try Data(contentsOf: url)
@@ -483,9 +497,10 @@ final class BarStore: NSObject {
             var ids: [String] = []
             for edit in edits { root = try applying(edit, to: root, widgetIDs: &ids, widgetPackageIDs: other.widgetPackageIDs) }
             _ = try other.load(url, data: configurationData(root), context: context)
-            otherBars.append((url, try configurationData(root, editing: original)))
+            otherBars.append((url, try configurationData(root, editing: original, savedBy: release)))
         }
         var loader = ConfigurationLoader()
+        loader.appVersion = release
         flushCustomization()
         let document = try loader.compose(configurationURL, data: configurationData(
             editedDocument([], replaying: fromCustomization ? [] : sessionEdits)), context: context)
@@ -535,8 +550,7 @@ final class BarStore: NSObject {
     func themeEdit(for choice: ThemeChoice) throws -> ConfigurationEdit {
         var inheritedRoot = try editedMainDocument(replaying: [])
         inheritedRoot["theme"] = nil
-        var loader = ConfigurationLoader()
-        loader.themesDirectory = themesDirectory
+        var loader = newLoader()
         let document = try loader.compose(configurationURL, data: configurationData(inheritedRoot), context: context)
         let inherited = try document["theme"]?.decoded(WidgetPackageSelection.self)
         var edit = choice.edit
@@ -573,8 +587,7 @@ final class BarStore: NSObject {
     }
 
     private func configurationTryingTheme(_ choice: ThemeChoice) throws -> (Configuration, ConfigurationLoader) {
-        var loader = ConfigurationLoader()
-        loader.themesDirectory = themesDirectory
+        var loader = newLoader()
         let settings = try themeSettings(for: choice, in: configurationLoader.document)
         let layer = try loader.readPackage(at: choice.directory, manifest: choice.manifest, settings: settings)
         let next = try loader.load(configurationURL, data: configurationData(editedMainDocument()),
@@ -589,6 +602,7 @@ final class BarStore: NSObject {
         widgetPackageIDs = loader.widgetPackageIDs
         builtInWidgetIDs = loader.builtInWidgetIDs
         contributions = loader.contributions
+        configurationWarning = loader.newerVersionWarning
         if effectiveDocument == loader.document {
             origins = loader.origins
             activeProfiles = loader.activeProfiles
@@ -957,7 +971,8 @@ final class BarStore: NSObject {
                         "origins": .object(origins.mapValues { .string($0.description) }),
                         "profiles": .array(activeProfiles.map(ConfigurationValue.string)),
                         "sessionEdits": .number(Double(sessionEdits.count)),
-                        "error": configurationError.map(ConfigurationValue.string) ?? .null])
+                        "error": configurationError.map(ConfigurationValue.string) ?? .null,
+                        "warning": configurationWarning.map(ConfigurationValue.string) ?? .null])
     }
 
     private func presentationLayers(for widget: WidgetConfiguration) -> [ConfigurationValue] {

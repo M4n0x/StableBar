@@ -296,8 +296,13 @@ func configurationData(_ document: [String: ConfigurationValue]) throws -> Data 
     return try encoder.encode(document)
 }
 
-func configurationData(_ document: [String: ConfigurationValue], editing original: Data) throws -> Data {
+/// The bytes of an edited configuration file. A change pins `$schema` to the release that saves it, so an older release
+/// that reads the file knows it was written for a newer one.
+func configurationData(_ document: [String: ConfigurationValue], editing original: Data,
+                       savedBy release: String? = AppVersion.release) throws -> Data {
     let old = try JSONDecoder().decode(ConfigurationValue.self, from: original)
+    var document = document
+    if let release, .object(document) != old { document["$schema"] = ConfigurationSchema.stamped(document["$schema"], savedBy: release) }
     let text = try ConfigurationText(Array(original))
     let rendered = try text.render(.object(document), old, text.root)
     return Data((text.slice(0..<text.root.start) + rendered + text.slice(text.root.end..<text.bytes.count)).utf8)
@@ -384,7 +389,9 @@ private struct ConfigurationText {
                 }
             }
             for key in newObject.keys.sorted() where oldObject[key] == nil {
-                parts.append(try fresh(.string(key), indent: nil) + colon + fresh(newObject[key]!, indent: childIndent(open)))
+                let part = try fresh(.string(key), indent: nil) + colon + fresh(newObject[key]!, indent: childIndent(open))
+                // `$schema` leads a file, where editors and people look for it.
+                if key == "$schema" { parts.insert(part, at: 0) } else { parts.append(part) }
             }
             return wrap(parts, "{", "}", open: open, close: slice(node.members.last!.value.end..<node.end - 1))
         case let (.array(newArray), .array(oldArray)) where !node.elements.isEmpty:

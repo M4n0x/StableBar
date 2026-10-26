@@ -31,7 +31,7 @@ A batch validates the whole resulting configuration before replacing the running
 
 Without `id`, `unset` can also address widget definitions by their ID and profiles by their name in the main file. For example, `{"action":"unset","properties":{"widgets":{"clock":{"style":{"foreground":null}}},"profiles":{"night":{"configuration":{"bar":{"height":null}}}}}}` removes the clock’s text color and the night profile’s bar height in one edit. Empty objects are removed, except an emptied profile `configuration` stays as `{}`.
 
-- `--validate [PATH]`: compose and validate files without starting scripts.
+- `--validate [PATH]`: compose and validate files without starting scripts. For a configuration [written for a newer StableBar](configuration.md#files-from-a-newer-stablebar), it also prints a warning that lists the properties this version skips.
 - `--refresh ID`: refresh a running widget. Hidden, suspended providers must first be made visible or explicitly resumed with **Settings → Status → Resume for testing**.
 - `--popup ID`: open the popup or menu of a widget, or close it when it's open. It opens on the active display, as `"display": "active"` defines it; a widget in **More widgets** opens its popup under the More widgets button on its side. Key bindings can call it, for example in `aerospace.toml`: `alt-c = 'exec-and-forget /Applications/StableBar.app/Contents/MacOS/StableBar --popup agenda'`.
 - `--trigger EVENT [KEY=VALUE ...]`: send an event. Without `--config`, this broadcasts to all subscribed bars for compatibility; with `--config`, it targets that configuration.

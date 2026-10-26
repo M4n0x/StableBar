@@ -60,6 +60,11 @@ enum CustomizationSection: String, CaseIterable, Identifiable {
         return customization == configuration ? nil : customization
     }
 
+    /// The configuration's warning, on the sections that show its error.
+    func bannerWarning(_ warning: String?) -> String? {
+        [.appearance, .widgets, .profiles, .general].contains(self) ? warning : nil
+    }
+
     var symbol: String {
         switch self {
         case .general: "gearshape"
@@ -165,6 +170,16 @@ struct SettingsView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                     .background(.red.opacity(0.1))
+            } else if let warning = (editor.section ?? .general).bannerWarning(store.configurationWarning) {
+                Divider()
+                Label(warning, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(SettingsPalette.warning)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(SettingsPalette.warning.opacity(0.1))
             }
             if let notice = editor.history.notice {
                 Divider()

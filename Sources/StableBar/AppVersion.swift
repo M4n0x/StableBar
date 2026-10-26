@@ -34,4 +34,37 @@ struct AppVersion {
         let prerelease = release[release.index(after: separator)...]
         return prerelease == "beta" || prerelease.hasPrefix("beta.") ? .beta : .prerelease
     }
+
+    /// The release that stamps the configuration files it saves and reads newer ones leniently. Development
+    /// builds and tests have none: their version names the last stable release, not what they can read.
+    static let release: String? = {
+        let app = AppVersion()
+        return Bundle.main.bundleIdentifier == "org.stablebar.app" && app.channel != .development ? app.version : nil
+    }()
+}
+
+/// Orders release versions as Semantic Versioning does: a beta comes before its release, and build metadata is ignored.
+func compareReleases(_ first: String, _ second: String) -> ComparisonResult {
+    func parts(_ version: String) -> (core: [Int], prerelease: [Substring]?) {
+        let release = version.prefix { $0 != "+" }
+        let separator = release.firstIndex(of: "-")
+        let core = release[..<(separator ?? release.endIndex)].split(separator: ".").map { Int($0) ?? 0 }
+        return (core, separator.map { release[release.index(after: $0)...].split(separator: ".") })
+    }
+    let (first, second) = (parts(first), parts(second))
+    for index in 0..<max(first.core.count, second.core.count) {
+        let (a, b) = (index < first.core.count ? first.core[index] : 0, index < second.core.count ? second.core[index] : 0)
+        if a != b { return a < b ? .orderedAscending : .orderedDescending }
+    }
+    switch (first.prerelease, second.prerelease) {
+    case (nil, nil): return .orderedSame
+    case (nil, _): return .orderedDescending
+    case (_, nil): return .orderedAscending
+    case let (a?, b?):
+        for (x, y) in zip(a, b) where x != y {
+            if let x = Int(x), let y = Int(y) { return x < y ? .orderedAscending : .orderedDescending }
+            return x.compare(y, options: .numeric)
+        }
+        return a.count == b.count ? .orderedSame : a.count < b.count ? .orderedAscending : .orderedDescending
+    }
 }

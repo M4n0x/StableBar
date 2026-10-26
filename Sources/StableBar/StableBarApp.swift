@@ -16,6 +16,7 @@ struct StableBarApp {
                 var loader = ConfigurationLoader()
                 let configuration = try loader.load(url)
                 print("Valid configuration: \(configuration.widgets.count) widgets in \(loader.dependencies.count) files.")
+                if let warning = loader.newerVersionWarning { FileHandle.standardError.write(Data("Warning: \(warning)\n".utf8)) }
             case let .control(url, request):
                 let result = try RuntimeControl.send(request, url: url)
                 let encoder = JSONEncoder()
@@ -404,7 +405,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let update = store.update {
             menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdate.checkForUpdates), keyEquivalent: "").target = update
         }
-        if let error = store.configurationError ?? store.workspaceStore.error {
+        if let error = store.configurationError ?? store.workspaceStore.error ?? store.configurationWarning {
             menu.addItem(.separator())
             menu.addItem(withTitle: error, action: nil, keyEquivalent: "")
         }
