@@ -41,7 +41,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Finder shows the StableBar version under Get Info for StableBar.app. If you built it yourself, give the commit instead.
+      description: Paste the report from Settings → Status → Report a problem → Copy bug report, or from `stablebar --report`, in place of these lines. If StableBar doesn't open, Finder shows its version under Get Info for StableBar.app. If you built it yourself, give the commit.
       value: |
         StableBar:
         macOS:
@@ -54,7 +54,7 @@ body:
     id: evidence
     attributes:
       label: Evidence
-      description: The relevant part of your configuration, script output, error text or logs. Drag screenshots or recordings in here.
+      description: The relevant part of your configuration, script output, error text or logs. If StableBar quit unexpectedly, paste the report from Settings → Status → Crashes → Copy report. Drag screenshots or recordings in here.
 
   - type: textarea
     id: related

@@ -39,6 +39,11 @@ final class CustomizationWindow: NSObject, NSWindowDelegate {
         window!.makeKeyAndOrderFront(nil)
     }
 
+    func showCrashes(store: BarStore) {
+        show(store: store)
+        editor?.showCrashes()
+    }
+
     func windowWillClose(_ notification: Notification) {
         editor?.endProfileEditing()
         editor?.finishEditing()

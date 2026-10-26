@@ -32,7 +32,8 @@ final class ConfigurationEditor {
     var barScreen = ScreenKind.laptop
     var themeChangesEveryBar = true
     var selectedPackageID: String?
-    var diagnosticWidgetID: String?
+    /// What Status shows; nil is the overview of every widget.
+    var diagnosticSelection: DiagnosticsSelection? = .overview
     var selectedProfileName: String?
     var search = ""
     var searchTarget: String?
@@ -92,7 +93,14 @@ final class ConfigurationEditor {
     func troubleshoot(_ id: String) {
         finishEditing()
         searchTarget = nil
-        diagnosticWidgetID = id
+        diagnosticSelection = .widget(id)
+        section = .diagnostics
+    }
+
+    func showCrashes() {
+        finishEditing()
+        searchTarget = nil
+        diagnosticSelection = .crashes
         section = .diagnostics
     }
 

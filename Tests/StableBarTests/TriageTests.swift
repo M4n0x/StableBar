@@ -119,6 +119,9 @@ import Testing
 
 @Test func triageContextNamesTheFactsTheAgentStartsFrom() {
     let context = Triage.context(.example)
+    var quiet = TriageFacts.example
+    quiet.crashes = []
+    #expect(Triage.context(quiet).contains("- StableBar crashes in the last 30 days: none\n"))
     for line in [
         "- StableBar: 0.6.0 (Stable, build 320)",
         "- Update track: Beta",
@@ -135,6 +138,8 @@ import Testing
         "- Packages: /Users/someone/.config/stablebar/packages",
         "- StableBar command: /Applications/StableBar.app/Contents/MacOS/StableBar",
         "- Source cache (clone the repository here): /Users/someone/Library/Caches/StableBar/triage/source",
+        "- StableBar crashes in the last 30 days:",
+        "  - 2026-10-26 14:03:12 +02:00: EXC_BAD_ACCESS (SIGSEGV) in WidgetPopup.toggle(_:widget:defaults:store:anchor:), StableBar 0.9.0 (421), StableBar-2026-10-26-140312.ips",
         #"- Package secrets: Keychain items with service "StableBar" (NEVER read these)"#
     ] {
         #expect(context.contains(line + "\n"), "\(line)")
@@ -183,5 +188,6 @@ extension TriageFacts {
         configuration: URL(filePath: "/Users/someone/.config/stablebar/config.json"),
         validation: "valid, 3 widgets in 2 files",
         barRunning: true,
-        sourceCache: URL(filePath: "/Users/someone/Library/Caches/StableBar/triage/source"))
+        sourceCache: URL(filePath: "/Users/someone/Library/Caches/StableBar/triage/source"),
+        crashes: ["2026-10-26 14:03:12 +02:00: EXC_BAD_ACCESS (SIGSEGV) in WidgetPopup.toggle(_:widget:defaults:store:anchor:), StableBar 0.9.0 (421), StableBar-2026-10-26-140312.ips"])
 }

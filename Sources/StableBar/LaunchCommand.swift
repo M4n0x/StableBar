@@ -12,6 +12,7 @@ enum LaunchCommand {
     case renderDocsImages(URL)
     case triage(URL, agent: TriageAgent?, model: String?)
     case triageContext(URL)
+    case report(URL)
     case uninstall(removesConfiguration: Bool, showsMenuBar: Bool, confirmed: Bool)
     case help
 
@@ -34,6 +35,7 @@ enum LaunchCommand {
            StableBar [--config PATH] --enable-package ID VERSION [--persist]
            StableBar [--config PATH] --uninstall-package ID VERSION
            StableBar [--config PATH] triage [--agent claude|codex] [--model MODEL]
+           StableBar [--config PATH] --report
            StableBar --uninstall [--remove-config] [--show-menu-bar] [--yes]
            StableBar --help
     """
@@ -119,6 +121,8 @@ enum LaunchCommand {
             self = try Self.triage(url, Array(arguments.dropFirst()))
         case "--triage-context" where arguments.count == 1:
             self = .triageContext(url)
+        case "--report" where arguments.count == 1 && !persist:
+            self = .report(url)
         case "--uninstall" where targeted:
             throw CommandFailure(message: "--uninstall removes StableBar for every configuration, so it doesn't take --config.")
         case "--uninstall":
