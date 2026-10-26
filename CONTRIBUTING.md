@@ -79,14 +79,16 @@ There is no web view, custom drawing loop or private window-server API. Styling 
 1. **Start from an issue** for every `fix`, `feat` or `perf` change, using the issue forms, and link it from the pull request. The [triage skill](#agent-skills) checks whether a report is already tracked, fixed or supported. Other changes, such as CI, tests or docs, can go straight to a pull request.
 2. **Branch from `main` and open a pull request.** Nobody pushes to `main` directly. Fill in the template: the problem, the changes, how you tested them and how to merge. Upload screenshots of visible changes to the pull request instead of committing them.
 3. **Keep one problem per pull request.** Unrelated fixes and cleanups get their own.
-4. **Wait for CI.** `Test` and `Commit messages` must pass.
+4. **Wait for CI.** `Test` and `Commit messages` must pass. Depending on what a pull request changes, `Build release`, `Docs images` and `Package` run too ([Commits and releases](#commits-and-releases) lists when). Fix them before merging: the same failure on `main` stops the next beta.
 5. **Merge** with a merge commit or a rebase merge, so semantic-release sees each commit. Squash only when the title alone should reach the changelog.
 
 Reviews are requested automatically from the people listed in [CODEOWNERS](.github/CODEOWNERS), but they are not required. Ask for one when a change is risky or outside your usual area.
 
 ## Commits and releases
 
-Pull requests run `swift test` on macOS and check that every commit message, and the pull request title, follows [Conventional Commits](https://www.conventionalcommits.org). Squash merges use the title as the commit message.
+Pull requests run `swift test` on macOS and check that every commit message, and the pull request title, follows [Conventional Commits](https://www.conventionalcommits.org). Squash merges use the title as the commit message. The tests load every configuration, module and package in `examples`, and the **Test** job parses each script in `scripts` and `examples` with the shell its first line names.
+
+A pull request that changes `Sources`, `Resources`, `Package.swift`, `Package.resolved`, `scripts` or the CI workflow also compiles the release and draws the [docs images](#docs-images), as `main` does. If it changes `Resources`, `scripts` or the workflow, the **Package** job builds the DMG as a beta would, ad-hoc signed because pull requests get no Developer ID, and checks its signature, version and starter configuration.
 
 [semantic-release](https://github.com/semantic-release/semantic-release) reads the commits since the last stable release and decides the next version:
 
@@ -97,7 +99,7 @@ Pull requests run `swift test` on macOS and check that every commit message, and
 | `feat!:`, or a `BREAKING CHANGE:` footer | Major: 0.1.0 → 1.0.0 |
 | `build:`, `chore:`, `ci:`, `docs:`, `refactor:`, `style:`, `test:` | None |
 
-Queued pushes skip builds when `main` has already moved on. Tests and release compilation run in parallel, with separate Swift build caches for debug and release. Packaging uses the compiled binary from the same workflow run only after both jobs pass; signing, notarization and publication still happen in the release job.
+Queued pushes skip builds when `main` has already moved on. Tests and release compilation run in parallel, with separate Swift build caches for debug and release. Pull requests restore `main`'s release cache but don't save their own. Packaging uses the compiled binary from the same workflow run only after both jobs pass; signing, notarization and publication still happen in the release job.
 
 Both release channels come from `main`:
 
@@ -123,7 +125,7 @@ Release jobs set `STABLEBAR_RELEASE_BUILD=1` when packaging to preserve their st
 
 ## Docs images
 
-`scripts/render-docs-images.sh` draws the images in `docs/images` from the app's own bar, popup and Settings views, with sample data and a fixed time, and writes them as WebP. It needs `cwebp`: `brew install webp`. The **Docs images** CI job draws them on every push to `main`, and a stable release commits them, so a change to the bar, popups or Settings doesn't need new images. To show something new, add a scene to [DocsImages.swift](Sources/StableBar/DocsImages.swift).
+`scripts/render-docs-images.sh` draws the images in `docs/images` from the app's own bar, popup and Settings views, with sample data and a fixed time, and writes them as WebP. It needs `cwebp`: `brew install webp`. The **Docs images** CI job draws them on every push to `main` and on pull requests that change the app, and a stable release commits them, so a change to the bar, popups or Settings doesn't need new images. To show something new, add a scene to [DocsImages.swift](Sources/StableBar/DocsImages.swift).
 
 ## Agent skills
 
