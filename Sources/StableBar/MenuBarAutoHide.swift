@@ -28,6 +28,19 @@ enum MenuBarAutoHide {
         hidden && (!wasOn || wasStableBars)
     }
 
+    /// Turns auto-hide on or off from Settings and keeps the record, as setup does.
+    @MainActor
+    static func change(to hidden: Bool) async throws {
+        try await change(to: hidden, in: .standard) { try await set($0) }
+    }
+
+    @MainActor
+    static func change(to hidden: Bool, in defaults: UserDefaults, set: (Bool) async throws -> Void) async throws {
+        let wasOn = isOn(in: defaults), wasStableBars = turnedOnByStableBar(in: defaults)
+        try await set(hidden)
+        setTurnedOnByStableBar(turnedOnByStableBar(after: hidden, wasOn: wasOn, wasStableBars: wasStableBars), in: defaults)
+    }
+
     /// Changes the setting through System Events, which macOS asks the user to allow once.
     static func set(_ hidden: Bool) async throws {
         _ = try await runCommand("/usr/bin/osascript", arguments: [
