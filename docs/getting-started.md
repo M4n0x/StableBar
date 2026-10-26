@@ -10,7 +10,7 @@ The first step offers presets: **Minimal** keeps the app menus and the time on B
 
 Setup shows your current theme, appearance, placement and clock. **Keep current** leaves a setting untouched. Choose from the [themes](themes.md) that ship with StableBar or those you have installed; **Light**, **Dark** and **Automatic** control the bar's appearance. The bar shows the effect of active profiles, and the last step names any profile that still controls a setting, with a button to edit it. Setup saves your defaults and preserves custom widgets, scripts and imported files.
 
-A new configuration places the bar on the top edge when the macOS menu bar hides automatically, and below the menu bar otherwise; existing configurations retain their position. Choosing **Top edge** in setup, or the Notch preset, turns on **Automatically hide and show the menu bar**, so the menu bar no longer covers the bar; **Below menu bar** turns it off. Setup makes this change through System Events, so the first time macOS asks to let StableBar control System Events. Skipping or closing setup puts the menu bar setting back. Neither placement reserves space for windows. Setup's fourth step asks for Accessibility access, offers **Keep windows clear of StableBar** and **Keep notifications clear of StableBar**, and gives separate guidance when it detects AeroSpace, yabai or OmniWM. See [Keeping windows clear of the bar](#keeping-windows-clear-of-the-bar).
+A new configuration places the bar on the top edge when the macOS menu bar hides automatically, and below the menu bar otherwise; existing configurations retain their position. Choosing **Top edge** in setup, or the Notch preset, turns on **Automatically hide and show the menu bar**, so the menu bar no longer covers the bar; **Below menu bar** turns it off. Setup makes this change through System Events, so the first time macOS asks to let StableBar control System Events. Skipping or closing setup puts the menu bar setting back. Quitting StableBar leaves the setting as it is, but StableBar remembers when it turned auto-hide on, so [Uninstall](#uninstall) turns it off again. Neither placement reserves space for windows. Setup's fourth step asks for Accessibility access, offers **Keep windows clear of StableBar** and **Keep notifications clear of StableBar**, and gives separate guidance when it detects AeroSpace, yabai or OmniWM. See [Keeping windows clear of the bar](#keeping-windows-clear-of-the-bar).
 
 **System** shows CPU and memory use with details in its popup; **Meetings** shows your next meeting and today's agenda; **Workspaces** is added only when AeroSpace, yabai or OmniWM is installed: AeroSpace and yabai on your login shell's `PATH`, OmniWM as its app or `omniwmctl` on the `PATH`. Workspaces prefers your configured source and otherwise uses the first one installed, in that order; yabai still needs [its signals](widgets.md#yabai-workspaces), and OmniWM needs [**Enable IPC**](widgets.md#omniwm-workspaces). These widgets use native providers and run no scripts. A preset adds widgets but never removes any. A matching widget already on your bar stays as it is; a turned-off one is turned on with its settings kept. A different widget with the same ID is kept. Active profile overrides still apply.
 
@@ -30,7 +30,7 @@ The first launch creates `~/.config/stablebar/config.json` from [Resources/confi
 
 Keep personal settings in `~/.config/stablebar/config.json` and personal scripts in `~/.config/stablebar/widgets/`, outside the repository. Point commands directly at those scripts. `Resources/config.json` is the shared starter configuration; rebuilding the app does not overwrite your personal file. Local scripts should load any supporting files from their own directory.
 
-StableBar sits at the top edge of each display. `bar.offset` moves it down from that edge. It hides on native fullscreen Spaces. AeroSpace gaps and macOS menu-bar settings are managed separately; this app does not change them. Keep the center clear on a notched display. The default configuration uses only the left and right groups.
+StableBar sits at the top edge of each display. `bar.offset` moves it down from that edge. It hides on native fullscreen Spaces. AeroSpace gaps are managed separately. Of the macOS menu-bar settings, only setup changes one, auto-hide, as [Install and set up](#install-and-set-up) describes. Keep the center clear on a notched display. The default configuration uses only the left and right groups.
 
 ## Updates
 
@@ -69,3 +69,29 @@ Native fullscreen windows, minimized windows and dialogs are left alone. Some ap
 Leave this option off when another window manager controls your gaps. With AeroSpace, set `gaps.outer.top` in `~/.aerospace.toml` to the bar's panel height (40 by default), plus any `bar.offset` beyond the menu bar; AeroSpace accepts per-monitor values. yabai users can set `external_bar` with the same clearance. OmniWM measures `gaps.outer.top` in its `settings.toml` from the display's top edge and subtracts the menu bar itself, so set it to the panel height plus `bar.offset`. A below-bar underline adds its maximum configured gap plus thickness beyond the existing bottom margin. For example, a 38 pt bar with no margin, a 2 pt underline and a 3 pt gap needs 43 pt. With display scale `s`, round upward to whole screen points: `max(ceil(height × s), ceil(height × s − margin + maximum gap × s) + ceil(maximum thickness × s))`. StableBar reserves this maximum across states, so focus or mode changes never move windows or resize panels.
 
 On macOS 26, enable **Settings → General → Windows and notifications → Keep notifications clear of the bar** (`bar.keepNotificationsClear`, off by default) to move notification banners 16 points below the bar on the display that shows them. It uses the same Accessibility access and can stay on with AeroSpace, yabai or OmniWM. The Notification Center panel and desktop widgets stay where macOS puts them. This depends on Notification Center's Accessibility structure and does not support macOS 14 or 15.
+
+## Uninstall
+
+**Settings → General → Uninstall → Uninstall…** removes StableBar and undoes what it changed on your Mac; search Settings for "uninstall" to find it. Its confirmation lists each step, then StableBar:
+
+- quits any other StableBar that's running. If one doesn't quit, Uninstall stops before changing anything;
+- turns off the macOS menu bar's auto-hide when setup turned it on. Auto-hide that StableBar didn't turn on, for example because you hid the menu bar before installing it, stays on unless you check **Turn off the macOS menu bar's auto-hide**. Setups finished before Uninstall existed didn't record this, so check it if setup hid your menu bar. Auto-hide that setup turned off stays off;
+- turns off **Open at login**;
+- removes the `stablebar` command that [**Command line**](command-line.md#install-the-command) installed, asking for an administrator password when its folder needs one. A `stablebar` command that StableBar didn't write stays;
+- deletes package and source tokens from the Keychain;
+- resets its Accessibility, Calendars and Automation permissions;
+- deletes its caches and preferences;
+- moves StableBar to the Trash and quits.
+
+**Also move ~/.config/stablebar to the Trash** is off by default, because that folder holds your configuration, scripts and packages. A configuration elsewhere, opened with `--config`, stays. If a step fails, for example because you cancel the password prompt, the other steps still run, and StableBar lists what's left to do by hand before you quit it.
+
+When Homebrew installed StableBar, the app stays in Applications: run **Uninstall** first, then `brew uninstall --cask stablebar`. `brew uninstall --zap --cask stablebar` does both: it runs `stablebar --uninstall --yes`, then also deletes `~/.config/stablebar`.
+
+`stablebar --uninstall` does the same from Terminal; see [Command-line controls](command-line.md).
+
+If StableBar is already gone, undo its changes by hand:
+
+1. Turn off **Automatically hide and show the menu bar** in **System Settings → Menu Bar**, or **Control Center** before macOS 26.
+2. Remove StableBar from **System Settings → General → Login Items** and from **Accessibility**, **Calendars** and **Automation** in **System Settings → Privacy & Security**.
+3. Run `sudo rm /usr/local/bin/stablebar` if StableBar installed that command, and `security delete-generic-password -s StableBar` until it finds no item.
+4. Delete `~/.config/stablebar`, `~/Library/Caches/org.stablebar.app`, `~/Library/Caches/org.stablebar.app.sparkle`, `~/Library/Caches/StableBar`, `~/Library/HTTPStorages/org.stablebar.app` and `~/Library/Preferences/org.stablebar.app.plist`.

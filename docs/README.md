@@ -4,7 +4,7 @@ StableBar reads one JSON configuration, by default `~/.config/stablebar/config.j
 
 | Page | What it covers |
 | --- | --- |
-| [Getting started](getting-started.md) | Installing, setup, the first launch, updates and keeping windows clear of the bar |
+| [Getting started](getting-started.md) | Installing, setup, the first launch, updates, keeping windows clear of the bar and uninstalling |
 | [Configuration](configuration.md) | The configuration file, includes, templates, overrides, tokens and profiles |
 | [Styles and states](styling.md) | Widget styles, hover and open states, presentation roles and data states |
 | [Themes](themes.md) | The included themes, making and sharing your own, and Liquid Glass |

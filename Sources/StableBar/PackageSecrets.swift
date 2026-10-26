@@ -30,3 +30,20 @@ func savePackageSecret(_ value: String, account: String) throws {
     }
     guard status == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
 }
+
+/// Whether the Keychain holds any package or source token, read without asking for access to them.
+func packageSecretsExist() -> Bool {
+    let query = [kSecClass: kSecClassGenericPassword, kSecAttrService: "StableBar", kSecReturnAttributes: true] as CFDictionary
+    return SecItemCopyMatching(query, nil) == errSecSuccess
+}
+
+/// Deletes every package and source token, for Uninstall.
+func deletePackageSecrets() throws {
+    let query = [kSecClass: kSecClassGenericPassword, kSecAttrService: "StableBar"] as CFDictionary
+    // macOS can delete one matching item per call, so repeat until none is left.
+    for _ in 0..<1000 {
+        let status = SecItemDelete(query)
+        if status == errSecItemNotFound { return }
+        guard status == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+    }
+}

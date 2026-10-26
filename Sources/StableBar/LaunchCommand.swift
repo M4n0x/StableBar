@@ -12,6 +12,7 @@ enum LaunchCommand {
     case renderDocsImages(URL)
     case triage(URL, agent: TriageAgent?, model: String?)
     case triageContext(URL)
+    case uninstall(removesConfiguration: Bool, showsMenuBar: Bool, confirmed: Bool)
     case help
 
     static let configurationURL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/stablebar/config.json")
@@ -33,6 +34,7 @@ enum LaunchCommand {
            StableBar [--config PATH] --enable-package ID VERSION [--persist]
            StableBar [--config PATH] --uninstall-package ID VERSION
            StableBar [--config PATH] triage [--agent claude|codex] [--model MODEL]
+           StableBar --uninstall [--remove-config] [--show-menu-bar] [--yes]
            StableBar --help
     """
 
@@ -117,6 +119,15 @@ enum LaunchCommand {
             self = try Self.triage(url, Array(arguments.dropFirst()))
         case "--triage-context" where arguments.count == 1:
             self = .triageContext(url)
+        case "--uninstall" where targeted:
+            throw CommandFailure(message: "--uninstall removes StableBar for every configuration, so it doesn't take --config.")
+        case "--uninstall":
+            let options = Array(arguments.dropFirst())
+            guard Set(options).count == options.count, options.allSatisfy(["--remove-config", "--show-menu-bar", "--yes"].contains) else {
+                throw CommandFailure(message: Self.usage)
+            }
+            self = .uninstall(removesConfiguration: options.contains("--remove-config"), showsMenuBar: options.contains("--show-menu-bar"),
+                              confirmed: options.contains("--yes"))
         case "--help" where arguments.count == 1:
             self = .help
         default:

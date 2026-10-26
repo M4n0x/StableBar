@@ -99,6 +99,10 @@ struct GeneralSettingsView: View {
                         }
                     }
                     .id(SettingsSearchResult.help.id)
+                    SettingsGroup("Uninstall") {
+                        UninstallSettings(store: store)
+                    }
+                    .id(SettingsSearchResult.uninstall.id)
                 }
                 .font(.system(size: 13))
                 .frame(maxWidth: 720)

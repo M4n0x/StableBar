@@ -36,6 +36,34 @@ enum CommandLineTool {
         return target.resolvingSymlinksInPath() == app ? .installed(command) : .otherCopy(command, executable: target)
     }
 
+    /// The `stablebar` scripts StableBar wrote on this `PATH` and in the install directory, whichever copy they open.
+    static func installedScripts(path: String?, directory: URL = directory) -> [URL] {
+        let directories = (path ?? "").split(separator: ":").map { URL(filePath: String($0), directoryHint: .isDirectory) } + [directory]
+        var seen = Set<String>()
+        return directories.map { $0.appending(path: name) }.filter { command in
+            let values = try? command.resourceValues(forKeys: [.isSymbolicLinkKey])
+            return seen.insert(command.resolvingSymlinksInPath().path).inserted && values?.isSymbolicLink == false
+                && isCommand(command) && scriptTarget(of: command) != nil
+        }
+    }
+
+    /// Deletes a script StableBar wrote, asking for an administrator password when the folder isn't writable.
+    /// Throws `CancellationError` when the password prompt is cancelled.
+    static func remove(_ command: URL) async throws {
+        guard (try? command.checkResourceIsReachable()) == true else { return }
+        guard scriptTarget(of: command) != nil else { throw CommandLineToolError.notOurs(command.path) }
+        do {
+            try FileManager.default.removeItem(at: command)
+        } catch let error as CocoaError where error.code == .fileWriteNoPermission {
+            try await runWithPrivileges(removeCommand(command),
+                                        prompt: "StableBar wants to remove the \(name) command from \(command.deletingLastPathComponent().path).")
+        }
+    }
+
+    static func removeCommand(_ command: URL) -> String {
+        "/bin/rm -f \(quoted(command.path))"
+    }
+
     private static func scriptTarget(of command: URL) -> URL? {
         guard let handle = try? FileHandle(forReadingFrom: command) else { return nil }
         defer { try? handle.close() }
@@ -69,13 +97,17 @@ enum CommandLineTool {
         let source = FileManager.default.temporaryDirectory.appending(path: "\(name)-\(UUID().uuidString)")
         try data.write(to: source)
         defer { try? FileManager.default.removeItem(at: source) }
+        try await runWithPrivileges(installCommand(from: source, to: command),
+                                    prompt: "StableBar wants to install the \(name) command in \(command.deletingLastPathComponent().path).")
+    }
+
+    private static func runWithPrivileges(_ script: String, prompt: String) async throws {
         do {
             _ = try await runCommand("/usr/bin/osascript", arguments: [
                 "-e", "on run argv",
                 "-e", "do shell script (item 1 of argv) with prompt (item 2 of argv) with administrator privileges",
                 "-e", "end run",
-                installCommand(from: source, to: command),
-                "StableBar wants to install the \(name) command in \(command.deletingLastPathComponent().path)."
+                script, prompt
             ], timeout: 600)
         } catch let failure as CommandFailure where String(decoding: failure.stderr, as: UTF8.self).contains("(-128)") {
             throw CancellationError()

@@ -124,8 +124,9 @@ final class SetupSession {
     var openAtLogin: Bool?
     var loginStatus = SMAppService.mainApp.status
     var calendarAccess = EKEventStore.authorizationStatus(for: .event)
-    var menuBarHides = UserDefaults.standard.bool(forKey: "_HIHideMenuBar")
-    private let menuBarHidAtStart = UserDefaults.standard.bool(forKey: "_HIHideMenuBar")
+    var menuBarHides = MenuBarAutoHide.isOn()
+    private let menuBarHidAtStart = MenuBarAutoHide.isOn()
+    private let stableBarHidMenuBarAtStart = MenuBarAutoHide.turnedOnByStableBar()
     var accessibilityAccess = AXIsProcessTrusted()
     var error: String?
     private(set) var base: Configuration?
@@ -194,10 +195,10 @@ final class SetupSession {
 
     private func setMenuBarHidden(_ hidden: Bool) async throws {
         guard hidden != menuBarHides else { return }
-        _ = try await runCommand("/usr/bin/osascript", arguments: [
-            "-e", "tell application \"System Events\" to set autohide menu bar of dock preferences to \(hidden)"
-        ], timeout: 120)
+        try await MenuBarAutoHide.set(hidden)
         menuBarHides = hidden
+        MenuBarAutoHide.setTurnedOnByStableBar(MenuBarAutoHide.turnedOnByStableBar(
+            after: hidden, wasOn: menuBarHidAtStart, wasStableBars: stableBarHidMenuBarAtStart))
     }
 
     func requestCalendarAccess() async {
@@ -212,7 +213,7 @@ final class SetupSession {
     func refreshAccess() {
         loginStatus = SMAppService.mainApp.status
         calendarAccess = EKEventStore.authorizationStatus(for: .event)
-        menuBarHides = UserDefaults.standard.bool(forKey: "_HIHideMenuBar")
+        menuBarHides = MenuBarAutoHide.isOn()
         accessibilityAccess = AXIsProcessTrusted()
         guard !finished else { return }
         if calendarAccess == .fullAccess { preferences.deferMeetings = false } else { preview() }

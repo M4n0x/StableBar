@@ -123,3 +123,59 @@ private func executableFile(at url: URL, _ text: String = "#!/bin/sh\necho other
     #expect(FileManager.default.isExecutableFile(atPath: command.path))
     #expect(try String(contentsOf: command, encoding: .utf8) == "#!/bin/sh\necho ok\n")
 }
+
+@Test func commandLineScriptsToUninstallAreTheOnesStableBarWrote() throws {
+    let directory = try temporaryDirectory()
+    let app = try executableFile(at: directory.appending(path: "StableBar.app/Contents/MacOS/StableBar"))
+    let ours = try executableFile(at: directory.appending(path: "first/stablebar"), CommandLineTool.script(running: app))
+    let old = try executableFile(at: directory.appending(path: "second/stablebar"),
+                                 CommandLineTool.script(running: URL(filePath: "/Volumes/StableBar/StableBar.app/Contents/MacOS/StableBar")))
+    _ = try executableFile(at: directory.appending(path: "third/stablebar"))
+    try FileManager.default.createDirectory(at: directory.appending(path: "fourth"), withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: directory.appending(path: "fourth/stablebar"), withDestinationURL: app)
+    let path = ["first", "second", "third", "fourth", "first"].map { directory.appending(path: $0).path }.joined(separator: ":")
+    #expect(CommandLineTool.installedScripts(path: path, directory: directory.appending(path: "first")) == [ours, old])
+}
+
+@Test func commandLineScriptsToUninstallIncludeTheInstallDirectoryOffPath() throws {
+    let directory = try temporaryDirectory()
+    let command = try executableFile(at: directory.appending(path: "bin/stablebar"),
+                                     CommandLineTool.script(running: URL(filePath: "/Applications/StableBar.app/Contents/MacOS/StableBar")))
+    #expect(CommandLineTool.installedScripts(path: nil, directory: command.deletingLastPathComponent()) == [command])
+}
+
+@Test func commandLineScriptsToUninstallAreListedOnceThroughALinkedFolder() throws {
+    let directory = try temporaryDirectory()
+    let command = try executableFile(at: directory.appending(path: "bin/stablebar"),
+                                     CommandLineTool.script(running: URL(filePath: "/Applications/StableBar.app/Contents/MacOS/StableBar")))
+    let link = directory.appending(path: "linked bin")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: command.deletingLastPathComponent())
+    #expect(CommandLineTool.installedScripts(path: link.path, directory: command.deletingLastPathComponent()).count == 1)
+}
+
+@Test func commandLineRemoveCountsAGoneScriptAsRemoved() async throws {
+    let directory = try temporaryDirectory()
+    try await CommandLineTool.remove(directory.appending(path: "stablebar"))
+}
+
+@Test func commandLineRemoveDeletesItsScript() async throws {
+    let directory = try temporaryDirectory()
+    let command = try executableFile(at: directory.appending(path: "stablebar"),
+                                     CommandLineTool.script(running: URL(filePath: "/Applications/StableBar.app/Contents/MacOS/StableBar")))
+    try await CommandLineTool.remove(command)
+    #expect(!FileManager.default.fileExists(atPath: command.path))
+}
+
+@Test func commandLineRemoveKeepsAnotherCommand() async throws {
+    let directory = try temporaryDirectory()
+    let command = try executableFile(at: directory.appending(path: "stablebar"))
+    await #expect(throws: CommandLineToolError.self) { try await CommandLineTool.remove(command) }
+    #expect(try String(contentsOf: command, encoding: .utf8) == "#!/bin/sh\necho other\n")
+}
+
+@Test func commandLinePrivilegedRemoveDeletesTheScript() async throws {
+    let directory = try temporaryDirectory()
+    let command = try executableFile(at: directory.appending(path: "it's/stablebar"), "#!/bin/sh\necho ok\n")
+    _ = try await runCommand("/bin/sh", arguments: ["-c", CommandLineTool.removeCommand(command)])
+    #expect(!FileManager.default.fileExists(atPath: command.path))
+}
