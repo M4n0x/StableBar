@@ -15,6 +15,7 @@ final class BarStore: NSObject {
     let windowClearance = WindowClearance()
     let menuBarDelay = MenuBarDelay()
     let appMenu = AppMenu()
+    var crashReports = CrashReports()
     let popup: WidgetPopup
     let innerPopup = WidgetPopup()
     var update: AppUpdate?
@@ -28,6 +29,7 @@ final class BarStore: NSObject {
     let registry: DataSourceRegistry
     var onConfigurationChange: (() -> Void)?
     var onCustomize: (() -> Void)?
+    var onShowCrashes: (() -> Void)?
     var onCustomizeWidget: ((String) -> Void)?
     var onCustomizePackages: (() -> Void)?
     /// A `stablebar://add-source` link waiting for Settings › Packages to open its form.

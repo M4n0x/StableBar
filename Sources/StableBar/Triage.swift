@@ -39,6 +39,7 @@ struct TriageFacts {
     var validation: String
     var barRunning: Bool
     var sourceCache: URL
+    var crashes: [String]
 
     @MainActor static func gather(configuration: URL, sourceCache: URL, path: String) -> TriageFacts {
         let version = AppVersion()
@@ -67,7 +68,8 @@ struct TriageFacts {
             configuration: configuration,
             validation: Triage.validation(of: configuration),
             barRunning: RuntimeControl.isRunning(url: configuration),
-            sourceCache: sourceCache)
+            sourceCache: sourceCache,
+            crashes: CrashReports.read(CrashReports.folders, since: Date().addingTimeInterval(-CrashReports.window)).map(\.summary))
     }
 
     private static func sysctl(_ name: String) -> String {
@@ -278,6 +280,7 @@ enum Triage {
 
         - StableBar command: \(facts.executable)
         - Crash reports: ~/Library/Logs/DiagnosticReports/StableBar*.ips
+        - StableBar crashes in the last 30 days:\(list(facts.crashes))
         - System log: `log show --last 1h --style compact --predicate 'process == "StableBar"'`
         - Preferences: `defaults read org.stablebar.app`
         - Package secrets: Keychain items with service "StableBar" (NEVER read these)
