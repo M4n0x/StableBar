@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.8.0](https://github.com/Seb-GRAF/StableBar/compare/v0.7.0...v0.8.0) (2026-10-26)
+
+### Features
+
+* add settings to magnify ([236e31f](https://github.com/Seb-GRAF/StableBar/commit/236e31fac5f6c11ebb1f44af2b45ee3b3ce18ef8))
+* draw the More widgets button like the other widgets ([33b2b89](https://github.com/Seb-GRAF/StableBar/commit/33b2b892debc939fb48cecdbecca2fe99618ed80))
+* keep the macOS menu bar hidden while StableBar runs ([525a78d](https://github.com/Seb-GRAF/StableBar/commit/525a78d3473c7bc89a64f9991c2aea63c4389004))
+* open a package in Settings from a stablebar:// link ([96e37ed](https://github.com/Seb-GRAF/StableBar/commit/96e37eddbeb8ec472381a9968b40bfe67637d5c2))
+* open app menus in a row under the bar when they can't expand in place ([008bd1a](https://github.com/Seb-GRAF/StableBar/commit/008bd1ad3ef1535da618d755f4acbee3242fdc45))
+* open app menus in StableBar's popup instead of a native menu ([ed31bb3](https://github.com/Seb-GRAF/StableBar/commit/ed31bb3a93d087c22260fcc7e0d56745bddb89b5))
+* open Control Center and the macOS menu bar's items from the bar ([d4581b7](https://github.com/Seb-GRAF/StableBar/commit/d4581b76888092c6ac3b205be41aca561a4e3ed1))
+* open the Menu bar items row on hover ([35101f7](https://github.com/Seb-GRAF/StableBar/commit/35101f7cc75c2d9a0636a24ead6c98807fba86ea)), closes [#320](https://github.com/Seb-GRAF/StableBar/issues/320)
+* overflow widgets at the notch into a popup of the widgets themselves ([22fc098](https://github.com/Seb-GRAF/StableBar/commit/22fc0985e2dbfd7b82240a8a162a16ca9f9dd9a4))
+* put the More widgets button beside the nearest widget ([d7b5dc2](https://github.com/Seb-GRAF/StableBar/commit/d7b5dc2b3b46062a9c40800e48bdbbda2cd83c14))
+* show hover controls in an animated tooltip instead of widening the widget ([795314d](https://github.com/Seb-GRAF/StableBar/commit/795314d8dc52a3238b2fd43f1bdb8de1e022399b))
+* show the app menus on the starter bar instead of the active app ([1ed79e6](https://github.com/Seb-GRAF/StableBar/commit/1ed79e6108aca39d441a5e5bfb2742b033dacb1d))
+* show the Menu bar items widget as a grid symbol ([5614188](https://github.com/Seb-GRAF/StableBar/commit/56141881f1a1c4f1e72ab166db1b37c7279f8b50))
+
+### Bug Fixes
+
+* accept workspace icon drops on every workspace ([fa94634](https://github.com/Seb-GRAF/StableBar/commit/fa94634767c5c733f482d19e890430491388d18e)), closes [#280](https://github.com/Seb-GRAF/StableBar/issues/280)
+* center the Sound widget's speaker in its icon ([d19673c](https://github.com/Seb-GRAF/StableBar/commit/d19673cb46e88bc5c4c5ee8bb57cc7154ad29ef3))
+* handle workspace icon drops through AppKit ([8ecfefa](https://github.com/Seb-GRAF/StableBar/commit/8ecfefab94f8f5bc092d9c651a7e92960a8d13da)), closes [#280](https://github.com/Seb-GRAF/StableBar/issues/280)
+* keep a widget that expands on hover on the bar ([53e63ff](https://github.com/Seb-GRAF/StableBar/commit/53e63ff94124f40aaf27dedd77c9ce5a1335f97f))
+* keep long tooltips inside their card ([d343be3](https://github.com/Seb-GRAF/StableBar/commit/d343be3b893d90f60bd22fab11951f60f66226d4))
+* relaunch the bar after an update while a triage session runs ([1c879da](https://github.com/Seb-GRAF/StableBar/commit/1c879da442744b3461773d52e12271330fa3e3a4)), closes [#281](https://github.com/Seb-GRAF/StableBar/issues/281)
+* show the right icons in the Menu bar items row ([a9d1d32](https://github.com/Seb-GRAF/StableBar/commit/a9d1d323f1e1d67051d17651898f2fc3e41bc0f2)), closes [#323](https://github.com/Seb-GRAF/StableBar/issues/323)
+
 ## [0.7.0](https://github.com/Seb-GRAF/StableBar/compare/v0.6.0...v0.7.0) (2026-10-23)
 
 ### Features
