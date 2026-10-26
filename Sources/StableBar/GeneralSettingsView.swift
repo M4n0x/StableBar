@@ -18,6 +18,7 @@ struct GeneralSettingsView: View {
                             values: (try? store.effectiveDocument["bar"]?.decoded([String: ConfigurationValue].self)) ?? [:],
                             set: { editor.change(ConfigurationEdit(action: .bar, properties: $0)) },
                             unset: { editor.change(ConfigurationEdit(action: .unset, properties: ["bar": .object($0)])) })
+                        MenuBarAutoHideSettings()
                         bar.number("Reveal delay", "menuBarRevealDelay", default: 0, in: 0...10000, step: 100, unit: "ms",
                                    hint: "Wait at the top edge before showing the hidden macOS menu bar. 0 adds no delay. Requires Accessibility access.")
                         bar.toggle("Always hide", "hideMenuBar", default: false,

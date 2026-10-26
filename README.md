@@ -69,7 +69,7 @@ Change content, appearance and behavior without touching JSON. Settings saves to
 
 With [Homebrew](https://brew.sh), `brew install --cask seb-graf/tap/stablebar` replaces the first two steps.
 
-StableBar needs macOS 14 or later on Apple silicon. Releases update themselves; choose the Beta track in **Settings → General → Updates** to get betas. See [Getting started](docs/getting-started.md). To remove StableBar, use **Settings → General → [Uninstall](docs/getting-started.md#uninstall)**, which also turns off the menu bar auto-hide that setup turned on.
+StableBar needs macOS 14 or later on Apple silicon. Releases update themselves; choose the Beta track in **Settings → General → Updates** to get betas. See [Getting started](docs/getting-started.md). To remove StableBar, use **Settings → General → [Uninstall](docs/getting-started.md#uninstall)**, which also turns off the menu bar auto-hide that StableBar turned on.
 
 ## Configure
 

@@ -76,7 +76,7 @@ struct UninstallSheet: View {
         if snapshot.menuBarHides {
             Toggle(isOn: $options.showsMenuBar) {
                 choice("Turn off the macOS menu bar’s auto-hide", snapshot.turnedOnMenuBarAutoHide
-                       ? "Setup turned it on so the bar could take the menu bar’s place."
+                       ? "StableBar turned it on so the bar could take the menu bar’s place."
                        : "It’s on, but StableBar didn’t turn it on, so it stays unless you check this.")
             }
         }
