@@ -858,6 +858,8 @@ final class BarStore: NSObject {
 
     func handle(_ request: RuntimeRequest) throws -> ConfigurationValue {
         switch request.action {
+        case .report:
+            return try JSONDecoder().decode(ConfigurationValue.self, from: JSONEncoder().encode(liveReport()))
         case .customize:
             if let id = request.id { onCustomizeWidget?(id) }
             else { onCustomize?() }
@@ -1187,5 +1189,26 @@ final class WidgetPresentation {
 
     private func setTemporaryFields(_ fields: [String: String]?, animation: WidgetAnimation?) {
         if let animation { animation.animate { temporaryFields = fields } } else { temporaryFields = fields }
+    }
+}
+
+extension BarStore {
+    /// What only the running bar knows for a bug report: access, the workspace connection, active profiles and problems.
+    func liveReport() -> BugReport.Live {
+        let widgets = configuration?.widgets ?? []
+        let names = WidgetDisplayName.names(for: widgets, packageNames: widgetPackageNames, providers: configuration?.providers ?? [:])
+        let failures = widgets.compactMap { widget -> String? in
+            guard case let .failed(error) = widgetStatus(for: widget) else { return nil }
+            return "Widget \(names[widget.id] ?? widget.id): \(error)"
+        }
+        let workspaces = widgets.contains { $0.content == .workspaces }
+            ? (workspaceStore.error ?? workspaceStore.connectionError).map { "error: \($0)" } ?? (workspaceStore.isRunning ? "connected" : "not connected")
+            : ""
+        return BugReport.Live(access: BugReport.access(), workspaces: workspaces, profiles: activeProfiles,
+                              problems: [configurationError, configurationWarning].compactMap { $0 } + failures)
+    }
+
+    func bugReport() async -> BugReport {
+        await BugReport.gather(configuration: configurationURL, live: liveReport(), path: shellEnvironment.withLock { $0["PATH"] ?? "" })
     }
 }
