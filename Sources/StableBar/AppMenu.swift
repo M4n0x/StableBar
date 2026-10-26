@@ -189,9 +189,10 @@ final class AppMenu: NSObject {
         popup(entries(of: element))
     }
 
-    func menuBarItemsPopup() async -> PopupConfiguration? {
+    /// The row of menu bar items, or nil without Accessibility access, which it asks for if `requestingAccess`.
+    func menuBarItemsPopup(requestingAccess: Bool = true) async -> PopupConfiguration? {
         guard checkAccess() else {
-            requestAccessibility()
+            if requestingAccess { requestAccessibility() }
             return nil
         }
         let apps = Dictionary(uniqueKeysWithValues: NSWorkspace.shared.runningApplications

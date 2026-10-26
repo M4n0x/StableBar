@@ -21,7 +21,7 @@ enum WidgetClickChoice: String, CaseIterable {
         if case .appMenu = widget.content { return "Clicking a menu opens it." }
         if widget.content == .appleMenu { return "Clicking it opens the Apple menu." }
         if widget.content == .controlCenter { return "Clicking it opens Control Center." }
-        if widget.content == .menuBarItems { return "Clicking it lists the items in the macOS menu bar." }
+        if case .menuBarItems = widget.content { return "Clicking it lists the items in the macOS menu bar." }
         var actions: [String] = []
         if widget.onClick != nil || output?.onClick != nil { actions.append("runs a command") }
         if widget.popup != nil || widget.popupName != nil { actions.append("opens a popup") }

@@ -455,6 +455,14 @@ private func writeConfiguration(_ json: String, to url: URL) throws {
         + ["$schema", "tokens", "packages", "packageSources", "theme", "includes", "profiles", "profile", "widgetOrder"]))
 }
 
+@Test func menuBarItemsOpenOnHoverUnlessSetToOpenOnClick() throws {
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
+    {"widgets":[{"id":"items","type":"menuBarItems","position":"right"},
+                {"id":"clicked","type":"menuBarItems","position":"right","openOnHover":false}]}
+    """#.utf8))
+    #expect(configuration.widgets.map(\.content) == [.menuBarItems(openOnHover: true), .menuBarItems(openOnHover: false)])
+}
+
 @Test func examplesAndTheStarterConfigurationStayValid() throws {
     let repository = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     var loader = ConfigurationLoader()

@@ -576,6 +576,13 @@ struct BarInspector: View {
                     }))
                     .toggleStyle(.switch).labelsHidden().controlSize(.small)
                 }
+            } else if case let .menuBarItems(openOnHover) = widget.content {
+                SettingRow(title: "Open on hover", hint: "When off, a click opens the list") {
+                    Toggle("Open on hover", isOn: Binding(get: { openOnHover }, set: {
+                        editor.set(["openOnHover": .bool($0)], for: widget.id)
+                    }))
+                    .toggleStyle(.switch).labelsHidden().controlSize(.small)
+                }
             }
             SettingRow(title: "Tooltip") {
                 TextDraft(text: Binding(get: { widget.tooltip ?? "" }, set: {

@@ -22,7 +22,7 @@ final class ConfigurationEditorTests: XCTestCase {
     }
 
     @MainActor func testResetClearsTheLookOfOwnWidgetsAndEveryOverrideOfImportedOnes() throws {
-        let fixture = try ThemeGalleryFixture(#"{"includes":["included.json"],"widgets":[{"id":"own","type":"text","position":"left","text":"Hi","format":"x","onClick":"open -a Mail","style":{"fontSize":20}}],"widgetOverrides":{"imported":{"text":"Changed","position":"right","style":{"fontSize":9}}}}"#)
+        let fixture = try ThemeGalleryFixture(#"{"includes":["included.json"],"widgets":[{"id":"own","type":"text","position":"left","text":"Hi","format":"x","onClick":"open -a Mail","style":{"fontSize":20}},{"id":"items","type":"menuBarItems","position":"right","openOnHover":false}],"widgetOverrides":{"imported":{"text":"Changed","position":"right","style":{"fontSize":9}}}}"#)
         defer { fixture.close() }
         try fixture.write(#"{"widgets":[{"id":"imported","type":"text","position":"left","text":"Original"}]}"#, to: fixture.directory.appending(path: "included.json"))
         let store = try fixture.store()
@@ -30,6 +30,7 @@ final class ConfigurationEditorTests: XCTestCase {
         let editor = ConfigurationEditor(store: store)
         for widget in try XCTUnwrap(store.configuration?.widgets) { editor.reset(widget) }
         XCTAssertEqual(editor.properties(for: "own"), ["id": .string("own"), "type": .string("text"), "position": .string("left"), "text": .string("Hi")])
+        XCTAssertEqual(editor.properties(for: "items"), ["id": .string("items"), "type": .string("menuBarItems"), "position": .string("right")])
         XCTAssertEqual(try fixture.document()["widgetOverrides"], .object(["imported": .object(["position": .string("right")])]))
         XCTAssertEqual(editor.properties(for: "imported")["text"], .string("Original"))
         XCTAssertNil(editor.error)

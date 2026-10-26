@@ -210,6 +210,73 @@ private var presentationRepository: URL {
     #expect(store.presentations["first"]?.popupAnchor == ObjectIdentifier(anchor))
 }
 
+/// A popup whose content is read when it opens, such as the Menu bar items row, opens once the read ends while the pointer
+/// stays, and not at all when the pointer leaves during the read.
+@Test(arguments: [false, true]) @MainActor func hoverThatReadsItsPopupFirstOpensOnlyIfThePointerStays(leaves: Bool) async throws {
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
+    {"widgets":[{"id":"items","type":"text","text":"Items","position":"right",
+      "popup":{"openOnHover":true,"style":{},"layout":{"type":"text","text":"Items"}}}]}
+    """#.utf8))
+    let popup = WidgetPopup(present: { _, _ in })
+    let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), popup: popup)
+    store.configuration = configuration
+    store.preparePresentations()
+    defer { store.stop() }
+    let bar = OffscreenBar(configuration: configuration,
+                           display: BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil), width: 600, sharedStore: store)
+    defer { bar.close() }
+    await bar.settle()
+    let widget = configuration.widgets[0]
+    let anchor = try #require(bar.anchors(widget.id).first)
+    var reading = false
+    popup.hover(true, store: store, anchor: anchor) {
+        reading = true
+        try? await Task.sleep(for: .milliseconds(300))
+        guard !Task.isCancelled else { return }
+        popup.open(widget.popup!, widget: widget, defaults: configuration.defaults, store: store, anchor: anchor, onHover: true)
+    }
+    try await waitForPopup { reading }
+    #expect(reading)
+    if leaves { popup.hover(false, store: store, anchor: anchor) {} }
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(popup.isOpen == !leaves)
+    popup.close()
+}
+
+/// A click on a widget whose popup is open keeps one opened on hover open and closes one opened by a click, without the
+/// popup's configuration, which the Menu bar items widget reads only to open its row.
+@Test @MainActor func clickingAWidgetWithItsPopupOpenKeepsAHoverPopupAndClosesAClickedOne() async throws {
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
+    {"widgets":[{"id":"items","type":"text","text":"Items","position":"right",
+      "popup":{"openOnHover":true,"style":{},"layout":{"type":"text","text":"Items"}}}]}
+    """#.utf8))
+    let popup = WidgetPopup(present: { _, _ in })
+    let store = BarStore(configurationURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), popup: popup)
+    store.configuration = configuration
+    store.preparePresentations()
+    defer { store.stop() }
+    let bar = OffscreenBar(configuration: configuration,
+                           display: BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil), width: 600, sharedStore: store)
+    defer { bar.close() }
+    await bar.settle()
+    let widget = configuration.widgets[0]
+    let anchor = try #require(bar.anchors(widget.id).first)
+    #expect(!popup.toggleIfOpen(widget.id, anchor: anchor))
+
+    popup.open(widget.popup!, widget: widget, defaults: configuration.defaults, store: store, anchor: anchor, onHover: true)
+    #expect(popup.toggleIfOpen(widget.id, anchor: anchor))
+    popup.hover(false, store: store, anchor: anchor) {}
+    popup.hoverPopup(false)
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(popup.isOpen)
+    #expect(popup.toggleIfOpen(widget.id, anchor: anchor))
+    #expect(!popup.isOpen)
+
+    popup.toggle(widget.popup!, widget: widget, defaults: configuration.defaults, store: store, anchor: anchor)
+    #expect(popup.toggleIfOpen(widget.id, anchor: anchor))
+    #expect(!popup.isOpen)
+}
+
 @Test(arguments: [false, true]) @MainActor func pendingHoverIsCancelledWhenDismissedOrRemoved(remove: Bool) async throws {
     let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
     {"widgets":[{"id":"agenda","type":"text","text":"Agenda","position":"right",
