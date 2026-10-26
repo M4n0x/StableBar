@@ -12,7 +12,7 @@ Themes, widgets and popups, set up in the app or in plain JSON.
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111111?logo=apple)](#install)
 [![MIT license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-[**Download**](https://github.com/Seb-GRAF/StableBar/releases/latest) · [Website](https://seb-graf.github.io/StableBar/) · [User guide](docs/README.md) · [Widget store](https://github.com/Seb-GRAF/stablebar-packages) · [Examples](examples)
+[**Download**](https://github.com/Seb-GRAF/StableBar/releases/latest) · [Website](https://stablebar.app/) · [User guide](docs/README.md) · [Widget store](https://github.com/Seb-GRAF/stablebar-packages) · [Examples](examples)
 
 </div>
 
