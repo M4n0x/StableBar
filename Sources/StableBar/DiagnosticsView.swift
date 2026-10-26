@@ -57,9 +57,13 @@ enum WidgetStatus: Equatable {
     }
 }
 
+/// What Status shows: the overview of every widget, StableBar's recent crashes or one widget.
+enum DiagnosticsSelection: Hashable {
+    case overview, crashes, widget(String)
+}
+
 struct DiagnosticsView: View {
-    let editor: ConfigurationEditor
-    @State private var selectedID: String?
+    @Bindable var editor: ConfigurationEditor
     @State private var event = "manual"
     @State private var notice: String?
     @State private var error: String?
@@ -72,11 +76,13 @@ struct DiagnosticsView: View {
 
     init(editor: ConfigurationEditor) {
         self.editor = editor
-        _selectedID = State(initialValue: editor.diagnosticWidgetID ?? "")
         _needingAttention = State(initialValue: Set((editor.store.configuration?.widgets ?? []).filter { editor.store.widgetStatus(for: $0).needsAttention }.map(\.id)))
     }
 
     private var store: BarStore { editor.store }
+    private var selectedID: String? {
+        if case let .widget(id) = editor.diagnosticSelection { id } else { nil }
+    }
     private var widgets: [WidgetConfiguration] { store.configuration?.widgets ?? [] }
     private var names: [String: String] {
         WidgetDisplayName.names(for: widgets, packageNames: store.widgetPackageNames, providers: store.configuration?.providers ?? [:])
@@ -102,7 +108,9 @@ struct DiagnosticsView: View {
                         .padding()
                     Divider()
                 }
-                if let widget = widgets.first(where: { $0.id == selectedID }) {
+                if editor.diagnosticSelection == .crashes {
+                    CrashesView(crashes: store.crashReports)
+                } else if let widget = widgets.first(where: { $0.id == selectedID }) {
                     details(widget)
                 } else {
                     overview
@@ -110,15 +118,14 @@ struct DiagnosticsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .onChange(of: editor.diagnosticWidgetID) { selectedID = editor.diagnosticWidgetID ?? "" }
-        .onChange(of: selectedID) { clearSelection() }
+        .onChange(of: editor.diagnosticSelection) { clearSelection() }
         .onChange(of: widgets.map(\.id)) {
-            if !widgets.contains(where: { $0.id == selectedID }) { selectedID = "" }
+            if let selectedID, !widgets.contains(where: { $0.id == selectedID }) { editor.diagnosticSelection = .overview }
         }
         .onDisappear { clearSelection() }
         .task(id: editor.searchTarget) {
             if editor.searchTarget == SettingsSearchResult.status.id {
-                selectedID = ""
+                editor.diagnosticSelection = .overview
                 editor.searchTarget = nil
             }
         }
@@ -126,8 +133,19 @@ struct DiagnosticsView: View {
 
     private var sidebar: some View {
         let names = names
-        return List(selection: $selectedID) {
-            Label("All widgets", systemImage: "list.bullet").foregroundStyle(.primary).tag("")
+        let crashes = store.crashReports
+        return List(selection: $editor.diagnosticSelection) {
+            Label("All widgets", systemImage: "list.bullet").foregroundStyle(.primary).tag(DiagnosticsSelection.overview)
+            Label {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Crashes").foregroundStyle(.primary)
+                    Text(crashes.reports.isEmpty ? "None in 30 days" : "\(crashes.reports.count) in 30 days")
+                        .font(.caption).foregroundStyle(crashes.unseen.isEmpty ? .secondary : Color.red)
+                }
+            } icon: {
+                Image(systemName: "exclamationmark.octagon")
+            }
+            .tag(DiagnosticsSelection.crashes)
             ForEach(widgets.sorted { needingAttention.contains($0.id) && !needingAttention.contains($1.id) }) { widget in
                 let status = store.widgetStatus(for: widget)
                 Label {
@@ -138,7 +156,7 @@ struct DiagnosticsView: View {
                 } icon: {
                     Circle().fill(status.color).frame(width: 8, height: 8)
                 }
-                .tag(widget.id)
+                .tag(DiagnosticsSelection.widget(widget.id))
             }
         }
         .listStyle(.sidebar)
@@ -153,6 +171,12 @@ struct DiagnosticsView: View {
                 LabeledContent("Widgets", value: String(widgets.count))
                 LabeledContent("Need attention", value: String(attention.count))
                 LabeledContent("Active profiles", value: store.activeProfiles.isEmpty ? "Base configuration" : store.activeProfiles.joined(separator: ", "))
+                if !store.crashReports.reports.isEmpty {
+                    LabeledContent("Crashes in the last 30 days") {
+                        Text(String(store.crashReports.reports.count))
+                        Button("Show") { editor.diagnosticSelection = .crashes }
+                    }
+                }
             } header: {
                 SettingsSectionTitle("Status")
             } footer: {
@@ -163,7 +187,7 @@ struct DiagnosticsView: View {
                 Section {
                     ForEach(attention) { widget in
                         let status = store.widgetStatus(for: widget)
-                        Button { selectedID = widget.id } label: {
+                        Button { editor.diagnosticSelection = .widget(widget.id) } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Circle().fill(status.color).frame(width: 8, height: 8)
                                 VStack(alignment: .leading, spacing: 2) {
@@ -351,7 +375,7 @@ struct DiagnosticsView: View {
     private func captureSnapshot() {
         snapshotTask = Task {
             do {
-                let value = try store.snapshot(id: selectedID == "" ? nil : selectedID)
+                let value = try store.snapshot(id: selectedID)
                 let text = try await Task.detached(priority: .utility) {
                     let encoder = JSONEncoder()
                     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

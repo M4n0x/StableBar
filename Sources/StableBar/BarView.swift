@@ -147,10 +147,10 @@ struct BarView: View {
                 Text("StableBar")
                 if store.barEditing.isAvailable { Button(store.barEditing.menuTitle, action: store.barEditing.toggle) }
                 Button("Try Themes…") { store.onTryThemes?(display.id) }
-                if let error = store.configurationError ?? store.workspaceStore.error ?? store.configurationWarning {
-                    Divider()
-                    Text(error)
-                }
+                let error = store.configurationError ?? store.workspaceStore.error ?? store.configurationWarning
+                if error != nil || store.crashReports.note != nil { Divider() }
+                if let error { Text(error) }
+                if let note = store.crashReports.note { Button(note) { store.onShowCrashes?() } }
                 Divider()
                 Button("Settings…") { store.onCustomize?() }
                 Button("Quit StableBar") { NSApp.terminate(nil) }

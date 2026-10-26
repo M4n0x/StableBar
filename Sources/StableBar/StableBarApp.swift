@@ -230,6 +230,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
         store.onConfigurationChange = { [weak self] in self?.updatePanels() }
         store.onCustomize = { [weak self] in self?.showCustomization() }
+        store.onShowCrashes = { [weak self] in self?.showCrashes() }
         store.onCustomizePackages = { [weak self] in
             guard let self else { return }
             customization.show(store: store, section: .packages)
@@ -271,6 +272,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             systemContext = SystemContext { [store] in store.refreshContext() }
             systemContext!.start()
             if !UserDefaults.standard.bool(forKey: "setupCompleted") { showSetup() }
+            await store.crashReports.refresh()
         }
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
@@ -405,10 +407,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let update = store.update {
             menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdate.checkForUpdates), keyEquivalent: "").target = update
         }
-        if let error = store.configurationError ?? store.workspaceStore.error ?? store.configurationWarning {
-            menu.addItem(.separator())
-            menu.addItem(withTitle: error, action: nil, keyEquivalent: "")
-        }
+        let error = store.configurationError ?? store.workspaceStore.error ?? store.configurationWarning
+        let note = store.crashReports.note
+        if error != nil || note != nil { menu.addItem(.separator()) }
+        if let error { menu.addItem(withTitle: error, action: nil, keyEquivalent: "") }
+        if let note { addItem(note, action: #selector(showCrashes), to: menu) }
+        Task { await store.crashReports.refresh() }
         menu.addItem(.separator())
         addItem("Settings…", action: #selector(showCustomization), to: menu)
         addItem("Quit StableBar", action: #selector(quit), to: menu)
@@ -420,6 +424,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showCustomization() { customization.show(store: store) }
+    @objc private func showCrashes() { customization.showCrashes(store: store) }
     @objc private func editBar() { store.barEditing.toggle() }
     @objc private func tryThemes() {
         let screens = NSScreen.screens
