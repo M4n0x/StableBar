@@ -103,7 +103,7 @@ root.classList.add("js");
     <a class="brand" href="#"><img src="images/icon-64.png" alt="">StableBar</a>
     <nav class="nav">
       <a href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/README.md">Guide</a>
-      <a href="https://github.com/Seb-GRAF/stablebar-packages">Store</a>
+      <a href="#store">Store</a>
       <a class="gh" href="https://github.com/Seb-GRAF/StableBar/tree/main/examples">Examples</a>
       <a class="gh" href="https://github.com/Seb-GRAF/StableBar">GitHub</a>
       <button class="mode" id="mode" aria-label="Dark mode" aria-pressed="true">
@@ -137,7 +137,7 @@ root.classList.add("js");
               <button class="wsi" data-ws="4" aria-label="Workspace 4" aria-pressed="false">4 <img class="ai" src="images/apps/ollama.webp" alt="" width="14" height="14"></button>
             </div>
             <div class="w app finder" data-key="app" data-pri="2"><span class="name">Finder</span><span class="menus"><span><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span></span></span></div>
-            <div class="w app site" data-key="site" data-pri="8" data-pop="site"><span class="name">StableBar</span><span class="menus"><span><a href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/README.md">Guide</a><a href="https://github.com/Seb-GRAF/stablebar-packages">Store</a><a href="https://github.com/Seb-GRAF/StableBar/tree/main/examples">Examples</a><a href="https://github.com/Seb-GRAF/StableBar">GitHub</a></span></span></div>
+            <div class="w app site" data-key="site" data-pri="8" data-pop="site"><span class="name">StableBar</span><span class="menus"><span><a href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/README.md">Guide</a><a href="#store">Store</a><a href="https://github.com/Seb-GRAF/StableBar/tree/main/examples">Examples</a><a href="https://github.com/Seb-GRAF/StableBar">GitHub</a></span></span></div>
           </div>
           <div class="g" id="gc"></div>
           <div class="g" id="gr">
@@ -166,7 +166,7 @@ root.classList.add("js");
           </div>
           <div class="pane menu" data-id="site">
             <a href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/README.md">User guide</a>
-            <a href="https://github.com/Seb-GRAF/stablebar-packages">Widget store</a>
+            <a href="#store">Widget store</a>
             <a href="https://github.com/Seb-GRAF/StableBar/tree/main/examples">Examples</a>
             <a href="https://github.com/Seb-GRAF/StableBar/releases">Releases</a>
             <a href="https://github.com/Seb-GRAF/StableBar">Source on GitHub</a>
@@ -344,6 +344,31 @@ printf '{"text":"%s","icon":"internaldrive"}' "$used"</pre>
 }</pre>
       </div>
       <div class="result" data-theme="built-in" role="group" aria-label="The disk widget on the bar"><div class="w new"><svg><use href="#i-disk"/></svg>61%</div><div class="w"><svg style="width:19px"><use href="#i-bat"/></svg>82%</div><div class="w num clock" data-format="time">09:41</div></div>
+    </div>
+  </section>
+
+  <section class="stop flip" id="store">
+    <h2>The Store</h2>
+    <div class="body">
+      <p>Add widgets other people wrote, from Settings or the bar’s <strong>+</strong>, without writing a script. Before anything runs, StableBar shows what a package does: the commands it runs, the hosts it contacts and the macOS permissions it uses.</p>
+      <p><strong>Checked on the way in.</strong> Every Store package is open source, and the Store builds and publishes it, not its author. A maintainer reads each version that runs commands, and StableBar checks every download against its SHA-256. Tokens stay in your Keychain, and versions stay pinned until you choose another.</p>
+      <p><strong>Your team’s own widgets.</strong> Host a private source for packages that can’t be public, and invite your team with a join link. A <code>stablebar://</code> link opens one package’s page in StableBar.</p>
+      <a class="more-link" href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/packages.md">Packages and the store in the guide</a>
+    </div>
+    <div class="fig">
+      <div class="win store-win" data-theme="built-in" role="group" aria-label="StableBar Settings, Packages">
+        <div class="tb"><span class="tl"><i></i><i></i><i></i></span><span class="tabs" aria-hidden="true"><span>Installed</span><span class="on">Store</span></span><span class="find" aria-hidden="true">Search packages</span></div>
+        <div class="kinds" aria-hidden="true"><span class="on">All</span><span>Widgets</span><span>Themes</span></div>
+        <div class="pkgs">
+          <div class="pkg" data-id="now-playing"><div class="pv"><div class="w"><i class="art"></i>Midnight City · M83</div></div><b>Now playing</b><p>Shows the playing or paused track from Music or Spotify with its artwork and bouncing bars while it plays.</p><div class="by"><span>Widget · by Seb-GRAF</span><span class="state"><svg viewBox="0 0 12 12" aria-hidden="true"><use href="#p-check"/></svg>Installed</span></div></div>
+          <div class="pkg" data-id="ai-usage"><div class="pv"><div class="w"><svg><use href="#i-asterisk"/></svg><span class="gauge"><i style="--p:42%"></i><i style="--p:64%"></i></span>42%&nbsp;&nbsp;<svg><use href="#i-term"/></svg><span class="gauge"><i style="--p:18%"></i><i style="--p:30%"></i></span>18%</div></div><b>AI usage</b><p>Shows your Claude Code and Codex limits in one widget, with reset countdowns and weekly pace.</p><div class="by"><span>Widget · by Seb-GRAF</span><button class="pkg-get" aria-label="Get AI usage">Get</button></div></div>
+          <div class="pkg" data-id="dock-badges"><div class="pv"><div class="w"><svg><use href="#i-badge"/></svg>2</div></div><b>Dock badges</b><p>Shows the total unread count from running apps’ Dock badges, with a popup that opens each app.</p><div class="by"><span>Widget · by Seb-GRAF</span><button class="pkg-get" aria-label="Get Dock badges">Get</button></div></div>
+          <div class="pkg" data-id="github-notifications"><div class="pv"><div class="w"><svg><use href="#i-bell"/></svg>3</div></div><b>GitHub notifications</b><p>Shows your unread GitHub notification count and lists the latest ones, each opening on GitHub.</p><div class="by"><span>Widget · by Seb-GRAF</span><button class="pkg-get" aria-label="Get GitHub notifications">Get</button></div></div>
+          <div class="pkg" data-id="homebrew-outdated"><div class="pv"><div class="w"><svg><use href="#i-box"/></svg>4</div></div><b>Homebrew outdated</b><p>Shows how many Homebrew formulae and casks are outdated, and lists them.</p><div class="by"><span>Widget · by Seb-GRAF</span><button class="pkg-get" aria-label="Get Homebrew outdated">Get</button></div></div>
+          <div class="pkg" data-id="weather"><div class="pv"><div class="w"><svg><use href="#i-weather"/></svg>14°</div></div><b>Weather</b><p>Shows the current temperature and conditions from wttr.in, with feels-like, humidity, wind and today’s high and low.</p><div class="by"><span>Widget · by Seb-GRAF</span><button class="pkg-get" aria-label="Get Weather">Get</button></div></div>
+        </div>
+      </div>
+      <div class="addpop review pkg-review" id="pkg-review" role="dialog" aria-label="Review package" hidden></div>
     </div>
   </section>
 

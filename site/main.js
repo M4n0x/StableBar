@@ -369,7 +369,7 @@ ico.addEventListener("pointercancel", () => { grab = null; ico.classList.remove(
 const io = new IntersectionObserver(entries => {
   for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
 }, { rootMargin: "0px 0px -10% 0px" });
-for (const el of document.querySelectorAll(".pops, .board, .scripts, .setup, .install .desktop")) {
+for (const el of document.querySelectorAll(".pops, .board, .scripts, .store-win, .setup, .install .desktop")) {
   el.classList.add("reveal");
   io.observe(el);
 }
@@ -727,7 +727,7 @@ function showChoices(query) {
   const fill = () => {
     const q = find.value.trim().toLowerCase();
     const shown = CHOICES.filter(c => c.name.toLowerCase().includes(q));
-    grid.innerHTML = shown.map(c => `<button class="ch" data-id="${c.id}" title="${c.description || ""}"><svg class="ic" aria-hidden="true"><use href="#${c.version ? "i-box" : c.icon}"/></svg><span><b>${c.name}</b><small>${c.version ? "Store" : "Built-in"}</small></span>${c.version ? '<svg class="get" role="img" aria-label="Downloads from Store"><use href="#i-get"/></svg>' : ""}</button>`).join("") || '<p class="none">No widgets found.</p>';
+    grid.innerHTML = shown.map(c => `<button class="ch" data-id="${c.id}" title="${c.description || ""}"><svg class="ic" aria-hidden="true"><use href="#${c.version ? "i-box" : c.icon}"/></svg><span><b>${c.name}</b><small>${c.version ? "Store" : "Built-in"}</small></span>${c.version ? '<svg class="from-store" role="img" aria-label="Downloads from Store"><use href="#i-get"/></svg>' : ""}</button>`).join("") || '<p class="none">No widgets found.</p>';
     placeAdd();
   };
   find.addEventListener("input", fill);
@@ -740,36 +740,45 @@ function showChoices(query) {
   fill();
   find.focus({ preventScroll: true });
 }
-function review(c, query) {
+/* A Store package's review: what it can do, before it's added */
+function reviewHTML(c, back, go) {
   const can = [
     ["i-term", `Runs ${c.commands} command${c.commands === 1 ? "" : "s"} while it’s on your bar`],
     ["i-lock", c.permissions ? `Uses ${list(c.permissions, "and")} access` : "Needs no macOS permissions"],
     ["i-globe", c.hosts ? `Connects to ${list(c.hosts, "and")}` : "Doesn’t go online"],
     ...(c.requires || []).map(tool => ["i-tool", `Needs ${tool}`]),
   ];
-  addPop.classList.add("review");
-  addPop.innerHTML = `<button class="back">Back</button><h4>${c.name}</h4><p class="d">${c.description}</p><p class="m">${c.id} · Version ${c.version} · StableBar Store</p>
+  return `<button class="back">${back}</button><h4>${c.name}</h4><p class="d">${c.description}</p><p class="m">${c.id} · Version ${c.version} · StableBar Store</p>
     <ul class="can">${can.map(([icon, text]) => `<li><svg aria-hidden="true"><use href="#${icon}"/></svg>${text}</li>`).join("")}</ul>
-    <div class="foot"><span>A maintainer read this package before the Store published it.</span><button class="go">Add widget</button></div>`;
+    <div class="foot"><span>A maintainer read this package before the Store published it.</span><button class="go">${go}</button></div>`;
+}
+function review(c, query) {
+  addPop.classList.add("review");
+  addPop.innerHTML = reviewHTML(c, "Back", "Add widget");
   addPop.querySelector(".back").addEventListener("click", () => showChoices(query));
   addPop.querySelector(".go").addEventListener("click", () => add(c));
   placeAdd();
   addPop.querySelector(".go").focus({ preventScroll: true });
 }
+/* A new widget from a choice, listed in More widgets in case the bar runs out of room */
+function make(c) {
+  const holder = document.createElement("div");
+  holder.innerHTML = c.html;
+  const w = holder.firstElementChild;
+  w.dataset.key = `added-${++made}`;
+  w.dataset.pri = "2";
+  w.dataset.name = c.name;
+  menu.insertAdjacentHTML("beforeend", `<button data-for="${w.dataset.key}">${c.name}</button>`);
+  if (c.version) installed(c.id);
+  return w;
+}
 function add(c) {
   const { i } = adding, before = snap();
   let t = c.key && [...bar.querySelectorAll(".lane > .tile[hidden]")].find(o => o.firstElementChild.dataset.key === c.key);
   if (!t) {
-    const holder = document.createElement("div");
-    holder.innerHTML = c.html;
-    const w = holder.firstElementChild;
-    w.dataset.key = `added-${++made}`;
-    w.dataset.pri = "2";
-    w.dataset.name = c.name;
-    t = tile(w);
+    t = tile(make(c));
     t.hidden = true;
     lane(i).append(t);
-    menu.insertAdjacentHTML("beforeend", `<button data-for="${w.dataset.key}">${c.name}</button>`);
     tick();
   }
   rearrange(() => {
@@ -782,6 +791,54 @@ function add(c) {
   t.scrollIntoView({ block: "nearest", inline: "nearest" });
   record(before, `Added ${c.name} to ${TRAYS[i]}.`);
 }
+
+/* The Store section: Get reviews a package, and Add to bar puts it on the bar at the top of the page */
+const pkgReview = document.getElementById("pkg-review");
+const storeWin = document.querySelector(".store-win");
+let reviewing = null;
+function installed(id) {
+  const state = document.querySelector(`.pkg[data-id="${id}"] .pkg-get`);
+  state?.replaceWith(Object.assign(document.createElement("span"), { className: "state", innerHTML: '<svg viewBox="0 0 12 12" aria-hidden="true"><use href="#p-check"/></svg>Installed' }));
+}
+function closeReview() {
+  if (!reviewing) return;
+  const get = reviewing;
+  reviewing = null;
+  pkgReview.hidden = true;
+  storeWin.classList.remove("sheet");
+  if (pkgReview.contains(document.activeElement) && get.isConnected) get.focus({ preventScroll: true });
+}
+document.querySelector(".pkgs").addEventListener("click", e => {
+  const get = e.target.closest(".pkg-get");
+  if (!get) return;
+  e.stopPropagation();
+  if (reviewing === get) return closeReview();
+  const c = CHOICES.find(c => c.id === get.closest(".pkg").dataset.id);
+  reviewing = get;
+  pkgReview.innerHTML = reviewHTML(c, "Cancel", "Add to bar");
+  pkgReview.hidden = false;
+  storeWin.classList.add("sheet");
+  pkgReview.querySelector(".back").addEventListener("click", closeReview);
+  pkgReview.querySelector(".go").addEventListener("click", () => {
+    closeReview();
+    const w = make(c);
+    if (editing) {
+      const t = tile(w);
+      t.hidden = true;
+      lane(2).append(t);
+      const before = snap();
+      rearrange(() => { t.hidden = false; putAt(2, t, 0); });
+      record(before, `Added ${c.name} to Right.`);
+    } else {
+      gr.insertBefore(w, more.nextElementSibling);
+      fit();
+      if (!reduce.matches) w.animate([{ opacity: 0, scale: .85 }, { opacity: 1, scale: 1 }], { duration: 260, easing: ease });
+    }
+    say(`Added ${c.name} to the bar.`);
+  });
+  pkgReview.querySelector(".go").focus({ preventScroll: true });
+});
+pkgReview.addEventListener("click", e => e.stopPropagation());
 
 /* Right-click the bar, as in the app: Edit Bar in Place, or a widget's moves while editing */
 function showMenu(x, y, items) {
@@ -836,9 +893,11 @@ document.getElementById("edit-done").addEventListener("click", e => {
 document.addEventListener("click", e => {
   if (!ctx.hidden && !e.target.closest(".ctx")) closeMenu();
   if (adding && !e.target.closest(".addpop, .add")) closeAdd();
+  if (reviewing) closeReview();
 });
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") {
+    if (reviewing) { closeReview(); return; }
     if (!ctx.hidden) { closeMenu(); return; }
     if (adding) { closeAdd(); return; }
     if (drag?.started) { settle(false); drag = null; return; }
