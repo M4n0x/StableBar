@@ -366,7 +366,7 @@ h1 .wide { display: none; }
 .addpop .ch span { min-width: 0; }
 .addpop .ch b { display: block; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .addpop .ch small { display: block; margin-top: 1px; font-size: 10px; color: color-mix(in srgb, var(--win-fg) 55%, transparent); }
-.addpop .ch .get { width: 11px; height: 11px; flex: none; margin-left: auto; }
+.addpop .ch .from-store { width: 11px; height: 11px; flex: none; margin-left: auto; }
 .addpop .none { padding: 10px 2px 2px; color: color-mix(in srgb, var(--win-fg) 55%, transparent); }
 .addpop .back { height: 22px; padding: 0 8px; border-radius: 5px; background: color-mix(in srgb, var(--win-fg) 12%, transparent); }
 .addpop h4 { margin-top: 12px; font: 600 15px/1.25 var(--mac); }
@@ -551,6 +551,32 @@ h1 .wide { display: none; }
 .result .w { font: 500 13px/1 var(--mac); color: var(--fg); }
 .result .w.new { box-shadow: inset 0 0 0 1px var(--w-border), 0 0 0 2px var(--amber); }
 
+/* The Store: Settings → Packages, as the app draws it */
+.body code { font: 400 .92em/1 var(--mono); color: var(--text); }
+.store-win .tb { gap: 16px; padding: 12px 14px; border-bottom: 1px solid color-mix(in srgb, var(--win-fg) 9%, transparent); }
+.tabs, .kinds { display: flex; padding: 2px; border-radius: 7px; background: color-mix(in srgb, var(--win-fg) 8%, transparent); font-size: 12.5px; }
+.tabs span, .kinds span { padding: 4px 10px; border-radius: 5px; color: color-mix(in srgb, var(--win-fg) 80%, transparent); }
+.tabs .on, .kinds .on { background: color-mix(in srgb, var(--win-fg) 16%, transparent); color: var(--win-fg); }
+.store-win .find { flex: 1; min-width: 0; max-width: 220px; padding: 5px 10px; border-radius: 7px; background: color-mix(in srgb, var(--win-fg) 6%, transparent); color: color-mix(in srgb, var(--win-fg) 50%, transparent); font-size: 12.5px; white-space: nowrap; overflow: hidden; }
+.kinds { width: max-content; margin: 14px 14px 0; }
+.pkgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; padding: 14px; }
+.pkg { display: flex; flex-direction: column; min-width: 0; padding: 10px; border-radius: 10px; background: color-mix(in srgb, var(--win-fg) 4%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--win-fg) 8%, transparent); }
+.pkg .pv { display: grid; place-items: center; height: 58px; border-radius: 7px; background: var(--dim), var(--backdrop) center / cover; font: var(--bar-font); color: var(--fg); overflow: hidden; }
+.pkg .pv .w { height: 26px; }
+.pkg b { margin-top: 10px; font-weight: 600; font-size: 13.5px; }
+.pkg p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 3px; font-size: 12px; line-height: 1.35; color: color-mix(in srgb, var(--win-fg) 62%, transparent); }
+.pkg .by { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 10px; font-size: 11.5px; color: color-mix(in srgb, var(--win-fg) 55%, transparent); }
+.pkg .by > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pkg .pkg-get { height: 24px; padding: 0 12px; border-radius: 6px; background: color-mix(in srgb, var(--win-fg) 12%, transparent); color: var(--win-fg); font-size: 12.5px; }
+.pkg .pkg-get:hover { background: color-mix(in srgb, var(--win-fg) 18%, transparent); }
+.pkg .state { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.pkg .state svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.store-win { position: relative; }
+.store-win::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: #00000059; opacity: 0; visibility: hidden; transition: opacity .2s, visibility 0s .2s; }
+.store-win.sheet::after { opacity: 1; visibility: visible; transition: opacity .2s; }
+.pkg-review { z-index: 3; top: 56px; left: 50%; translate: -50% 0; width: min(400px, calc(100% - 24px)); }
+.pkg-review::before { content: none; }
+
 /* Displays: two screens, each with its own bar */
 .setup { display: grid; gap: 16px; margin: 40px calc(var(--gutter) * -1) 0; }
 .cap {
@@ -628,6 +654,7 @@ footer a:hover { color: var(--text); }
   .header [data-key="clock"], .site .menus, .cap.laptop .app, .cap .meeting { display: none; }
   .cap .pop { right: 12px; }
   .edit-ctl, .try { display: none !important; }
+  .store-win .find, .pkg:nth-child(n+5) { display: none; }
   .try + p { margin-top: 12px; }
   .theme-layer { width: min(296px, calc(100% - 32px)); }
   .theme-win .tb { gap: 10px; padding: 11px 12px 8px; }
