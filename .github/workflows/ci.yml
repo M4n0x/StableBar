@@ -358,3 +358,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./scripts/publish-appcast.sh "$(cat .next-version)"
+      - name: Update the Homebrew cask
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          version=$(cat .next-version)
+          git clone --depth 1 "https://x-access-token:$HOMEBREW_TAP_TOKEN@github.com/Seb-GRAF/homebrew-tap.git" tap
+          sed -i '' -e "s/^  version \".*\"/  version \"$version\"/" \
+            -e "s/^  sha256 \".*\"/  sha256 \"$(shasum -a 256 dist/StableBar.dmg | cut -d ' ' -f 1)\"/" tap/Casks/stablebar.rb
+          git -C tap -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -am "stablebar $version"
+          git -C tap push

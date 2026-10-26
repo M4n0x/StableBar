@@ -67,6 +67,8 @@ Change content, appearance and behavior without touching JSON. Settings saves to
 2. Open it and drag StableBar to Applications.
 3. Open StableBar. Setup walks you through a preset, a theme and a placement.
 
+With [Homebrew](https://brew.sh), `brew install --cask seb-graf/tap/stablebar` replaces the first two steps.
+
 StableBar needs macOS 14 or later on Apple silicon. Releases update themselves; choose the Beta track in **Settings → General → Updates** to get betas. See [Getting started](docs/getting-started.md).
 
 ## Configure
