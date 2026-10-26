@@ -224,10 +224,7 @@ final class AppMenu: NSObject {
             menuBarDisplay(of: item.frame).map { display in
                 let app = apps[item.pid]!
                 return AppMenuEntry(title: item.description ?? app.localizedName ?? "", element: item.element, isEnabled: true, isChecked: false,
-                                    hasSubmenu: item.hasMenu,
-                                    icon: menuBarSymbols[item.identifier ?? app.bundleIdentifier ?? ""].map {
-                                        NSImage(systemSymbolName: $0, accessibilityDescription: nil)!
-                                    } ?? app.icon,
+                                    hasSubmenu: item.hasMenu, icon: menuBarIcon(identifier: item.identifier, app: app),
                                     menuBarDisplay: display)
             }
         }
@@ -294,8 +291,81 @@ private struct FoundMenuBarItem {
     let hasMenu: Bool
 }
 
-private let menuBarSymbols = ["com.apple.menuextra.battery": "battery.100percent", "com.apple.menuextra.clock": "clock",
-                              "com.apple.menuextra.controlcenter": "switch.2", "com.apple.Spotlight": "magnifyingglass"]
+/// Symbols for macOS's own menu bar items, by the item's Accessibility identifier, or by its app's bundle ID when the item has
+/// none. Control Center, SystemUIServer and TextInputMenuAgent draw these items, so their apps' icons don't tell them apart.
+let menuBarSymbols = [
+    "com.apple.menuextra.accessibility-shortcuts": "accessibility", "com.apple.menuextra.airdrop": "dot.radiowaves.up.forward",
+    "com.apple.menuextra.airplay": "airplayvideo", "com.apple.menuextra.airport": "wifi", "com.apple.menuextra.appleuser": "person.crop.circle",
+    "com.apple.menuextra.battery": "battery.100percent", "com.apple.menuextra.clock": "clock", "com.apple.menuextra.controlcenter": "switch.2",
+    "com.apple.menuextra.display": "sun.max.fill", "com.apple.menuextra.eject": "eject.fill", "com.apple.menuextra.faceTime": "video.fill",
+    "com.apple.menuextra.focusmode": "moon.fill", "com.apple.menuextra.hearing": "ear", "com.apple.menuextra.keyboard-brightness": "light.max",
+    "com.apple.menuextra.musicrecognition": "shazam.logo", "com.apple.menuextra.now-playing": "play.fill",
+    "com.apple.menuextra.screen-mirroring": "rectangle.on.rectangle", "com.apple.menuextra.shortcuts": "square.2.layers.3d",
+    "com.apple.menuextra.sound": "speaker.wave.2.fill", "com.apple.menuextra.stagemanager": "squares.leading.rectangle",
+    "com.apple.menuextra.textinput": "keyboard", "com.apple.menuextra.TimeMachine": "clock.arrow.circlepath", "com.apple.menuextra.timer": "timer",
+    "com.apple.menuextra.universalaccess": "accessibility", "com.apple.menuextra.volume": "speaker.wave.2.fill",
+    "com.apple.menuextra.vpn": "network.badge.shield.half.filled", "com.apple.menuextra.wifi": "wifi",
+    "com.apple.menuextra.wwan": "antenna.radiowaves.left.and.right", "com.apple.Spotlight": "magnifyingglass",
+    "com.apple.TextInputMenuAgent": "keyboard",
+]
+
+/// The icon the Menu bar items row shows: a symbol for macOS's own items, otherwise the icon of the app the item's process
+/// belongs to. A process without an icon of its own, such as a system agent, gets a menu bar symbol instead of macOS's
+/// blank app icon.
+func menuBarIcon(identifier: String?, app: NSRunningApplication) -> NSImage {
+    let key = identifier ?? app.bundleIdentifier ?? ""
+    if key == "com.apple.menuextra.bluetooth" { return bluetoothGlyph() }
+    if let symbol = menuBarSymbols[key].flatMap({ NSImage(systemSymbolName: $0, accessibilityDescription: nil) }) { return symbol }
+    guard let bundle = iconBundle(containing: app.bundleURL) else {
+        return NSImage(systemSymbolName: "menubar.rectangle", accessibilityDescription: nil)!
+    }
+    return retinaArt(of: NSWorkspace.shared.icon(forFile: bundle.path))
+}
+
+/// The app whose icon stands for a process at `url`: its own bundle when that declares an icon, otherwise the nearest app
+/// around it that does, as for a helper or daemon inside an app. `nil` when there is none, as for the system agent behind
+/// the input menu.
+func iconBundle(containing url: URL?) -> URL? {
+    var url = url?.standardizedFileURL
+    while let current = url, current.pathComponents.count > 1 {
+        if current.pathExtension == "app", let info = Bundle(url: current)?.infoDictionary,
+           ["CFBundleIconFile", "CFBundleIconName", "CFBundleIcons"].contains(where: { info[$0] != nil }) { return current }
+        url = current.deletingLastPathComponent()
+    }
+    return nil
+}
+
+/// `icon` at the row's 18 points, always from its Retina art, which a 1× display scales down. Some apps ship broken 1×
+/// images: Docker Desktop's 16, 32 and 48 px ones are noise, and a 1× display would otherwise draw one of them.
+func retinaArt(of icon: NSImage) -> NSImage {
+    var rect = CGRect(x: 0, y: 0, width: 18, height: 18)
+    let retina = NSAffineTransform()
+    retina.scale(by: 2)
+    guard let image = icon.cgImage(forProposedRect: &rect, context: nil, hints: [.ctm: retina]) else { return icon }
+    return NSImage(cgImage: image, size: rect.size)
+}
+
+/// The Bluetooth rune, which SF Symbols doesn't include, drawn as a template image like a symbol.
+private func bluetoothGlyph() -> NSImage {
+    let image = NSImage(size: NSSize(width: 12, height: 18), flipped: true) { _ in
+        let rune = NSBezierPath()
+        rune.move(to: NSPoint(x: 2, y: 5.5))
+        rune.line(to: NSPoint(x: 10, y: 12.5))
+        rune.line(to: NSPoint(x: 6, y: 16.25))
+        rune.line(to: NSPoint(x: 6, y: 1.75))
+        rune.line(to: NSPoint(x: 10, y: 5.5))
+        rune.line(to: NSPoint(x: 2, y: 12.5))
+        rune.lineWidth = 1.6
+        rune.lineCapStyle = .round
+        rune.lineJoinStyle = .round
+        NSColor.black.setStroke()
+        rune.stroke()
+        return true
+    }
+    image.isTemplate = true
+    image.accessibilityDescription = "Bluetooth"
+    return image
+}
 
 private func frame(of element: AXUIElement, _ readAttribute: (String, AXUIElement) -> CFTypeRef?) -> CGRect {
     var position = CGPoint.zero

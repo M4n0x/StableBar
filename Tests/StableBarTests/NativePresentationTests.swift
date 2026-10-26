@@ -238,6 +238,87 @@ private final class MenuReadFixture: @unchecked Sendable {
     #expect(!window.isVisible)
 }
 
+private final class BundledApplication: NSRunningApplication, @unchecked Sendable {
+    let url: URL
+    override var bundleURL: URL? { url }
+    override var bundleIdentifier: String? { nil }
+
+    init(url: URL) {
+        self.url = url
+        super.init()
+    }
+}
+
+/// An app bundle at `path` under `directory` whose Info.plist holds `info`.
+private func makeApp(_ path: String, in directory: URL, info: [String: String] = [:]) throws -> URL {
+    let app = directory.appending(path: path)
+    try FileManager.default.createDirectory(at: app.appending(path: "Contents"), withIntermediateDirectories: true)
+    try PropertyListSerialization.data(fromPropertyList: info.merging(["CFBundlePackageType": "APPL"]) { $1 }, format: .xml, options: 0)
+        .write(to: app.appending(path: "Contents/Info.plist"))
+    return app
+}
+
+@Test func menuBarItemsUseTheIconOfTheAppAroundAProcessWithoutOne() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let app = try makeApp("Tool.app", in: directory, info: ["CFBundleIconFile": "AppIcon"])
+    let helper = try makeApp("Tool.app/Contents/Library/Helper.app", in: directory)
+    let agent = try makeApp("Agent.app", in: directory)
+    #expect(iconBundle(containing: app)?.path == app.path)
+    #expect(iconBundle(containing: helper)?.path == app.path)
+    #expect(iconBundle(containing: app.appending(path: "Contents/Resources/daemon/tool"))?.path == app.path)
+    #expect(iconBundle(containing: agent) == nil)
+    #expect(iconBundle(containing: nil) == nil)
+}
+
+@Test func menuBarItemsShowSymbolsForMacOSItemsAndAgentsWithoutIcons() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let agent = BundledApplication(url: try makeApp("Agent.app", in: directory))
+    func symbol(_ name: String) -> Data? { NSImage(systemSymbolName: name, accessibilityDescription: nil)?.tiffRepresentation }
+    #expect(menuBarIcon(identifier: "com.apple.menuextra.wifi", app: agent).tiffRepresentation == symbol("wifi"))
+    #expect(menuBarIcon(identifier: "com.apple.menuextra.bluetooth", app: agent).accessibilityDescription == "Bluetooth")
+    #expect(menuBarIcon(identifier: nil, app: agent).tiffRepresentation == symbol("menubar.rectangle"))
+    let icon = menuBarIcon(identifier: nil, app: BundledApplication(url: try makeApp("Tool.app", in: directory, info: ["CFBundleIconFile": "AppIcon"])))
+    #expect(!icon.isTemplate)
+    #expect(icon.cgImage(forProposedRect: nil, context: nil, hints: nil)?.width == 36)
+}
+
+@Test func menuBarSymbolsAreSystemSymbols() {
+    #expect(menuBarSymbols.values.filter { NSImage(systemSymbolName: $0, accessibilityDescription: nil) == nil }.isEmpty)
+}
+
+@Test func menuBarItemsDrawAppIconsFromTheirRetinaArt() throws {
+    func art(_ color: NSColor, pixels: Int) throws -> NSBitmapImageRep {
+        let rep = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8,
+                                                samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                                bytesPerRow: 0, bitsPerPixel: 0))
+        rep.size = NSSize(width: 18, height: 18)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        color.setFill()
+        NSRect(origin: .zero, size: rep.size).fill()
+        NSGraphicsContext.restoreGraphicsState()
+        return rep
+    }
+    /// The middle of `image` drawn at 1×, as on a 1× display.
+    func color(drawing image: NSImage) throws -> NSColor {
+        let canvas = try art(.clear, pixels: 18)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: canvas)
+        image.draw(in: NSRect(origin: .zero, size: canvas.size))
+        NSGraphicsContext.restoreGraphicsState()
+        return try #require(canvas.colorAt(x: 9, y: 9)?.usingColorSpace(.deviceRGB))
+    }
+    // A broken 1× image beside the Retina one, as in Docker Desktop's icon.
+    let icon = NSImage(size: NSSize(width: 18, height: 18))
+    icon.addRepresentation(try art(.red, pixels: 18))
+    icon.addRepresentation(try art(.blue, pixels: 36))
+    #expect(try color(drawing: icon).redComponent > 0.9)
+    let retina = try color(drawing: retinaArt(of: icon))
+    #expect(retina.blueComponent > 0.9 && retina.redComponent < 0.1)
+}
+
 /// Actual AppKit/SwiftUI rendering, in a window that is never ordered onto the user's screen.
 @MainActor final class PresentationHostingView: NSHostingView<AnyView> {
     private(set) var layoutCalls = 0
