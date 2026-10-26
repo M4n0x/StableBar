@@ -439,6 +439,22 @@ struct BarInspector: View {
                         }).animation(.snappy(duration: 0.2)))
                         .toggleStyle(.switch).labelsHidden().controlSize(.small)
                     }
+                    SettingRow(title: "Magnify on hover", hint: "Zoom app icons like the Dock and show the app’s name below the bar") {
+                        Toggle("Magnify on hover", isOn: Binding(get: { widget.workspace?.magnification != nil }, set: {
+                            editor.set(["workspace": .object(["magnification": $0 ? .number(1.5) : .null])], for: widget.id)
+                        }).animation(.snappy(duration: 0.2)))
+                        .toggleStyle(.switch).labelsHidden().controlSize(.small)
+                    }
+                    if let magnification = widget.workspace?.magnification {
+                        let percent = Binding(get: { magnification * 100 }, set: {
+                            editor.set(["workspace": .object(["magnification": .number($0 / 100)])], for: widget.id)
+                        })
+                        NumberDraft(value: percent) { percent in
+                            SettingRow(title: "Magnification", scrub: Scrub(value: percent, range: 110...200, step: 5)) {
+                                NumberField(title: "Magnification", value: percent, range: 110...200, step: 5, unit: "%", slider: true)
+                            }
+                        }
+                    }
                     if widget.workspace?.windows == true {
                         let length = Binding(get: { Double(widget.workspace?.titleLength ?? 0) }, set: {
                             editor.set(["workspace": .object(["titleLength": .number($0)])], for: widget.id)

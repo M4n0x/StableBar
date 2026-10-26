@@ -1282,6 +1282,9 @@
         },
         "titleLength": {
           "anyOf": [{"type": "integer", "minimum": 0}, {"$ref": "#/definitions/reference"}, {"type": "null"}]
+        },
+        "magnification": {
+          "anyOf": [{"type": "number", "minimum": 1}, {"$ref": "#/definitions/reference"}, {"type": "null"}]
         }
       }
     },
