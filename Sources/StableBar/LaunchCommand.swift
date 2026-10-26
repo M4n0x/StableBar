@@ -12,6 +12,7 @@ enum LaunchCommand {
     case renderDocsImages(URL)
     case triage(URL, agent: TriageAgent?, model: String?)
     case triageContext(URL)
+    case report(URL)
     case help
 
     static let configurationURL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/stablebar/config.json")
@@ -33,6 +34,7 @@ enum LaunchCommand {
            StableBar [--config PATH] --enable-package ID VERSION [--persist]
            StableBar [--config PATH] --uninstall-package ID VERSION
            StableBar [--config PATH] triage [--agent claude|codex] [--model MODEL]
+           StableBar [--config PATH] --report
            StableBar --help
     """
 
@@ -117,6 +119,8 @@ enum LaunchCommand {
             self = try Self.triage(url, Array(arguments.dropFirst()))
         case "--triage-context" where arguments.count == 1:
             self = .triageContext(url)
+        case "--report" where arguments.count == 1 && !persist:
+            self = .report(url)
         case "--help" where arguments.count == 1:
             self = .help
         default:

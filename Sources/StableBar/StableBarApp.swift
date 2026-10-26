@@ -79,6 +79,15 @@ struct StableBarApp {
                 try Triage.run(configuration: url, agent: agent, model: model)
             case let .triageContext(url):
                 print(try Triage.writeContext(configuration: url).path)
+            case let .report(url):
+                // A bar running with this configuration adds what only it knows; without one, the report says what's missing.
+                let live = try? RuntimeControl.send(RuntimeRequest(action: .report), url: url).decoded(BugReport.Live.self)
+                Task {
+                    print(await BugReport.gather(configuration: url, live: live, barRunning: RuntimeControl.isRunning(url: url),
+                                                 path: ProcessInfo.processInfo.environment["PATH"] ?? "").markdown)
+                    exit(0)
+                }
+                dispatchMain()
             case .help:
                 print(LaunchCommand.usage)
             case let .run(url):

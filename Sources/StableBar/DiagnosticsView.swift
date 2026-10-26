@@ -72,6 +72,8 @@ struct DiagnosticsView: View {
     @State private var snapshotDate: Date?
     @State private var snapshotTask: Task<Void, Never>?
     @State private var actionTask: Task<Void, Never>?
+    @State private var reportTask: Task<Void, Never>?
+    @State private var reportNotice: String?
     @State private var needingAttention: Set<String>
 
     init(editor: ConfigurationEditor) {
@@ -215,6 +217,26 @@ struct DiagnosticsView: View {
                 snapshotControls
             } header: {
                 SettingsSectionTitle("Configuration")
+            }
+            Section {
+                HStack {
+                    Button("Copy bug report") {
+                        makeReport { report in
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(report.markdown, forType: .string)
+                            reportNotice = "Bug report copied. Check it, then paste it into a GitHub issue."
+                        }
+                    }
+                    Button("Report on GitHub…") { makeReport { NSWorkspace.shared.open($0.issueURL()) } }
+                    if reportTask != nil { ProgressView().controlSize(.small) }
+                }
+                .disabled(reportTask != nil)
+                if let reportNotice { Text(reportNotice).font(.callout).foregroundStyle(.secondary) }
+            } header: {
+                SettingsSectionTitle("Report a problem")
+            } footer: {
+                Text("The report lists StableBar's version, macOS, your displays, access, theme, packages, problems and crashes from the last 30 days, with your home folder written as ~ and no configuration values. Report on GitHub opens the bug report form with it filled in, for you to check before submitting.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -393,6 +415,15 @@ struct DiagnosticsView: View {
         }
     }
 
+    private func makeReport(_ use: @escaping (BugReport) -> Void) {
+        reportTask = Task {
+            let report = await store.bugReport()
+            if Task.isCancelled { return }
+            use(report)
+            reportTask = nil
+        }
+    }
+
     private func clearSelection() {
         store.setInspectedWidget(nil)
         snapshotTask?.cancel()
@@ -402,6 +433,9 @@ struct DiagnosticsView: View {
         technical = false
         actionTask?.cancel()
         actionTask = nil
+        reportTask?.cancel()
+        reportTask = nil
+        reportNotice = nil
         notice = nil
         error = nil
     }

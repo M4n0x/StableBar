@@ -42,23 +42,15 @@ struct TriageFacts {
     var crashes: [String]
 
     @MainActor static func gather(configuration: URL, sourceCache: URL, path: String) -> TriageFacts {
-        let version = AppVersion()
-        let system = ProcessInfo.processInfo.operatingSystemVersion
-        return TriageFacts(
+        TriageFacts(
             generatedAt: Date(),
-            version: version.channel == .development ? version.version.map { "development build \($0)" } ?? "development build"
-                : "\(version.version ?? "unknown") (\(version.channel.rawValue)\(version.build.map { ", build \($0)" } ?? ""))",
+            version: MacFacts.version,
             updateTrack: UserDefaults.standard.string(forKey: "updateTrack") == "beta" ? "Beta" : "Stable",
             application: Bundle.main.bundleURL.path,
             executable: Bundle.main.executableURL?.path ?? CommandLine.arguments[0],
-            system: "\(system.majorVersion).\(system.minorVersion).\(system.patchVersion) (\(sysctl("kern.osversion"))), \(sysctl("hw.machine"))",
-            mac: "\(sysctl("hw.model")), \(sysctl("machdep.cpu.brand_string"))",
-            displays: NSScreen.screens.map { screen in
-                var details = ["\(Int(screen.frame.width))×\(Int(screen.frame.height)) points at \(screen.backingScaleFactor.formatted())x"]
-                if screen.safeAreaInsets.top > 0 { details.append("notch") }
-                if screen == NSScreen.screens.first { details.append("main") }
-                return "\(screen.localizedName): \(details.joined(separator: ", "))"
-            },
+            system: MacFacts.system,
+            mac: MacFacts.mac,
+            displays: MacFacts.displays,
             aerospace: Triage.executable(named: "aerospace", path: path)?.path,
             yabai: Triage.executable(named: "yabai", path: path)?.path,
             omniwm: WorkspaceSource.omniwm.executable(path: path),
@@ -70,14 +62,6 @@ struct TriageFacts {
             barRunning: RuntimeControl.isRunning(url: configuration),
             sourceCache: sourceCache,
             crashes: CrashReports.read(CrashReports.folders, since: Date().addingTimeInterval(-CrashReports.window)).map(\.summary))
-    }
-
-    private static func sysctl(_ name: String) -> String {
-        var size = 0
-        guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return "unknown" }
-        var value = [UInt8](repeating: 0, count: size)
-        guard sysctlbyname(name, &value, &size, nil, 0) == 0 else { return "unknown" }
-        return String(decoding: value.prefix { $0 != 0 }, as: UTF8.self)
     }
 }
 
@@ -181,18 +165,7 @@ enum Triage {
     }
 
     static func validation(of url: URL) -> String {
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            return "no file yet; StableBar creates it from the starter configuration at first launch"
-        }
-        func count(_ number: Int, _ noun: String) -> String { "\(number) \(noun)\(number == 1 ? "" : "s")" }
-        do {
-            var loader = ConfigurationLoader()
-            let configuration = try loader.load(url)
-            return "valid, \(count(configuration.widgets.count, "widget")) in \(count(loader.dependencies.count, "file"))"
-                + (loader.newerVersionWarning.map { "; \($0)" } ?? "")
-        } catch {
-            return "invalid: \(errorMessage(error))"
-        }
+        ConfigurationSummary(url: url).text
     }
 
     /// Writes `context.md` and `prompt.md` into a new folder named after the time the facts were gathered.

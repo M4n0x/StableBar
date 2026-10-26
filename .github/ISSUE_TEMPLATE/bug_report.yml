@@ -41,7 +41,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Finder shows the StableBar version under Get Info for StableBar.app. If you built it yourself, give the commit instead.
+      description: Paste the report from Settings → Status → Report a problem → Copy bug report, or from `stablebar --report`, in place of these lines. If StableBar doesn't open, Finder shows its version under Get Info for StableBar.app. If you built it yourself, give the commit.
       value: |
         StableBar:
         macOS:
