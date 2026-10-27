@@ -16,7 +16,7 @@ The developer's own StableBar is usually running while you work.
    ```
 
 2. **Their running bar.** Never `killall StableBar`, `pkill`, or kill a PID found by name: the developer's bar has the same name. Stop only a process you started, by the PID you captured.
-3. **Release files.** semantic-release writes `CHANGELOG.md` and the versions in `Resources/Info.plist`. Don't edit them or bump versions by hand.
+3. **Release files.** semantic-release writes `CHANGELOG.md`, the versions in `Resources/Info.plist` and the website's download version in `site/index.html`. Don't edit them or bump versions by hand.
 
 ## Build and verify
 

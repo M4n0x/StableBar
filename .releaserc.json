@@ -8,10 +8,10 @@
       "@semantic-release/exec",
       {
         "verifyReleaseCmd": "echo ${nextRelease.version} > .next-version",
-        "prepareCmd": "./scripts/set-version.sh ${nextRelease.version} $GITHUB_RUN_NUMBER && STABLEBAR_RELEASE_BUILD=1 ./scripts/package.sh"
+        "prepareCmd": "./scripts/set-version.sh ${nextRelease.version} $GITHUB_RUN_NUMBER && ./scripts/set-site-version.sh ${nextRelease.version} && STABLEBAR_RELEASE_BUILD=1 ./scripts/package.sh"
       }
     ],
-    ["@semantic-release/git", { "assets": ["CHANGELOG.md", "Resources/Info.plist", "docs/images/*.webp"] }],
+    ["@semantic-release/git", { "assets": ["CHANGELOG.md", "Resources/Info.plist", "docs/images/*.webp", "site/index.html"] }],
     ["@semantic-release/github", { "assets": [{ "path": "dist/StableBar.dmg" }] }]
   ]
 }

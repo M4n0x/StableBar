@@ -329,6 +329,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 20
     permissions:
+      actions: write
       contents: write
       issues: write
       pull-requests: write
@@ -435,6 +436,12 @@ jobs:
               "to release. Run it again once the newest commit's beta is out."
             exit 1
           fi
+      # The release commit points the website's downloads at this version's DMG, but it skips CI,
+      # so the website deploys only now that the release is out.
+      - name: Deploy the website
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main
       - name: Publish the update feed
         if: env.SIGNING_IDENTITY
         env:

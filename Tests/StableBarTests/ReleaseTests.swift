@@ -72,6 +72,56 @@ func releaseVersionRejectsABuildNumberThatIsNotOneToThreeIntegers(build: String)
     #expect(try Data(contentsOf: plist) == original)
 }
 
+private let setSiteVersion = URL(filePath: setVersion).deletingLastPathComponent()
+    .appending(path: "set-site-version.sh").path
+
+// A stable release runs it on the website, so every place there that names the version, and every
+// download, must move to the new release's DMG.
+@Test func siteVersionPointsEveryDownloadOnTheWebsiteAtTheVersion() async throws {
+    let website = URL(filePath: setVersion).deletingLastPathComponent().deletingLastPathComponent()
+        .appending(path: "site/index.html")
+    let original = try String(contentsOf: website, encoding: .utf8)
+    let current = try #require(original.firstMatch(of: /"softwareVersion": "([^"]+)"/)).output.1
+    let page = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).html")
+    defer { try? FileManager.default.removeItem(at: page) }
+    try Data(original.utf8).write(to: page)
+    _ = try await runCommand(setSiteVersion, arguments: ["12.34.56", page.path])
+    let updated = try String(contentsOf: page, encoding: .utf8)
+    #expect(!updated.contains(current))
+    #expect(!updated.contains("releases/latest"))
+    #expect(updated == original.replacingOccurrences(of: current, with: "12.34.56"))
+}
+
+@Test(arguments: ["1.2.3-beta.4", "1.2.3-beta.20261020103000.114", "v1.2.3", "1.2"])
+func siteVersionRejectsAnythingButAStableVersion(version: String) async throws {
+    let page = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).html")
+    defer { try? FileManager.default.removeItem(at: page) }
+    let original = Data("""
+        "softwareVersion": "0.1.0",
+        <a href="https://github.com/o/r/releases/download/v0.1.0/StableBar.dmg">Get<span class="ver">v0.1.0</span></a>
+
+        """.utf8)
+    try original.write(to: page)
+    await #expect(throws: CommandFailure.self) {
+        try await runCommand(setSiteVersion, arguments: [version, page.path])
+    }
+    #expect(try Data(contentsOf: page) == original)
+}
+
+@Test func siteVersionLeavesThePageUntouchedWhenItNamesNoVersion() async throws {
+    let page = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).html")
+    defer { try? FileManager.default.removeItem(at: page) }
+    let original = Data("""
+        <a href="https://github.com/o/r/releases/download/v0.1.0/StableBar.dmg">Get<span class="ver">v0.1.0</span></a>
+
+        """.utf8)
+    try original.write(to: page)
+    await #expect(throws: CommandFailure.self) {
+        try await runCommand(setSiteVersion, arguments: ["1.2.3", page.path])
+    }
+    #expect(try Data(contentsOf: page) == original)
+}
+
 // The whole suite runs in parallel, and on CI a single git command there has taken over ten seconds.
 private let historyTimeout = 60.0
 

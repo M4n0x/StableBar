@@ -12,6 +12,7 @@
 /package.json            @M4n0x @Seb-GRAF
 /package-lock.json       @M4n0x @Seb-GRAF
 /scripts/set-version.sh  @M4n0x @Seb-GRAF
+/scripts/set-site-version.sh @M4n0x @Seb-GRAF
 /AGENTS.md               @M4n0x @Seb-GRAF
 /CLAUDE.md               @M4n0x @Seb-GRAF
 /CONTRIBUTING.md         @M4n0x @Seb-GRAF

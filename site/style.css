@@ -125,6 +125,7 @@ h1 .wide { display: none; }
 }
 .cta:hover { background: #ff9233; }
 .cta svg { width: 15px; height: 18px; fill: currentColor; }
+.cta .ver { margin-left: -2px; font-weight: 500; font-variant-numeric: tabular-nums; opacity: .75; }
 .req { font-size: 13.5px; line-height: 1.45; color: var(--text-3); }
 .brew { margin-top: 14px; }
 .req code { font: 400 .92em/1 var(--mono); color: var(--text); white-space: nowrap; }

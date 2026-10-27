@@ -324,9 +324,10 @@ for (const layer of layers) {
   handle.addEventListener("pointercancel", release);
 }
 
-/* The disk image: drag StableBar onto Applications */
+/* The disk image: drag StableBar onto Applications to download the DMG the buttons link */
 const ico = document.getElementById("app-ico");
 const folder = document.getElementById("folder");
+const dmg = document.querySelector(".install .cta").href;
 let grab = null;
 const overFolder = e => {
   const r = folder.getBoundingClientRect();
@@ -350,6 +351,8 @@ ico.addEventListener("pointerup", e => {
   ico.classList.remove("dragging");
   folder.classList.remove("over");
   if (!overFolder(e)) { ico.style.transform = ""; return; }
+  // Started from the drop itself, so the browser counts it as the visitor's own download.
+  location.href = dmg;
   const f = folder.getBoundingClientRect();
   const home = ico.parentElement.getBoundingClientRect();
   ico.style.transform = `translate(${f.left + f.width / 2 - (home.left + home.width / 2)}px, ${f.top + f.height / 2 - (home.top + home.height / 2)}px) scale(.4)`;
