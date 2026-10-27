@@ -246,9 +246,14 @@ function dockState() {
   dock.style.width = docked ? `${r.width}px` : "";
   if (header === dock.classList.contains("header")) return;
   if (header) endEditing();
+  dock.classList.add("measure");
+  dock.classList.toggle("header", header);
+  fit();
+  dock.classList.toggle("header", !header);
+  dock.offsetWidth;
+  dock.classList.remove("measure");
   dock.classList.toggle("header", header);
   if (openId) open(openId);
-  requestAnimationFrame(fit);
   setTimeout(fit, 450);
 }
 
