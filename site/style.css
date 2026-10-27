@@ -288,6 +288,7 @@ h1 .wide { display: none; }
 .w.dl:hover { background: #ff9233; }
 .header .w.dl { grid-template-columns: 1fr; margin-left: 0; opacity: 1; visibility: visible; transition-delay: 0s; }
 .header .w.dl > span { padding: 0 11px 0 8px; }
+.measure * { transition: none !important; }
 
 /* The center position shows only when a widget sits there */
 .dock:not(.editing) #gc:not(:has(> .w:not([hidden]))) { display: none; }
