@@ -207,7 +207,6 @@ struct SetupDemo: View {
         .padding(look.bar.margin)
     }
 
-    /// The person's bar as the bar panel draws it, so the landing shows no change.
     private var ownBar: some View {
         GeometryReader { proxy in
             let notch = display.notch.map { $0.upperBound - $0.lowerBound }
