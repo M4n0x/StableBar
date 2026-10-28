@@ -186,12 +186,12 @@ struct SetupPreferences: Equatable {
             switch self {
             case .minimal: SetupPreferences(placement: placement, theme: .builtIn, widgetSets: [.sound, .menuBarItems])
             case .developer: SetupPreferences(appearance: .dark, placement: placement, theme: .package(id: "blueprint", version: nil),
-                                              widgetSets: [.workspaces(workspaces), .system, .battery, .sound, .menuBarItems])
+                                              widgetSets: [.workspaces(workspaces), .system, .sound, .battery, .menuBarItems])
             case .workday: SetupPreferences(placement: placement, theme: .package(id: "leman", version: nil),
-                                            widgetSets: [.meetings, .battery, .sound, .menuBarItems])
-            case .notch: SetupPreferences(placement: .top, theme: .package(id: "notch", version: nil), widgetSets: [.battery, .sound, .menuBarItems])
+                                            widgetSets: [.meetings, .sound, .battery, .menuBarItems])
+            case .notch: SetupPreferences(placement: .top, theme: .package(id: "notch", version: nil), widgetSets: [.sound, .battery, .menuBarItems])
             case .everything: SetupPreferences(placement: placement, theme: .package(id: "rose-pine", version: nil),
-                                               widgetSets: [.workspaces(workspaces), .meetings, .system, .battery, .sound, .menuBarItems])
+                                               widgetSets: [.workspaces(workspaces), .meetings, .system, .sound, .battery, .menuBarItems])
             }
         }
     }
@@ -283,11 +283,15 @@ struct SetupPreferences: Equatable {
                 if !enabled { widget["enabled"] = .bool(false) }
                 edits.append(ConfigurationEdit(action: .add, properties: widget))
                 appended.append(id)
+                let ends = ["audio", "battery", "clock", "menuBarItems"]
+                let end = try ends.firstIndex(of: widget["type"]!.decoded(String.self)) ?? -1
                 let anchor = configuration.widgets.first { existing in
                     switch existing.content {
                     case .activeApp, .appMenu: widget["position"] == .string("left")
-                    case .clock, .menuBarItems: widget["position"] == .string("right")
-                    case let .provider(name): widget["position"] == .string("right") && configuration.providers[name]!.type == "audio"
+                    case .clock: widget["position"] == .string("right") && ends.firstIndex(of: "clock")! > end
+                    case .menuBarItems: widget["position"] == .string("right") && ends.firstIndex(of: "menuBarItems")! > end
+                    case let .provider(name):
+                        widget["position"] == .string("right") && ends.firstIndex(of: configuration.providers[name]!.type) ?? -1 > end
                     default: false
                     }
                 }

@@ -661,7 +661,7 @@ func setupPresetsLoadWithTheBundledThemes(preset: SetupPreferences.Preset) throw
 }
 
 @Test(arguments: [false, true])
-func setupKeepsSoundMenuBarItemsAndTheClockAtTheRightEnd(starter: Bool) throws {
+func setupEndsTheBarWithSoundBatteryTheClockAndMenuBarItems(starter: Bool) throws {
     let repository = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let data = starter ? try Data(contentsOf: repository.appending(path: "Resources/config.json")) : Data(#"""
     { "widgets": [
@@ -673,8 +673,8 @@ func setupKeepsSoundMenuBarItemsAndTheClockAtTheRightEnd(starter: Bool) throws {
     let updated = try SetupPreferences.Preset.everything.preferences(workspaces: .spaces, placement: .current)
         .applying(to: data, menuBarHeight: 24)
     let configuration = try JSONDecoder().decode(Configuration.self, from: updated)
-    #expect(configuration.widgets.map(\.id) == ["system", "workspaces", "app-menu", "meeting", "system-monitor", "battery", "sound",
-                                                "menu-bar-items", "clock"])
+    #expect(configuration.widgets.map(\.id) == ["system", "workspaces", "app-menu", "meeting", "system-monitor", "sound", "battery",
+                                                "clock", "menu-bar-items"])
     #expect(configuration.workspaceSource == .spaces)
 }
 

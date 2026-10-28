@@ -396,8 +396,9 @@ struct SetupTourView: View {
                             ForEach(sets.filter { if case .workspaces = $0 { true } else { false } }, id: \.self) { Image(systemName: $0.symbol) }
                             Image(systemName: "menubar.rectangle").opacity(0.45)
                             Spacer(minLength: 2)
-                            ForEach(sets.filter { if case .workspaces = $0 { false } else { true } }, id: \.self) { Image(systemName: $0.symbol) }
+                            ForEach(sets.filter { if case .workspaces = $0 { false } else { $0 != .menuBarItems } }, id: \.self) { Image(systemName: $0.symbol) }
                             Image(systemName: "clock").opacity(0.45)
+                            if sets.contains(.menuBarItems) { Image(systemName: SetupPreferences.WidgetSet.menuBarItems.symbol) }
                         }
                         .font(.system(size: 8.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.85))
