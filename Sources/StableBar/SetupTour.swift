@@ -19,7 +19,7 @@ struct SetupTourView: View {
     private enum Phase { case intro, wallpaper, tour }
 
     private static let pages = [
-        ("Make it yours.", "Start from a preset, then flip through themes with ← and →. Your bar changes as you choose; presets never remove your widgets."),
+        ("Make it yours.", "Choose your widgets, then a theme. Your bar changes as you go."),
         ("Choose where it sits.", "On the top edge, StableBar replaces the macOS menu bar. Below it, macOS menus stay visible."),
         ("Finishing touches.", "Choose what StableBar may do. Permission buttons ask macOS right away."),
         ("Try your bar.", "It's live: click a widget to open it, or right-click the bar for more. Nothing is saved until you finish.")
@@ -309,7 +309,23 @@ struct SetupTourView: View {
             }
             staged(0.16) {
                 switch session.step {
-                case 0: VStack(spacing: 28) { presets; themes }
+                case 0:
+                    VStack(spacing: 28) {
+                        section("Widgets") {
+                            Text("Presets add widgets and never remove yours.").font(.system(size: 12)).foregroundStyle(.white.opacity(0.45))
+                        } content: {
+                            presets
+                        }
+                        section("Theme") {
+                            HStack(spacing: 10) {
+                                Text("Appearance").font(.system(size: 12)).foregroundStyle(.white.opacity(0.45))
+                                SettingsSegments(selection: $session.preferences.appearance,
+                                                 options: SetupPreferences.Appearance.allCases.map { ($0, $0.rawValue) }, stretches: false)
+                            }
+                        } content: {
+                            themes
+                        }
+                    }
                 case 1: placement
                 case 2: access
                 default: hints
@@ -341,28 +357,58 @@ struct SetupTourView: View {
         }
     }
 
+    private func section<Trailing: View, Content: View>(_ title: String, @ViewBuilder trailing: () -> Trailing,
+                                                        @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title).font(.system(size: 15, weight: .semibold))
+                Spacer()
+                trailing()
+            }
+            content()
+        }
+        .frame(width: 948)
+    }
+
     private var presets: some View {
         HStack(spacing: 12) {
             ForEach(SetupPreferences.Preset.allCases, id: \.self) { preset in
                 let selected = session.preset == preset
+                let sets = preset.preferences(workspaces: session.workspaceSource, placement: session.preferences.placement).widgetSets
                 SetupTile(selected: selected) {
                     session.preset = selected ? nil : preset
                     session.preferences = selected ? SetupPreferences(placement: session.preferences.placement)
                         : preset.preferences(workspaces: session.workspaceSource, placement: session.preferences.placement)
                     if session.preferences.placement == .top { Task { await session.place(.top) } }
                 } label: {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Image(systemName: preset.symbol).font(.system(size: 20)).frame(height: 26)
-                        Text(preset.title).font(.system(size: 15, weight: .semibold))
-                        Text(preset.detail)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.white.opacity(0.55))
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack {
+                            Image(systemName: preset.symbol).font(.system(size: 15))
+                            Spacer()
+                            if selected { Image(systemName: "checkmark.circle.fill").font(.system(size: 15)) }
+                        }
+                        .frame(height: 20)
+                        Text(preset.title).font(.system(size: 15, weight: .semibold)).padding(.top, 10)
+                        Text(preset.detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.55)).padding(.top, 2)
+                        Spacer(minLength: 12)
+                        HStack(spacing: 4) {
+                            Image(systemName: "apple.logo").opacity(0.45)
+                            ForEach(sets.filter { if case .workspaces = $0 { true } else { false } }, id: \.self) { Image(systemName: $0.symbol) }
+                            Image(systemName: "menubar.rectangle").opacity(0.45)
+                            Spacer(minLength: 2)
+                            ForEach(sets.filter { if case .workspaces = $0 { false } else { true } }, id: \.self) { Image(systemName: $0.symbol) }
+                            Image(systemName: "clock").opacity(0.45)
+                        }
+                        .font(.system(size: 8.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .padding(.horizontal, 7)
+                        .frame(height: 22)
+                        .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 6))
                     }
-                    .padding(16)
-                    .frame(width: 168, height: 140, alignment: .topLeading)
+                    .padding(14)
+                    .frame(width: 180, height: 140, alignment: .topLeading)
                 }
+                .help("Adds \(ListFormatter.localizedString(byJoining: sets.map(\.title))).")
             }
         }
     }
@@ -372,39 +418,32 @@ struct SetupTourView: View {
         let selected = session.store.selectedThemeKey
         let index = choices.firstIndex { $0.key == selected } ?? 0
         let appearance = session.store.configuration?.bar.appearance ?? (session.store.context.appearance == "dark" ? .dark : .light)
-        return VStack(spacing: 20) {
-            HStack(spacing: 16) {
-                roundButton("chevron.left", label: "Previous theme") {
-                    choose(choices[(index + choices.count - 1) % choices.count])
-                }
-                .keyboardShortcut(.leftArrow, modifiers: [])
-                ScrollViewReader { scroll in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(choices, id: \.key) { choice in
-                                themeTile(choice, appearance: appearance, selected: choice.key == selected)
-                            }
+        return HStack(spacing: 16) {
+            roundButton("chevron.left", label: "Previous theme") {
+                choose(choices[(index + choices.count - 1) % choices.count])
+            }
+            .keyboardShortcut(.leftArrow, modifiers: [])
+            ScrollViewReader { scroll in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(choices, id: \.key) { choice in
+                            themeTile(choice, appearance: appearance, selected: choice.key == selected)
                         }
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 12)
                     }
-                    .onAppear { scroll.scrollTo(selected, anchor: .center) }
-                    .onChange(of: selected) { withAnimation(.smooth(duration: 0.3)) { scroll.scrollTo(selected, anchor: .center) } }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
                 }
-                .frame(width: 776)
-                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.05),
-                                             .init(color: .black, location: 0.95), .init(color: .clear, location: 1)],
-                                     startPoint: .leading, endPoint: .trailing))
-                roundButton("chevron.right", label: "Next theme") {
-                    choose(choices[(index + 1) % choices.count])
-                }
-                .keyboardShortcut(.rightArrow, modifiers: [])
+                .onAppear { scroll.scrollTo(selected, anchor: .center) }
+                .onChange(of: selected) { withAnimation(.smooth(duration: 0.3)) { scroll.scrollTo(selected, anchor: .center) } }
             }
-            HStack(spacing: 12) {
-                Text("Appearance").font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
-                SettingsSegments(selection: $session.preferences.appearance,
-                                 options: SetupPreferences.Appearance.allCases.map { ($0, $0.rawValue) }, stretches: false)
+            .frame(width: 836)
+            .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.05),
+                                         .init(color: .black, location: 0.95), .init(color: .clear, location: 1)],
+                                 startPoint: .leading, endPoint: .trailing))
+            roundButton("chevron.right", label: "Next theme") {
+                choose(choices[(index + 1) % choices.count])
             }
+            .keyboardShortcut(.rightArrow, modifiers: [])
         }
     }
 

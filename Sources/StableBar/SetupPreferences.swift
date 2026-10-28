@@ -49,6 +49,10 @@ struct SetupPreferences: Equatable {
             }
         }
 
+        var symbol: String {
+            WidgetAddCatalog.builtIns.first { $0.properties?["type"] == widgets[0]["type"] }!.symbol
+        }
+
         var widgets: [[String: ConfigurationValue]] {
             let json = switch self {
             case .system: #"""
@@ -160,11 +164,11 @@ struct SetupPreferences: Equatable {
 
         var detail: String {
             switch self {
-            case .minimal: "App menus, sound and the time on the Built-in theme."
-            case .developer: "Workspaces, CPU, battery and sound on dark Blueprint."
-            case .workday: "Your next meeting, battery and sound on Léman."
-            case .notch: "A black bar on the top edge that hides the notch."
-            case .everything: "Workspaces, meetings, CPU, battery and sound on Rosé Pine."
+            case .minimal: "Built-in theme"
+            case .developer: "Blueprint theme, dark"
+            case .workday: "Léman theme"
+            case .notch: "Notch theme, top edge"
+            case .everything: "Rosé Pine theme"
             }
         }
 
