@@ -868,6 +868,15 @@ final class BarStore: NSObject {
         updateSuspension()
     }
 
+    /// Runs again what started with the app's own environment while the login shell's was still being read.
+    func loginShellEnvironmentLoaded() {
+        workspaceStore.reconnect()
+        var restarted = Set<ObjectIdentifier>()
+        for script in Array(scripts.values) + Array(providers.values) where restarted.insert(ObjectIdentifier(script)).inserted {
+            script.refresh(ScriptEvent(sender: "startup"))
+        }
+    }
+
     private func updateSuspension() {
         var visible = visibleWidgets.values.reduce(into: Set<String>()) { $0.formUnion($1) }
         if let popupWidgetID { visible.insert(popupWidgetID) }
