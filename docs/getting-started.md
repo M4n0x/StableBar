@@ -58,6 +58,8 @@ Set `bar.menuBarRevealDelay` in JSON, including in an included file or a profile
 
 **Settings → General → Native menu bar → Automatically hide the menu bar** turns macOS's **Automatically hide and show the menu bar** on or off, as setup's **Top edge** and **Below menu bar** do. Turn it on when the bar sits on the top edge in the menu bar's place, and off to show the menu bar again, for example after moving the bar down with **Offset from top**. It changes the macOS setting through System Events, so it stays after StableBar quits, and the first time macOS asks to let StableBar control System Events. **System Settings → Menu Bar**, or **Control Center** before macOS 26, shows the same setting. [Uninstall](#uninstall) turns it off when StableBar turned it on.
 
+On macOS 27, while the menu bar hides automatically, a display with a notch shows the menu bar when you click where it would be. StableBar keeps its bar above that area there, so clicks reach the bar, and steps under the menu bar while macOS shows it.
+
 **Settings → General → Native menu bar → Always hide** keeps the macOS menu bar invisible while StableBar runs, even when the pointer reaches the top edge. Quitting StableBar shows it again. In JSON, set `"bar": { "hideMenuBar": true }`.
 
 Without it, the menu bar shows on hover as usual. StableBar makes it invisible only while its [Control Center and Menu bar items](widgets.md#menu-bar-items) widgets open an item, and shows it again once the item closes.
