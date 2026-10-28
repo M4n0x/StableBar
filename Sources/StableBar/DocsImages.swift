@@ -20,7 +20,7 @@ enum DocsImages {
                                    to: directory.appending(path: "\(name)-\(appearance).png"))
             }
 
-            let bar = try store("bar", theme: "rose-pine")
+            let bar = try store("bar", theme: "catppuccin")
             try await save(hero(bar).background { backdrop(dark: dark) }, "hero", size: NSSize(width: 1100, height: 270), stores: [bar])
 
             let themes = try ThemeCatalog(packages: samples.appending(path: "packages")).choices.map { choice in
@@ -30,7 +30,7 @@ enum DocsImages {
                            size: NSSize(width: 1100, height: 78 * CGFloat(themes.count) + 10), stores: themes.map(\.1))
             themes.forEach { $0.1.stop() }
 
-            let controls = try store("controls", theme: "rose-pine", widgets: barWidgets + [controlsWidget])
+            let controls = try store("controls", theme: "catppuccin", widgets: barWidgets + [controlsWidget])
             let popups = HStack(alignment: .top, spacing: 24) {
                 popup(controls, "system-monitor")
                 popup(controls, "meeting")

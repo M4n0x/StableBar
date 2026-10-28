@@ -162,7 +162,7 @@ final class WidgetPlacementTests: XCTestCase {
     }
 
     @MainActor func testAScreenWithItsOwnLookResolvesItsThemeTokensAndStyles() throws {
-        let fixture = try ThemeGalleryFixture(##"{"tokens":{"text":"#111111ff"},"defaults":{"fontSize":12,"foreground":"@token.text"},"screens":{"laptop":{"tokens":{"text":"#222222ff"},"defaults":{"fontSize":16},"roles":{"time":{"fontSize":20}},"modeAliases":{"tailing":"command"}},"monitor":{"theme":{"id":"everforest"}},"vertical":{"bar":{"appearance":"dark","height":30}}},"widgets":[{"id":"clock","type":"clock","position":"right"}]}"##)
+        let fixture = try ThemeGalleryFixture(##"{"tokens":{"text":"#111111ff"},"defaults":{"fontSize":12,"foreground":"@token.text"},"screens":{"laptop":{"tokens":{"text":"#222222ff"},"defaults":{"fontSize":16},"roles":{"time":{"fontSize":20}},"modeAliases":{"tailing":"command"}},"monitor":{"theme":{"id":"nord"}},"vertical":{"bar":{"appearance":"dark","height":30}}},"widgets":[{"id":"clock","type":"clock","position":"right"}]}"##)
         defer { fixture.close() }
         let store = try fixture.store()
         defer { store.stop() }

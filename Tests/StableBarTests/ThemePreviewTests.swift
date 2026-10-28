@@ -14,13 +14,13 @@ final class ThemePreviewTests: XCTestCase {
         XCTAssertNil(choices.first?.edit.properties)
         let bundled = choices.filter { $0.isBundled && !$0.isBuiltIn }
         XCTAssertEqual(bundled.map(\.title), bundled.map(\.title).sorted())
-        XCTAssertEqual(bundled.count, 15)
+        XCTAssertEqual(bundled.count, 6)
         XCTAssertEqual(choices.last?.key, installed.key)
         XCTAssertEqual(choices.last?.edit.properties, installed.selection)
         XCTAssertEqual(themeChoices(packages: fixture.packages.directory, themesDirectory: fixture.themes).map(\.key), Array(choices.dropFirst()).map(\.key))
     }
 
-    func testSamplesUseOnlyTheThemeAndDifferBetweenBuiltInEverforestRosePineAndBlueprint() throws {
+    func testSamplesUseOnlyTheThemeAndDifferBetweenBuiltInNordCatppuccinAndPhosphor() throws {
         let fixture = try ThemeGalleryFixture(##"{"defaults":{"fontSize":99},"bar":{"margin":90},"widgets":[]}"##)
         defer { fixture.close() }
         let choices = ThemeCatalog(packages: fixture.packages.directory, themesDirectory: fixture.themes).choices
@@ -35,17 +35,17 @@ final class ThemePreviewTests: XCTestCase {
             XCTAssertNotEqual(preview.light.bar.margin, 90)
         }
         let builtIn = try XCTUnwrap(looks["built-in"])
-        let everforest = try XCTUnwrap(looks["everforest"])
+        let nord = try XCTUnwrap(looks["nord"])
         XCTAssertNil(builtIn.bar.style.background)
         XCTAssertNotNil(builtIn.defaults.background)
-        XCTAssertNotNil(everforest.bar.style.background)
-        XCTAssertNil(everforest.defaults.background)
-        let rosePine = try XCTUnwrap(looks["rose-pine"])
-        let blueprint = try XCTUnwrap(looks["blueprint"])
-        XCTAssertEqual(rosePine.defaults.cornerRadius, 13)
-        XCTAssertEqual(blueprint.defaults.cornerRadius, 2)
-        XCTAssertNotEqual(rosePine.defaults.accent, blueprint.defaults.accent)
-        XCTAssertEqual(blueprint.defaults.fontName, "Menlo")
+        XCTAssertNotNil(nord.bar.style.background)
+        XCTAssertNil(nord.defaults.background)
+        let catppuccin = try XCTUnwrap(looks["catppuccin"])
+        let phosphor = try XCTUnwrap(looks["phosphor"])
+        XCTAssertEqual(catppuccin.defaults.cornerRadius, 14)
+        XCTAssertEqual(phosphor.defaults.cornerRadius, 0)
+        XCTAssertNotEqual(catppuccin.defaults.accent, phosphor.defaults.accent)
+        XCTAssertEqual(phosphor.defaults.fontName, "Monaco")
     }
 
     func testDownloadedThemeUsesItsConfigurationOverBuiltInWithoutUserLayers() throws {

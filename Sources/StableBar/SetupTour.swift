@@ -82,7 +82,7 @@ struct SetupTourView: View {
         }
         .task {
             guard let configuration = session.store.configuration else { return }
-            let themes = session.themes.filter { $0.isBundled && ["blueprint", "leman", "rose-pine"].contains($0.manifest.id) && $0.key != session.currentThemeKey }
+            let themes = session.themes.filter { $0.isBundled && ["phosphor", "leman", "catppuccin"].contains($0.manifest.id) && $0.key != session.currentThemeKey }
             let directory = session.store.themesDirectory
             let previews = await Task.detached {
                 themes.compactMap { theme in

@@ -27,7 +27,7 @@ Themes, widgets and popups, set up in the app or in plain JSON.
 
 - **Native.** Swift, AppKit and SwiftUI, with no web view or private window-server API, except in the opt-in [macOS Spaces](docs/widgets.md#macos-spaces-workspaces) workspace source. One panel per display; workspace changes update the widgets in place instead of recreating windows.
 - **Guided setup.** Pick a preset, a theme and a placement, and watch each choice on your real bar. Then edit the bar in place, in Settings or in JSON.
-- **Themes.** Fifteen ship with the app and more come from the store. **Save as Theme…** turns your own look into one. Experimental Liquid Glass on macOS 26.
+- **Themes.** Six ship with the app and more come from the store. **Save as Theme…** turns your own look into one. Experimental Liquid Glass on macOS 26.
 - **Built-in widgets.** Workspaces, app menus, the active app, clock, CPU and memory, network, battery, sound and calendar, without running a script.
 - **Any script is a widget.** Print text or JSON from any language, refresh on a timer or on events, and open a popup with graphs, lists and controls.
 - **Window managers.** Workspaces from [AeroSpace](https://github.com/nikitabobko/AeroSpace), [yabai](https://github.com/koekeishiya/yabai) or [OmniWM](https://github.com/OmniNull/OmniWM). Without one, StableBar can keep windows and notifications clear of the bar.
@@ -78,7 +78,7 @@ Your bar lives in `~/.config/stablebar/config.json`. Setup and Settings save to 
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/Seb-GRAF/StableBar/main/stablebar.schema.json",
-  "theme": { "id": "rose-pine" },
+  "theme": { "id": "catppuccin" },
   "widgets": [
     { "id": "spaces", "type": "workspaces", "position": "left" },
     { "id": "app", "type": "activeApp", "position": "left" },

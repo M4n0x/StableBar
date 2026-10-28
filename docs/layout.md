@@ -25,8 +25,8 @@ Each kind of screen can also have its own layout, bar size and look. While anoth
 ```json
 "screens": {
   "laptop": {
-    "theme": { "id": "everforest" },
-    "tokens": { "accent": "#7fbbb3ff" },
+    "theme": { "id": "notch" },
+    "tokens": { "accent": "#ff9f0aff" },
     "defaults": { "fontSize": 14 },
     "popupDefaults": { "cornerRadius": 10 },
     "bar": { "height": 32, "style": { "cornerRadius": 0 } },

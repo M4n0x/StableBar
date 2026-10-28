@@ -9,7 +9,7 @@ private let example = BugReport(
     version: "0.9.0 (Stable, build 421)", system: "26.6.2 (25G83), arm64", mac: "Mac16,8, Apple M4 Pro",
     displays: ["Built-in Retina Display: built-in, 1512×982 points at 2x, notch, main", "DELL U2720Q: external, 2560×1440 points at 2x"],
     configuration: "/Users/someone/.config/stablebar/config.json, valid, 3 widgets in 2 files",
-    theme: "rose-pine (bundled)", packages: ["weather 1.0.1"],
+    theme: "catppuccin (bundled)", packages: ["weather 1.0.1"],
     workspaceTool: "AeroSpace (aerospace CLI client version: 0.19.2), /opt/homebrew/bin/aerospace",
     crashes: [crash],
     live: BugReport.Live(access: ["Accessibility allowed", "Calendars not asked yet"], workspaces: "connected", profiles: ["work"],
@@ -24,7 +24,7 @@ private let example = BugReport(
       - Built-in Retina Display: built-in, 1512×982 points at 2x, notch, main
       - DELL U2720Q: external, 2560×1440 points at 2x
     - Configuration: ~/.config/stablebar/config.json, valid, 3 widgets in 2 files
-    - Theme: rose-pine (bundled)
+    - Theme: catppuccin (bundled)
     - Packages: weather 1.0.1
     - Workspaces: AeroSpace (aerospace CLI client version: 0.19.2), /opt/homebrew/bin/aerospace, connected
     - Access: Accessibility allowed, Calendars not asked yet
@@ -97,8 +97,8 @@ private let example = BugReport(
     #expect(broken.packages == ["weather 1.0.1"])
     #expect(broken.workspaceSource == nil)
 
-    try fixture.write(#"{"theme":{"id":"rose-pine"},"widgets":[{"id":"clock","type":"clock","position":"right"}]}"#, to: fixture.url)
-    #expect(ConfigurationSummary(url: fixture.url).theme == "rose-pine (bundled)")
+    try fixture.write(#"{"theme":{"id":"catppuccin"},"widgets":[{"id":"clock","type":"clock","position":"right"}]}"#, to: fixture.url)
+    #expect(ConfigurationSummary(url: fixture.url).theme == "catppuccin (bundled)")
     #expect(ConfigurationSummary(url: fixture.url.deletingLastPathComponent().appending(path: "missing.json")).text
         == "no file yet; StableBar creates it from the starter configuration at first launch")
 }
