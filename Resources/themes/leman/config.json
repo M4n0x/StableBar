@@ -29,10 +29,12 @@
     "shadowColor": null,
     "accentText": { "light": "#ffffff", "dark": "#0f1d21" },
     "cornerRadius": 10,
+    "paddingVertical": 3,
     "fontSize": 13,
     "fontWeight": "regular"
   },
   "popupDefaults": {
+    "paddingVertical": 6,
     "background": "@token.surface",
     "borderColor": "@token.hairline",
     "shadowColor": { "light": "#0000001a", "dark": "#00000059" }
@@ -41,6 +43,7 @@
     "indicator": "background",
     "style": {
       "foreground": "@token.textMuted",
+      "cornerRadius": 7,
       "states": {
         "focused": {
           "background": { "light": "#0e7c7b1f", "dark": "#5cc5b829" },

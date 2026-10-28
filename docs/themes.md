@@ -10,7 +10,7 @@ StableBar ships with six themes and the Built-in fallback. Themes follow the sys
 | Theme | ID | Look |
 | --- | --- | --- |
 | **Built-in** | none | Each widget is its own floating tile. |
-| **Léman** | `leman` | A rounded floating bar in lake blue-green colors, with a teal accent. |
+| **Léman** | `leman` | A rounded floating bar in lake blue-green colors, with an inset teal tint for the focused workspace. |
 | **Notch** | `notch` | A pure black strip that blends into the MacBook notch, with a cyan accent. |
 | **Catppuccin** | `catppuccin` | Rounded pills on a solid strip in Latte and Mocha colors, with a Mauve pill for the focused workspace. |
 | **Nord** | `nord` | A slim 30 pt strip in Snow Storm and Polar Night colors, set in Avenir Next, with a short frost dash under the focused workspace. |

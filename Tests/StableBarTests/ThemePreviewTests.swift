@@ -48,6 +48,24 @@ final class ThemePreviewTests: XCTestCase {
         XCTAssertEqual(phosphor.defaults.fontName, "Monaco")
     }
 
+    func testLemanInsetsItsFocusedTintWithoutChangingPopupsAndCatppuccinDrawsAPill() throws {
+        let fixture = try ThemeGalleryFixture()
+        defer { fixture.close() }
+        let choices = ThemeCatalog(packages: fixture.packages.directory, themesDirectory: fixture.themes).choices
+        func look(_ id: String) throws -> Configuration {
+            try ThemePreview(choice: XCTUnwrap(choices.first { $0.key == id }), themesDirectory: fixture.themes).light
+        }
+        func workspaceCornerRadius(_ look: Configuration) -> ConfigurationValue? {
+            guard case .object(let style)? = look.workspaceDefaults.properties["style"] else { return nil }
+            return style["cornerRadius"]
+        }
+        let leman = try look("leman")
+        XCTAssertEqual(leman.defaults.paddingVertical, 3)
+        XCTAssertEqual(leman.popupDefaults.inheriting(leman.defaults).paddingVertical, 6)
+        XCTAssertEqual(workspaceCornerRadius(leman), .number(7))
+        XCTAssertEqual(workspaceCornerRadius(try look("catppuccin")), .number(14))
+    }
+
     func testDownloadedThemeUsesItsConfigurationOverBuiltInWithoutUserLayers() throws {
         let fixture = try ThemeGalleryFixture(##"{"includes":["missing.json"],"defaults":{"fontSize":99},"widgets":[]}"##)
         defer { fixture.close() }

@@ -36,6 +36,7 @@
     "indicator": "background",
     "style": {
       "foreground": "@token.textMuted",
+      "cornerRadius": 14,
       "states": {
         "focused": {
           "background": "@token.accent",
