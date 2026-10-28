@@ -183,11 +183,12 @@ final class AppMenu: NSObject {
     func openControlCenter() {
         guard checkAccess() else { return requestAccessibility() }
         guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.controlcenter").first,
-              !showsPanel(app.processIdentifier),
-              let menuBar = attribute(kAXExtrasMenuBarAttribute, of: AXUIElementCreateApplication(app.processIdentifier)),
-              let item = children(of: menuBar as! AXUIElement).first(where: {
-                  attribute(kAXIdentifierAttribute, of: $0) as? String == "com.apple.menuextra.controlcenter"
-              }),
+              !showsPanel(app.processIdentifier) else { return }
+        // Control Center lists the item up to macOS 26, MenuBarAgent from macOS 27 on.
+        let owners = [app] + NSRunningApplication.runningApplications(withBundleIdentifier: menuBarAgentID)
+        let readAttribute = readAttribute
+        let items = owners.lazy.flatMap { self.extras(of: $0.processIdentifier) }.map { menuBarExtra($0, readAttribute) }
+        guard let item = items.first(where: { self.attribute(kAXIdentifierAttribute, of: $0) as? String == "com.apple.menuextra.controlcenter" }),
               let display = menuBarDisplay(of: frame(of: item, readAttribute)) else { return }
         pressInMenuBar(item, on: display)
     }
@@ -205,36 +206,15 @@ final class AppMenu: NSObject {
         let apps = Dictionary(uniqueKeysWithValues: NSWorkspace.shared.runningApplications
             .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
             .map { ($0.processIdentifier, $0) })
-        let readAttribute = readAttribute
-        let items = await withTaskGroup { group in
-            for pid in apps.keys {
-                group.addTask {
-                    let app = AXUIElementCreateApplication(pid)
-                    AXUIElementSetMessagingTimeout(app, 0.1)
-                    let children = readAttribute(kAXExtrasMenuBarAttribute, app).flatMap {
-                        readAttribute(kAXChildrenAttribute, $0 as! AXUIElement) as? [AXUIElement]
-                    } ?? []
-                    return children.map { item in
-                        AXUIElementSetMessagingTimeout(item, 0.1)
-                        return FoundMenuBarItem(pid: pid, element: item, frame: frame(of: item, readAttribute),
-                                                description: readAttribute(kAXDescriptionAttribute, item) as? String,
-                                                identifier: readAttribute(kAXIdentifierAttribute, item) as? String,
-                                                hasMenu: (readAttribute(kAXChildrenAttribute, item) as? [AXUIElement])?.isEmpty == false)
-                    }
-                }
-            }
-            var items: [FoundMenuBarItem] = []
-            for await found in group { items += found }
-            return items
-        }
+        let items = await foundMenuBarItems(apps: Array(apps.keys),
+                                            agent: apps.values.first { $0.bundleIdentifier == menuBarAgentID }?.processIdentifier,
+                                            readAttribute: readAttribute)
         menuBarItems = items.sorted { $0.frame.midX < $1.frame.midX }.compactMap { item in
-            menuBarDisplay(of: item.frame).map { display in
-                let app = apps[item.pid]!
-                return MenuBarItem(entry: AppMenuEntry(title: item.description ?? app.localizedName ?? "", element: item.element, isEnabled: true,
-                                                       isChecked: false, hasSubmenu: item.hasMenu, icon: menuBarIcon(identifier: item.identifier, app: app),
-                                                       menuBarDisplay: display),
-                                   bundleID: app.bundleIdentifier, appName: app.localizedName ?? "", identifier: item.identifier)
-            }
+            guard let app = menuBarItemApp(pid: item.pid, in: apps), let display = menuBarDisplay(of: item.frame) else { return nil }
+            return MenuBarItem(entry: AppMenuEntry(title: item.description ?? app.localizedName ?? "", element: item.element, isEnabled: true,
+                                                   isChecked: false, hasSubmenu: item.hasMenu, icon: menuBarIcon(identifier: item.identifier, app: app),
+                                                   menuBarDisplay: display),
+                               bundleID: app.bundleIdentifier, appName: app.localizedName ?? "", identifier: item.identifier)
         }
         return true
     }
@@ -259,6 +239,10 @@ final class AppMenu: NSObject {
     func pressUnlessOpen(_ entry: AppMenuEntry) {
         var pid: pid_t = 0
         AXUIElementGetPid(entry.element, &pid)
+        if NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == menuBarAgentID,
+           let controlCenter = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.controlcenter").first {
+            pid = controlCenter.processIdentifier
+        }
         if let pressedItem, CFEqual(pressedItem, entry.element), showsPanel(pid) { return }
         pressedItem = entry.element
         press(entry)
@@ -304,6 +288,10 @@ final class AppMenu: NSObject {
 
     private func children(of element: AXUIElement) -> [AXUIElement] {
         attribute(kAXChildrenAttribute, of: element) as? [AXUIElement] ?? []
+    }
+
+    private func extras(of pid: pid_t) -> [AXUIElement] {
+        attribute(kAXExtrasMenuBarAttribute, of: AXUIElementCreateApplication(pid)).map { children(of: $0 as! AXUIElement) } ?? []
     }
 }
 
@@ -434,17 +422,111 @@ func menuBarItemsProperties(shown: [MenuBarItemsEntry], hidden: [MenuBarItemsEnt
     return properties
 }
 
-private struct FoundMenuBarItem {
+struct FoundMenuBarItem {
     let pid: pid_t
     let element: AXUIElement
     let frame: CGRect
     let description: String?
     let identifier: String?
     let hasMenu: Bool
+
+    init(_ element: AXUIElement, pid: pid_t, _ readAttribute: (String, AXUIElement) -> CFTypeRef?) {
+        AXUIElementSetMessagingTimeout(element, 0.1)
+        self.pid = pid
+        self.element = element
+        frame = StableBar.frame(of: element, readAttribute)
+        description = readAttribute(kAXDescriptionAttribute, element) as? String
+        identifier = readAttribute(kAXIdentifierAttribute, element) as? String
+        hasMenu = (readAttribute(kAXChildrenAttribute, element) as? [AXUIElement])?.isEmpty == false
+    }
+}
+
+private let menuBarAgentID = "com.apple.MenuBarAgent"
+
+/// The items in the macOS menu bar. Up to macOS 26, each app lists its own in its extras menu bar. From macOS 27 on,
+/// MenuBarAgent draws them all, and when its windows hold none, as on systems without it, the apps' lists are read instead.
+func foundMenuBarItems(apps: [pid_t], agent: pid_t?,
+                       readAttribute: @escaping @Sendable (String, AXUIElement) -> CFTypeRef?) async -> [FoundMenuBarItem] {
+    if let agent {
+        let items = await menuBarAgentItems(agent: agent, readAttribute: readAttribute)
+        if !items.isEmpty { return items }
+    }
+    return await withTaskGroup { group in
+        for pid in apps {
+            group.addTask {
+                let app = AXUIElementCreateApplication(pid)
+                AXUIElementSetMessagingTimeout(app, 0.1)
+                let children = readAttribute(kAXExtrasMenuBarAttribute, app).flatMap {
+                    readAttribute(kAXChildrenAttribute, $0 as! AXUIElement) as? [AXUIElement]
+                } ?? []
+                return children.map { FoundMenuBarItem(menuBarExtra($0, readAttribute), pid: pid, readAttribute) }
+            }
+        }
+        var items: [FoundMenuBarItem] = []
+        for await found in group { items += found }
+        return items
+    }
+}
+
+/// An item of an extras menu bar. From macOS 27 on, MenuBarAgent lists macOS's own items there, each in a hosting view.
+func menuBarExtra(_ element: AXUIElement, _ readAttribute: (String, AXUIElement) -> CFTypeRef?) -> AXUIElement {
+    AXUIElementSetMessagingTimeout(element, 0.1)
+    guard readAttribute(kAXRoleAttribute, element) as? String == kAXGroupRole else { return element }
+    return (readAttribute(kAXChildrenAttribute, element) as? [AXUIElement])?.first ?? element
+}
+
+/// The items in the menu bar that MenuBarAgent draws from macOS 27 on, where apps no longer list their own. It keeps one
+/// window per display, and only the active display's window holds the items themselves; the others hold their apps, which
+/// can't be pressed. So the window with the most items is the one to read.
+func menuBarAgentItems(agent: pid_t, readAttribute: @escaping @Sendable (String, AXUIElement) -> CFTypeRef?) async -> [FoundMenuBarItem] {
+    let app = AXUIElementCreateApplication(agent)
+    AXUIElementSetMessagingTimeout(app, 0.1)
+    let windows = (readAttribute(kAXWindowsAttribute, app) as? [AXUIElement] ?? []).map {
+        readAttribute(kAXChildrenAttribute, $0) as? [AXUIElement] ?? []
+    }
+    let found = await withTaskGroup { group in
+        for (window, slots) in windows.enumerated() {
+            for slot in slots {
+                group.addTask { menuBarAgentItem(in: slot, agent: agent, readAttribute).map { (window, $0) } }
+            }
+        }
+        var found: [(window: Int, item: FoundMenuBarItem)] = []
+        for await item in group { if let item { found.append(item) } }
+        return found
+    }
+    let counts = windows.indices.map { window in found.count { $0.window == window } }
+    guard let window = counts.indices.max(by: { counts[$0] < counts[$1] }) else { return [] }
+    return found.filter { $0.window == window }.map(\.item)
+}
+
+/// The item in one of MenuBarAgent's slots: one of macOS's own items inside its hosting view, or another app's button.
+private func menuBarAgentItem(in slot: AXUIElement, agent: pid_t, _ readAttribute: (String, AXUIElement) -> CFTypeRef?) -> FoundMenuBarItem? {
+    AXUIElementSetMessagingTimeout(slot, 0.1)
+    guard let child = (readAttribute(kAXChildrenAttribute, slot) as? [AXUIElement])?.first else { return nil }
+    let element = menuBarExtra(child, readAttribute)
+    switch readAttribute(kAXRoleAttribute, element) as? String {
+    case kAXMenuBarItemRole:
+        return FoundMenuBarItem(element, pid: agent, readAttribute)
+    case kAXButtonRole:
+        var pid: pid_t = 0
+        AXUIElementGetPid(element, &pid)
+        return FoundMenuBarItem(element, pid: pid, readAttribute)
+    default:
+        return nil
+    }
+}
+
+/// The app a menu bar item belongs to. MenuBarAgent draws macOS's own items, which Control Center drew before macOS 27,
+/// so they stay under Control Center, as the configuration names them.
+func menuBarItemApp(pid: pid_t, in apps: [pid_t: NSRunningApplication]) -> NSRunningApplication? {
+    guard let app = apps[pid] else { return nil }
+    guard app.bundleIdentifier == menuBarAgentID else { return app }
+    return apps.values.first { $0.bundleIdentifier == "com.apple.controlcenter" } ?? app
 }
 
 /// Symbols for macOS's own menu bar items, by the item's Accessibility identifier, or by its app's bundle ID when the item has
 /// none. Control Center, SystemUIServer and TextInputMenuAgent draw these items, so their apps' icons don't tell them apart.
+/// From macOS 27 on, Siri (`com.apple.campo`) draws Search.
 let menuBarSymbols = [
     "com.apple.menuextra.accessibility-shortcuts": "accessibility", "com.apple.menuextra.airdrop": "dot.radiowaves.up.forward",
     "com.apple.menuextra.airplay": "airplayvideo", "com.apple.menuextra.airport": "wifi", "com.apple.menuextra.appleuser": "person.crop.circle",
@@ -458,7 +540,7 @@ let menuBarSymbols = [
     "com.apple.menuextra.universalaccess": "accessibility", "com.apple.menuextra.volume": "speaker.wave.2.fill",
     "com.apple.menuextra.vpn": "network.badge.shield.half.filled", "com.apple.menuextra.wifi": "wifi",
     "com.apple.menuextra.wwan": "antenna.radiowaves.left.and.right", "com.apple.Spotlight": "magnifyingglass",
-    "com.apple.TextInputMenuAgent": "keyboard",
+    "com.apple.campo": "magnifyingglass", "com.apple.TextInputMenuAgent": "keyboard",
 ]
 
 /// The icon the Menu bar items row shows: a symbol for macOS's own items, otherwise the icon of the app the item's process
