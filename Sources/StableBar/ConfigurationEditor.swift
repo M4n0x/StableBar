@@ -28,7 +28,7 @@ final class ConfigurationEditor {
     }
     var barItem = BarItem.widget
     var barTab = BarTab.size
-    var widgetTab = WidgetTab.style
+    var widgetTab = WidgetTab.content
     var barScreen = ScreenKind.laptop
     var themeChangesEveryBar = true
     var selectedPackageID: String?
@@ -65,6 +65,7 @@ final class ConfigurationEditor {
         searchTarget = nil
         selectedID = id
         barItem = .widget
+        widgetTab = .content
         section = .widgets
     }
 

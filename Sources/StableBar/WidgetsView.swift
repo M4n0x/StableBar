@@ -329,8 +329,8 @@ struct WidgetsView: View {
             scroll = "These screens"
         case .everyWidget: select(.everyWidget)
         case .widgetContent, .widgetStyle, .widgetBehavior:
-            editor.widgetTab = target == .widgetContent ? .content : target == .widgetStyle ? .style : .behavior
             if let id = editor.selectedID ?? widgets.first?.id { select(id) }
+            editor.widgetTab = target == .widgetContent ? .content : target == .widgetStyle ? .style : .behavior
         case .addWidget: openAdd()
         default: return
         }

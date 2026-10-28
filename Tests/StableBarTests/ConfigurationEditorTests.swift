@@ -115,18 +115,22 @@ final class ConfigurationEditorTests: XCTestCase {
         XCTAssertNil(editor.selected["style"])
         pending = 21
         editor.barItem = .everyWidget
+        editor.widgetTab = .style
         editor.showWidget("a")
         XCTAssertEqual(committedIDs, ["a", "b", added!])
         XCTAssertEqual(editor.section, .widgets)
         XCTAssertEqual(editor.barItem, .widget)
         XCTAssertEqual(editor.selectedID, "a")
+        XCTAssertEqual(editor.widgetTab, .content)
         XCTAssertEqual(editor.style(for: added!)["fontSize"], .number(21))
         XCTAssertEqual(editor.style(for: "a")["fontSize"], .number(17))
         pending = 23
         editor.barItem = .everyWidget
+        editor.widgetTab = .behavior
         editor.showWidget("a")
         XCTAssertEqual(committedIDs, ["a", "b", added!, "a"])
         XCTAssertEqual(editor.barItem, .widget)
+        XCTAssertEqual(editor.widgetTab, .content)
         XCTAssertEqual(editor.style(for: "a")["fontSize"], .number(23))
         editor.showWidget("missing")
         XCTAssertEqual(editor.selectedID, "a")
