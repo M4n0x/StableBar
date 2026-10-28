@@ -7,7 +7,7 @@ import Testing
 func menuBarDelayReleasesAStationaryPointerAfterTheFullWait(milliseconds: Double) {
     var hover = MenuBarHover(milliseconds: milliseconds, menuBars: [CGRect(x: 0, y: 0, width: 1440, height: 30)])
     let edge = CGPoint(x: 100, y: 0)
-    let held = CGPoint(x: 100, y: 4)
+    let held = CGPoint(x: 100, y: 6)
     let end = 1 + milliseconds / 1000
     #expect(hover.move(edge, now: 1) == held)
     #expect(hover.move(edge, now: end - 0.001) == held)
@@ -20,7 +20,7 @@ func menuBarDelayReleasesAStationaryPointerAfterTheFullWait(milliseconds: Double
 @Test func menuBarDelayCancelsWhenThePointerLeavesAndStartsAFreshWait() {
     var hover = MenuBarHover(milliseconds: 2000, menuBars: [CGRect(x: 0, y: 0, width: 1440, height: 30)])
     let edge = CGPoint(x: 100, y: 0)
-    let held = CGPoint(x: 100, y: 4)
+    let held = CGPoint(x: 100, y: 6)
     #expect(hover.move(edge, now: 1) == held)
     #expect(hover.move(CGPoint(x: 100, y: 10), now: 2).y == 10)
     #expect(hover.reveal(held, now: 3) == nil)
@@ -39,12 +39,23 @@ func menuBarDelayReleasesAStationaryPointerAfterTheFullWait(milliseconds: Double
     let main = CGRect(x: 0, y: 0, width: 1440, height: 38)
     let other = CGRect(x: -1920, y: -200, width: 1920, height: 24)
     var hover = MenuBarHover(milliseconds: 1000, menuBars: [main, other])
-    #expect(hover.move(CGPoint(x: 100, y: 0), now: 1) == CGPoint(x: 100, y: 4))
-    #expect(hover.move(CGPoint(x: -100, y: -200), now: 1.5) == CGPoint(x: -100, y: -196))
-    #expect(hover.reveal(CGPoint(x: -100, y: -196), now: 2) == nil)
-    #expect(hover.reveal(CGPoint(x: -100, y: -196), now: 2.5) == CGPoint(x: -100, y: -200))
-    #expect(hover.move(CGPoint(x: 100, y: 0), now: 3) == CGPoint(x: 100, y: 4))
-    #expect(hover.reveal(CGPoint(x: 100, y: 4), now: 4) == CGPoint(x: 100, y: 0))
+    #expect(hover.move(CGPoint(x: 100, y: 0), now: 1) == CGPoint(x: 100, y: 6))
+    #expect(hover.move(CGPoint(x: -100, y: -200), now: 1.5) == CGPoint(x: -100, y: -194))
+    #expect(hover.reveal(CGPoint(x: -100, y: -194), now: 2) == nil)
+    #expect(hover.reveal(CGPoint(x: -100, y: -194), now: 2.5) == CGPoint(x: -100, y: -200))
+    #expect(hover.move(CGPoint(x: 100, y: 0), now: 3) == CGPoint(x: 100, y: 6))
+    #expect(hover.reveal(CGPoint(x: 100, y: 6), now: 4) == CGPoint(x: 100, y: 0))
+}
+
+@Test func menuBarDelayHoldsThePointerBelowTheBandWhereMacOSRevealsTheMenuBar() {
+    // macOS 27 starts its own reveal anywhere from 4 points above to 4 points below the top
+    // edge, and tracks the pointer down to 5 points.
+    var hover = MenuBarHover(milliseconds: 1000, menuBars: [CGRect(x: 0, y: 0, width: 1440, height: 38)])
+    #expect(hover.move(CGPoint(x: 100, y: 5), now: 1) == CGPoint(x: 100, y: 6))
+    #expect(hover.deadline == 2)
+    #expect(hover.move(CGPoint(x: 100, y: 4), now: 1.5) == CGPoint(x: 100, y: 6))
+    #expect(hover.move(CGPoint(x: 100, y: 7), now: 1.6) == CGPoint(x: 100, y: 7))
+    #expect(hover.deadline == nil)
 }
 
 @Test func menuBarDelayZeroLeavesThePointerUnchanged() {
