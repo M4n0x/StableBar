@@ -6,11 +6,13 @@ import Testing
 
 private final class MenuApplication: NSRunningApplication, @unchecked Sendable {
     let pid: pid_t
+    let bundleID: String?
     override var processIdentifier: pid_t { pid }
-    override var bundleIdentifier: String? { "test.menu.\(pid)" }
+    override var bundleIdentifier: String? { bundleID ?? "test.menu.\(pid)" }
 
-    init(pid: pid_t) {
+    init(pid: pid_t, bundleID: String? = nil) {
         self.pid = pid
+        self.bundleID = bundleID
         super.init()
     }
 }
@@ -342,6 +344,87 @@ private func makeApp(_ path: String, in directory: URL, info: [String: String] =
                                    to: .row, before: nil, among: items) == ["hidden": .array([])])
     #expect(menuBarItemsProperties(shown: shown, hidden: [], moving: .shown(0), to: .bar, before: nil, among: items).isEmpty)
     #expect(menuBarItemsProperties(shown: shown, hidden: [], moving: .item(docker), to: .row, before: nil, among: items).isEmpty)
+}
+
+/// Accessibility elements made up for a test, each an application element with its own process ID, and their attributes.
+private final class AccessibilityTree: @unchecked Sendable {
+    private var attributes: [(element: AXUIElement, values: [String: CFTypeRef])] = []
+
+    @discardableResult
+    func add(_ pid: pid_t, role: String, children: [AXUIElement] = [], _ values: [String: CFTypeRef] = [:]) -> AXUIElement {
+        let element = AXUIElementCreateApplication(pid)
+        attributes.append((element, values.merging([kAXRoleAttribute: role as CFString, kAXChildrenAttribute: children as CFArray]) { $1 }))
+        return element
+    }
+
+    func read(_ name: String, _ element: AXUIElement) -> CFTypeRef? {
+        attributes.first { CFEqual($0.element, element) }?.values[name]
+    }
+}
+
+@Test func macOS27ReadsMenuBarItemsFromTheActiveMenuBarThatMenuBarAgentDraws() async {
+    let tree = AccessibilityTree()
+    func slot(_ pid: pid_t, holding item: AXUIElement) -> AXUIElement { tree.add(pid, role: kAXGroupRole, children: [item]) }
+    func hosted(_ pid: pid_t, _ item: AXUIElement) -> AXUIElement { tree.add(pid, role: kAXGroupRole, children: [item], [kAXSubroleAttribute: "AXHostingView" as CFString]) }
+    let wifiValues = [kAXIdentifierAttribute: "com.apple.menuextra.wifi" as CFString, kAXDescriptionAttribute: "Wi‑Fi" as CFString]
+    let wifi = tree.add(8011, role: kAXMenuBarItemRole, wifiValues)
+    let raycast = tree.add(955, role: kAXButtonRole)
+    let timesheet = tree.add(981, role: kAXButtonRole, [kAXDescriptionAttribute: "Timesheet" as CFString])
+    let inactive = tree.add(5001, role: kAXWindowRole, children: [
+        slot(6001, holding: tree.add(957, role: kAXApplicationRole)),
+        slot(6002, holding: hosted(7002, tree.add(8002, role: kAXMenuBarItemRole, wifiValues))),
+    ])
+    let active = tree.add(5002, role: kAXWindowRole, children: [
+        slot(6011, holding: hosted(7011, wifi)), slot(6012, holding: raycast), slot(6013, holding: timesheet), tree.add(6014, role: kAXGroupRole),
+    ])
+    tree.add(721, role: kAXApplicationRole, [kAXWindowsAttribute: [tree.add(5000, role: kAXWindowRole), inactive, active] as CFArray])
+
+    let items = await foundMenuBarItems(apps: [721, 955, 981], agent: 721, readAttribute: tree.read).sorted { $0.pid < $1.pid }
+    #expect(items.map(\.pid) == [721, 955, 981])
+    #expect(items.map(\.element) == [wifi, raycast, timesheet])
+    #expect(items.map(\.identifier) == ["com.apple.menuextra.wifi", nil, nil])
+    #expect(items.map(\.description) == ["Wi‑Fi", nil, "Timesheet"])
+}
+
+@Test(arguments: [false, true])
+func beforeMacOS27MenuBarItemsComeFromEachAppsOwnList(withMenuBarAgent: Bool) async {
+    let tree = AccessibilityTree()
+    let wifi = tree.add(8001, role: kAXMenuBarItemRole,
+                        [kAXIdentifierAttribute: "com.apple.menuextra.wifi" as CFString, kAXDescriptionAttribute: "Wi‑Fi" as CFString])
+    let docker = tree.add(8002, role: kAXMenuBarItemRole, children: [tree.add(8003, role: kAXMenuRole)])
+    tree.add(724, role: kAXApplicationRole, [kAXExtrasMenuBarAttribute: tree.add(7001, role: kAXMenuBarRole, children: [wifi])])
+    tree.add(955, role: kAXApplicationRole, [kAXExtrasMenuBarAttribute: tree.add(7002, role: kAXMenuBarRole, children: [docker])])
+    tree.add(721, role: kAXApplicationRole, [kAXWindowsAttribute: [tree.add(5000, role: kAXWindowRole)] as CFArray])
+
+    let items = await foundMenuBarItems(apps: [724, 955], agent: withMenuBarAgent ? 721 : nil, readAttribute: tree.read).sorted { $0.pid < $1.pid }
+    #expect(items.map(\.pid) == [724, 955])
+    #expect(items.map(\.element) == [wifi, docker])
+    #expect(items.map(\.identifier) == ["com.apple.menuextra.wifi", nil])
+    #expect(items.map(\.description) == ["Wi‑Fi", nil])
+    #expect(items.map(\.hasMenu) == [false, true])
+}
+
+@Test func macOS27FallsBackToMenuBarAgentsOwnListWhenItsWindowsHoldNoItems() async {
+    let tree = AccessibilityTree()
+    let clock = tree.add(8001, role: kAXMenuBarItemRole, [kAXIdentifierAttribute: "com.apple.menuextra.clock" as CFString])
+    let hosting = tree.add(7001, role: kAXGroupRole, children: [clock], [kAXSubroleAttribute: "AXHostingView" as CFString])
+    tree.add(721, role: kAXApplicationRole, [kAXExtrasMenuBarAttribute: tree.add(6001, role: kAXMenuBarRole, children: [hosting])])
+
+    let items = await foundMenuBarItems(apps: [721], agent: 721, readAttribute: tree.read)
+    #expect(items.map(\.pid) == [721])
+    #expect(items.map(\.element) == [clock])
+    #expect(items.map(\.identifier) == ["com.apple.menuextra.clock"])
+}
+
+@Test func macOS27KeepsMacOSOwnMenuBarItemsUnderControlCenter() {
+    let agent = MenuApplication(pid: 721, bundleID: "com.apple.MenuBarAgent")
+    let controlCenter = MenuApplication(pid: 724, bundleID: "com.apple.controlcenter")
+    let raycast = MenuApplication(pid: 955)
+    let apps: [pid_t: NSRunningApplication] = [721: agent, 724: controlCenter, 955: raycast]
+    #expect(menuBarItemApp(pid: 721, in: apps) === controlCenter)
+    #expect(menuBarItemApp(pid: 955, in: apps) === raycast)
+    #expect(menuBarItemApp(pid: 999, in: apps) == nil)
+    #expect(menuBarItemApp(pid: 721, in: [721: agent]) === agent)
 }
 
 @Test func menuBarSymbolsAreSystemSymbols() {
