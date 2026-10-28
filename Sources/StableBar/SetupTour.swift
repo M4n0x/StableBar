@@ -139,7 +139,7 @@ struct SetupTourView: View {
                 .opacity(spread * (1 - 0.4 * progress(d, SetupDemo.landing + 0.55, 0.8)))
                 .position(x: size.width / 2, y: bar.maxY)
             if d >= 0 && d < SetupDemo.landing + 0.3 && !looks.isEmpty {
-                SetupDemo(looks: looks, elapsed: d, size: size, stage: stage, target: bar)
+                SetupDemo(store: session.store, display: BarDisplay(screen: screen), looks: looks, elapsed: d, size: size, stage: stage, target: bar)
             }
             ZStack {
                 Capsule()
