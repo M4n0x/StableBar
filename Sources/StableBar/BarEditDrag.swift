@@ -44,6 +44,8 @@ final class BarEditDragSourceView: WidgetDragSourceView {
         return self
     }
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
 
     override func mouseDown(with event: NSEvent) {

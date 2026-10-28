@@ -368,7 +368,7 @@ struct BarEditTile: View {
                     WidgetView(widget: entry.widget, defaults: config.defaults, popupDefaults: config.popupDefaults,
                                store: store, monitor: display, defaultAnimation: config.bar.animation,
                                defaultTransition: config.bar.motion.transition)
-                        .allowsHitTesting(false).accessibilityHidden(true).fixedSize()
+                        .accessibilityHidden(true).fixedSize()
                 }
             }
             .background {

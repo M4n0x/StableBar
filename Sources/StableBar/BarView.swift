@@ -335,7 +335,7 @@ struct WidgetView: View {
     /// edited, when it takes no clicks.
     @ViewBuilder private func clickable(_ tile: some View, output: ScriptOutput?) -> some View {
         if store.barEditing.isActive {
-            tile.allowsHitTesting(false)
+            tile
         } else if widget.id == PackageLibrary.updateWidgetID {
             HStack(spacing: 0) {
                 Button(action: store.packageLibrary.openUpdates) { tile }

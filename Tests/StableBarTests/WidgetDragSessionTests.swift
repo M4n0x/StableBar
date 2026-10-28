@@ -166,6 +166,21 @@ final class WidgetDragSessionTests: XCTestCase {
         bar.mouseUp(with: up)
         XCTAssertEqual(rowSelections, 1)
         XCTAssertEqual(barSelections, 1)
+        // A bar that isn't key, as on another screen, passes its first click to the tile.
+        let panel = BarPanel(contentRect: CGRect(x: 0, y: 0, width: 140, height: 42), styleMask: [.borderless, .nonactivatingPanel],
+                             backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.alphaValue = 0
+        panel.isEditingBar = true
+        panel.contentView = bar
+        panel.orderFrontRegardless()
+        defer { panel.close() }
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            panel.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type, location: CGPoint(x: 10, y: 10), modifierFlags: [], timestamp: 0,
+                                                             windowNumber: panel.windowNumber, context: nil, eventNumber: 0,
+                                                             clickCount: 1, pressure: 1)))
+        }
+        XCTAssertEqual(barSelections, 2)
         store.barEditing.end()
         XCTAssertNil(bar.dragSession)
     }
