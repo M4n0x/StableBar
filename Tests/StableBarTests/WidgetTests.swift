@@ -633,8 +633,9 @@ private func calls(_ log: URL) -> [Substring] {
 func setupPresetsLoadWithTheBundledThemes(preset: SetupPreferences.Preset) throws {
     let repository = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let url = repository.appending(path: "Resources/config.json")
-    let data = try preset.preferences(workspaces: .spaces, placement: .current)
-        .applying(to: Data(contentsOf: url), menuBarHeight: 24)
+    let preferences = preset.preferences(workspaces: .spaces, placement: .current)
+    if case .package(let id, _) = preferences.theme { #expect(!legacyThemeIDs.contains(id)) }
+    let data = try preferences.applying(to: Data(contentsOf: url), menuBarHeight: 24)
     var loader = ConfigurationLoader()
     loader.themesDirectory = repository.appending(path: "Resources/themes")
     _ = try loader.load(url, data: data)

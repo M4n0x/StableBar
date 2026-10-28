@@ -12,11 +12,11 @@ final class ThemeGalleryTests: XCTestCase {
         let gallery = ThemeGallery(store: store)
         await gallery.refresh()
         XCTAssertEqual(gallery.selectedKey, "built-in")
-        let blueprint = try XCTUnwrap(gallery.choices.first { $0.key == "blueprint" })
-        gallery.select(blueprint)
-        XCTAssertEqual(gallery.selectedKey, "blueprint")
-        XCTAssertEqual(store.configuration?.defaults.fontName, "Menlo")
-        XCTAssertEqual(try fixture.document()["theme"], .object(["id": .string("blueprint")]))
+        let phosphor = try XCTUnwrap(gallery.choices.first { $0.key == "phosphor" })
+        gallery.select(phosphor)
+        XCTAssertEqual(gallery.selectedKey, "phosphor")
+        XCTAssertEqual(store.configuration?.defaults.fontName, "Monaco")
+        XCTAssertEqual(try fixture.document()["theme"], .object(["id": .string("phosphor")]))
         XCTAssertNil(try fixture.document()["bar"])
         XCTAssertEqual(store.configuration?.bar.margin, 12)
         XCTAssertEqual(store.customizationHistory.undoSteps.count, 1)
@@ -26,14 +26,15 @@ final class ThemeGalleryTests: XCTestCase {
         XCTAssertNil(try fixture.document()["theme"])
         XCTAssertEqual(store.customizationHistory.undoSteps.count, 2)
         try store.customizationHistory.undo()
-        XCTAssertEqual(gallery.selectedKey, "blueprint")
+        XCTAssertEqual(gallery.selectedKey, "phosphor")
         try store.customizationHistory.undo()
         XCTAssertEqual(gallery.selectedKey, "built-in")
         XCTAssertEqual(store.sessionEdits.count, 1)
     }
 
     @MainActor func testOlderThemesKeepTheirAppearanceAsCustomAndCanBeReplacedAndUndone() async throws {
-        for id in ["graphite", "island", "menu-bar", "minimal", "paper", "slate", "terminal", "terminal/1.0.0"] {
+        for id in ["graphite", "island", "menu-bar", "minimal", "paper", "slate", "terminal", "terminal/1.0.0", "blueprint", "broadsheet",
+                   "brutalist", "everforest", "handheld", "kanagawa", "platinum", "rose-pine", "synthwave"] {
             let fixture = try ThemeGalleryFixture(#"{"includes":["theme.json"],"defaults":{"fontSize":17},"widgets":[]}"#)
             defer { fixture.close() }
             let selection: String
@@ -64,7 +65,7 @@ final class ThemeGalleryTests: XCTestCase {
             trial.cancel()
             XCTAssertEqual(store.effectiveDocument, configuration)
             XCTAssertEqual(try Data(contentsOf: fixture.url), original)
-            gallery.select(try XCTUnwrap(gallery.choices.first { $0.key == "blueprint" }))
+            gallery.select(try XCTUnwrap(gallery.choices.first { $0.key == "phosphor" }))
             await gallery.refresh()
             XCTAssertFalse(gallery.choices.contains(where: \.isLegacy))
             try store.customizationHistory.undo()
@@ -138,7 +139,7 @@ final class ThemeGalleryTests: XCTestCase {
 
     @MainActor func testSaveAsThemeMovesYourLookIntoANewThemeWithOneUndoStep() async throws {
         let fixture = try ThemeGalleryFixture(#"""
-        {"theme":{"id":"blueprint"},"tokens":{"accent":"#ff0000","brand":"#00ff00"},"defaults":{"fontSize":17},
+        {"theme":{"id":"phosphor"},"tokens":{"accent":"#ff0000","brand":"#00ff00"},"defaults":{"fontSize":17},
          "bar":{"offset":30,"height":34},
          "widgets":[{"id":"clock","type":"clock","position":"right","style":{"foreground":"@token.brand"}}]}
         """#)
@@ -149,11 +150,11 @@ final class ThemeGalleryTests: XCTestCase {
         var look = store.effectiveDocument
         let gallery = ThemeGallery(store: store)
         await gallery.refresh()
-        await gallery.save(try XCTUnwrap(gallery.choices.first { $0.key == "blueprint" }), as: "My Blueprint")
-        XCTAssertNil(gallery.error(for: "blueprint"))
-        XCTAssertEqual(gallery.selectedKey, "my-blueprint/1.0.0")
+        await gallery.save(try XCTUnwrap(gallery.choices.first { $0.key == "phosphor" }), as: "My Phosphor")
+        XCTAssertNil(gallery.error(for: "phosphor"))
+        XCTAssertEqual(gallery.selectedKey, "my-phosphor/1.0.0")
         let document = try fixture.document()
-        XCTAssertEqual(document["theme"], .object(["id": .string("my-blueprint"), "version": .string("1.0.0")]))
+        XCTAssertEqual(document["theme"], .object(["id": .string("my-phosphor"), "version": .string("1.0.0")]))
         XCTAssertEqual(document["tokens"], .object(["brand": .string("#00ff00")]))
         XCTAssertNil(document["defaults"])
         XCTAssertEqual(document["bar"], .object(["offset": .number(30)]))
@@ -166,23 +167,23 @@ final class ThemeGalleryTests: XCTestCase {
         XCTAssertEqual(store.customizationHistory.undoSteps.count, 1)
         try store.customizationHistory.undo()
         XCTAssertEqual(try Data(contentsOf: fixture.url), before)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.packages.directory.appending(path: "my-blueprint/1.0.0").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.packages.directory.appending(path: "my-phosphor/1.0.0").path))
         await gallery.refresh()
-        await gallery.save(try XCTUnwrap(gallery.choices.first { $0.key == "blueprint" }), as: "My Blueprint")
-        XCTAssertEqual(gallery.selectedKey, "my-blueprint/1.0.1")
+        await gallery.save(try XCTUnwrap(gallery.choices.first { $0.key == "phosphor" }), as: "My Phosphor")
+        XCTAssertEqual(gallery.selectedKey, "my-phosphor/1.0.1")
     }
 
     /// A name without ASCII letters or digits gives no theme id, so saving fails rather than inventing one.
     @MainActor func testSavingAThemeNamedWithoutLettersOrDigitsFails() async throws {
-        let fixture = try ThemeGalleryFixture(#"{"theme":{"id":"blueprint"},"widgets":[]}"#)
+        let fixture = try ThemeGalleryFixture(#"{"theme":{"id":"phosphor"},"widgets":[]}"#)
         defer { fixture.close() }
         let store = try fixture.store()
         defer { store.stop() }
         let before = try Data(contentsOf: fixture.url)
         let gallery = ThemeGallery(store: store)
         await gallery.refresh()
-        await gallery.save(try XCTUnwrap(gallery.choices.first { $0.key == "blueprint" }), as: "日本")
-        XCTAssertNotNil(gallery.error(for: "blueprint"))
+        await gallery.save(try XCTUnwrap(gallery.choices.first { $0.key == "phosphor" }), as: "日本")
+        XCTAssertNotNil(gallery.error(for: "phosphor"))
         XCTAssertEqual(try Data(contentsOf: fixture.url), before)
         XCTAssertTrue(try fixture.packages.list().isEmpty)
         XCTAssertTrue(store.customizationHistory.undoSteps.isEmpty)
@@ -199,10 +200,10 @@ final class ThemeGalleryTests: XCTestCase {
         await gallery.loadStore()
         XCTAssertTrue(gallery.storeUnavailable)
         XCTAssertTrue(gallery.storeThemes.isEmpty)
-        XCTAssertEqual(gallery.choices.count, 16)
-        XCTAssertEqual(gallery.previews.count, 16)
-        gallery.select(try XCTUnwrap(gallery.choices.first { $0.key == "rose-pine" }))
-        XCTAssertEqual(gallery.selectedKey, "rose-pine")
+        XCTAssertEqual(gallery.choices.map(\.key), ["built-in", "catppuccin", "gruvbox", "leman", "nord", "notch", "phosphor"])
+        XCTAssertEqual(gallery.previews.count, 7)
+        gallery.select(try XCTUnwrap(gallery.choices.first { $0.key == "catppuccin" }))
+        XCTAssertEqual(gallery.selectedKey, "catppuccin")
         XCTAssertNil(store.customizationHistory.error)
     }
 
@@ -254,7 +255,7 @@ final class ThemeGalleryTests: XCTestCase {
         let fixture = try ThemeGalleryFixture(#"{"includes":["included.json"],"widgets":[]}"#)
         defer { fixture.close() }
         let includedURL = fixture.directory.appending(path: "included.json")
-        try fixture.write(#"{"theme":{"id":"blueprint"}}"#, to: includedURL)
+        try fixture.write(#"{"theme":{"id":"phosphor"}}"#, to: includedURL)
         let included = try Data(contentsOf: includedURL)
         let store = try fixture.store()
         defer { store.stop() }
@@ -266,7 +267,7 @@ final class ThemeGalleryTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: includedURL), included)
         XCTAssertEqual(store.customizationHistory.undoSteps.count, 1)
         try store.customizationHistory.undo()
-        XCTAssertEqual(gallery.selectedKey, "blueprint")
+        XCTAssertEqual(gallery.selectedKey, "phosphor")
     }
 
     @MainActor func testGetSelectionFailureStaysOnTheInstalledCardWithoutABannerError() async throws {

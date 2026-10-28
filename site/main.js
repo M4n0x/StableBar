@@ -1,20 +1,11 @@
 const THEMES = [
   ["built-in", "Built-in", "ws-fill"],
-  ["blueprint", "Blueprint", "ws-under"],
-  ["broadsheet", "Broadsheet", "ws-under"],
-  ["brutalist", "Brutalist", "ws-fill"],
   ["catppuccin", "Catppuccin", "ws-fill"],
-  ["everforest", "Everforest", "ws-under"],
   ["gruvbox", "Gruvbox", "ws-text"],
-  ["handheld", "Handheld", "ws-fill"],
-  ["kanagawa", "Kanagawa", "ws-fill"],
   ["leman", "Léman", "ws-fill"],
   ["nord", "Nord", "ws-under"],
   ["notch", "Notch", "ws-text"],
   ["phosphor", "Phosphor", "ws-fill"],
-  ["platinum", "Platinum", "ws-fill"],
-  ["rose-pine", "Rosé Pine", "ws-fill"],
-  ["synthwave", "Synthwave", "ws-under"],
 ];
 const desk = document.getElementById("desk");
 const dock = document.getElementById("dock");
@@ -61,7 +52,7 @@ setInterval(tick, 1000);
 /* Sample bars: three workspaces, Finder, battery and clock, as in Settings' theme cards */
 function mini() {
   return `<div class="mini"><div class="strip"></div>
-    <div class="g"><span class="t ws" style="padding:0 2px;gap:0"><span class="wsi on">1</span><span class="wsi">2</span><span class="wsi">3</span></span><span class="t"><b style="font-weight:700">Finder</b></span></div>
+    <div class="g"><span class="t ws"><span class="wsi on">1</span><span class="wsi">2</span><span class="wsi">3</span></span><span class="t"><span>Finder</span></span></div>
     <div class="g"><span class="t"><svg style="width:17px;height:14px"><use href="#i-bat"/></svg>82%</span><span class="t num">9:41</span></div></div>`;
 }
 const cards = document.getElementById("cards");
@@ -71,14 +62,6 @@ for (const [id, name, ws] of THEMES) {
   cards.insertAdjacentHTML("beforeend", card);
   store.insertAdjacentHTML("beforebegin", card);
 }
-const showAll = document.getElementById("show-all");
-showAll.textContent = `Show all ${THEMES.length} themes`;
-showAll.addEventListener("click", () => {
-  const board = document.getElementById("board");
-  board.classList.add("all");
-  showAll.remove();
-  board.children[8].focus();
-});
 
 function setTheme(id) {
   desk.dataset.theme = id;
@@ -132,7 +115,7 @@ function place() {
   let left = a.left - dr.left + a.width / 2 - pane.offsetWidth / 2;
   if (openId !== "more" && anchorFor(openId) === more) left = a.right - dr.left - pane.offsetWidth;
   pop.style.left = `${clamp(left, 8, dr.width - pane.offsetWidth - 8)}px`;
-  pop.style.top = `${a.bottom - dr.top + 8}px`;
+  pop.style.top = `${bar.getBoundingClientRect().bottom - dr.top + 6}px`;
   pop.style.width = `${pane.offsetWidth}px`;
   pop.style.height = `${pane.offsetHeight}px`;
 }

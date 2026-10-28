@@ -85,10 +85,10 @@ final class ThemeOverridesTests: XCTestCase {
             "All widgets: border edges", "All widgets: icon size", "All widgets: vertical offset", "All widgets: horizontal padding",
             "Text color in dark mode", "Text color in light mode"
         ])
-        XCTAssertEqual(overrides.notice(theme: "Rosé Pine"), "6 of your settings replace what Rosé Pine sets")
+        XCTAssertEqual(overrides.notice(theme: "Catppuccin"), "6 of your settings replace what Catppuccin sets")
         XCTAssertEqual(overrides.summary, "All widgets: border edges, All widgets: icon size, All widgets: vertical offset, All widgets: horizontal padding and 2 more")
         let single = ThemeOverrides(main: ["bar": .object(["height": .number(40)])], theme: ["bar": .object(["height": .number(32)])], widgets: [])
-        XCTAssertEqual(single.notice(theme: "Rosé Pine"), "1 of your settings replaces what Rosé Pine sets")
+        XCTAssertEqual(single.notice(theme: "Catppuccin"), "1 of your settings replaces what Catppuccin sets")
         XCTAssertEqual(single.summary, "Bar height")
     }
 

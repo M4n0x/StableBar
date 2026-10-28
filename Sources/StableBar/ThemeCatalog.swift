@@ -5,13 +5,19 @@ let themeTokens: [(name: String, title: String)] = [
     ("accent", "Accent"), ("track", "Track"), ("hairline", "Hairline"), ("warning", "Warning"), ("critical", "Critical")
 ]
 
+/// Bundled themes that still load for configurations that select them, but no longer show in the gallery.
+let legacyThemeIDs: Set<String> = [
+    "graphite", "island", "menu-bar", "minimal", "paper", "slate", "terminal",
+    "blueprint", "broadsheet", "brutalist", "everforest", "handheld", "kanagawa", "platinum", "rose-pine", "synthwave"
+]
+
 struct ThemeChoice: Sendable {
     let manifest: WidgetPackageManifest
     let directory: URL
     let isBundled: Bool
 
     var key: String { isBundled ? manifest.id : manifest.versionKey }
-    var isLegacy: Bool { ["graphite", "island", "menu-bar", "minimal", "paper", "slate", "terminal"].contains(manifest.id) }
+    var isLegacy: Bool { legacyThemeIDs.contains(manifest.id) }
     var title: String { isLegacy ? "Custom" : (isBundled ? manifest.name : "\(manifest.name) · \(manifest.version)") }
     var selection: [String: ConfigurationValue] {
         isBundled ? ["id": .string(manifest.id)] : ["id": .string(manifest.id), "version": .string(manifest.version)]

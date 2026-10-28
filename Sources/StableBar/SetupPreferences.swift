@@ -165,10 +165,10 @@ struct SetupPreferences: Equatable {
         var detail: String {
             switch self {
             case .minimal: "Built-in theme"
-            case .developer: "Blueprint theme, dark"
+            case .developer: "Phosphor theme, dark"
             case .workday: "Léman theme"
             case .notch: "Notch theme, top edge"
-            case .everything: "Rosé Pine theme"
+            case .everything: "Catppuccin theme"
             }
         }
 
@@ -185,12 +185,12 @@ struct SetupPreferences: Equatable {
         func preferences(workspaces: WorkspaceSource, placement: Placement) -> SetupPreferences {
             switch self {
             case .minimal: SetupPreferences(placement: placement, theme: .builtIn, widgetSets: [.sound, .menuBarItems])
-            case .developer: SetupPreferences(appearance: .dark, placement: placement, theme: .package(id: "blueprint", version: nil),
+            case .developer: SetupPreferences(appearance: .dark, placement: placement, theme: .package(id: "phosphor", version: nil),
                                               widgetSets: [.workspaces(workspaces), .system, .sound, .battery, .menuBarItems])
             case .workday: SetupPreferences(placement: placement, theme: .package(id: "leman", version: nil),
                                             widgetSets: [.meetings, .sound, .battery, .menuBarItems])
             case .notch: SetupPreferences(placement: .top, theme: .package(id: "notch", version: nil), widgetSets: [.sound, .battery, .menuBarItems])
-            case .everything: SetupPreferences(placement: placement, theme: .package(id: "rose-pine", version: nil),
+            case .everything: SetupPreferences(placement: placement, theme: .package(id: "catppuccin", version: nil),
                                                widgetSets: [.workspaces(workspaces), .meetings, .system, .sound, .battery, .menuBarItems])
             }
         }
