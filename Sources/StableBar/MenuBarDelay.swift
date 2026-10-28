@@ -18,6 +18,10 @@ func setMenuBarShown(_ shown: Bool, on display: CGDirectDisplayID) {
 }
 
 struct MenuBarHover {
+    /// Points below the top edge where the pointer waits. macOS 27 reveals the menu bar from
+    /// anywhere within 4 points of the edge and tracks the pointer down to 5.
+    static let holdDepth: CGFloat = 6
+
     let milliseconds: Double
     let menuBars: [CGRect]
     private(set) var deadline: TimeInterval?
@@ -37,7 +41,7 @@ struct MenuBarHover {
             hoveredBar = bar
         }
         guard let bar else { return point }
-        if point.y > bar.minY + 4 {
+        if point.y > bar.minY + Self.holdDepth {
             deadline = nil
         } else if !revealed {
             if deadline == nil { deadline = now + milliseconds / 1000 }
@@ -45,7 +49,7 @@ struct MenuBarHover {
                 deadline = nil
                 revealed = true
             } else {
-                return CGPoint(x: point.x, y: bar.minY + 4)
+                return CGPoint(x: point.x, y: bar.minY + Self.holdDepth)
             }
         }
         return point

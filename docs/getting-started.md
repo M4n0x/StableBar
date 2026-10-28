@@ -46,7 +46,7 @@ Only an app signed with a Developer ID updates itself, because the update must b
 
 When the macOS menu bar hides automatically, **Settings → General → Native menu bar → Reveal delay** sets how long to hold the pointer at the top edge before it appears. Enter milliseconds: `1000` is one second, `2000` is two, and `3000` is three. `0`, the default, adds no delay. Allow StableBar in **System Settings → Privacy & Security → Accessibility**.
 
-StableBar holds mouse movement four points below each display's top edge until the delay expires. Moving away cancels the wait. Drag events pass through. This works while menu-bar auto-hide is enabled and StableBar is running; turning the delay off or quitting restores normal pointer behavior. The wait is added before macOS's own reveal animation.
+StableBar holds mouse movement six points below each display's top edge until the delay expires, out of reach of the band where macOS 27 reveals the menu bar by itself. Moving away cancels the wait. Drag events pass through. This works while menu-bar auto-hide is enabled and StableBar is running; turning the delay off or quitting restores normal pointer behavior. The wait is added before macOS's own reveal animation.
 
 Set `bar.menuBarRevealDelay` in JSON, including in an included file or a profile. See the [menu-bar delay example](../examples/menu-bar-delay/config.json):
 
