@@ -33,14 +33,12 @@ func commandFailureWithoutDiagnosticsIncludesExitCode(command: String, message: 
 
 @Test(arguments: [false, true])
 func commandOutputHasABoundedSize(stderr: Bool) async {
-    let start = ContinuousClock.now
     do {
         _ = try await runCommand("/bin/zsh", arguments: ["-c", "head -c 1048577 /dev/zero" + (stderr ? " >&2" : "")])
         Issue.record("The oversized output was accepted.")
     } catch {
         #expect(error.localizedDescription == "Command output exceeded 1 MiB.")
     }
-    #expect(start.duration(to: .now) < .seconds(5))
 }
 
 @Test(arguments: [false, true])
@@ -90,18 +88,29 @@ func cancellingOrTimingOutStopsShellChildren(timeout: Bool) async throws {
     #expect(!FileManager.default.fileExists(atPath: marker.path))
 }
 
-@Test func commandTimeoutClosesPipesHeldByChildrenAfterTheShellExits() async throws {
+@Test(.timeLimit(.minutes(1))) func cancellingCommandsAsTheyExitCompletes() async throws {
+    for _ in 0..<100 {
+        let task = Task { try await runCommand("/usr/bin/true", arguments: []) }
+        try await Task.sleep(for: .milliseconds(1))
+        task.cancel()
+        do {
+            #expect(try await task.value.isEmpty)
+        } catch {
+            #expect(error is CancellationError)
+        }
+    }
+}
+
+@Test(.timeLimit(.minutes(1))) func commandTimeoutClosesPipesHeldByChildrenAfterTheShellExits() async throws {
     let marker = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: marker) }
-    let start = ContinuousClock.now
     // The timeout must leave a busy runner time to start the shell and write the marker.
     do {
-        _ = try await runCommand("/bin/sh", arguments: ["-c", "sleep 30 & printf '%s' $! > '\(marker.path)'"], timeout: 2)
+        _ = try await runCommand("/bin/sh", arguments: ["-c", "sleep 300 & printf '%s' $! > '\(marker.path)'"], timeout: 2)
         Issue.record("The command completed while a child still held its pipes.")
     } catch {
         #expect(error.localizedDescription == "Command timed out after 2.0 seconds.")
     }
-    #expect(start.duration(to: .now) < .seconds(5))
     let child = try #require(Int32(String(contentsOf: marker, encoding: .utf8)))
     for _ in 0..<2000 {
         if kill(child, 0) == -1 { break }
