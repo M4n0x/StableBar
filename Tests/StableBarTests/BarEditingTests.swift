@@ -320,12 +320,22 @@ final class BarEditingTests: XCTestCase {
         XCTAssertEqual(editing.opacity(for: "a"), 0)
         XCTAssertEqual(editing.arranged(entries, on: 2, position: .notchRight).map(\.id), ["a", "b"])
         XCTAssertEqual(store.configuration?.widgets.filter { $0.group == "pair" }.map(\.position), [.left, .left])
+        var applications = 0
+        store.onConfigurationChange = {
+            applications += 1
+            XCTAssertEqual(editing.insertion, target)
+            XCTAssertTrue(editing.isMoving("a"))
+            XCTAssertEqual(editing.opacity(for: "a"), 1)
+            XCTAssertEqual(store.configuration?.widgets.filter { $0.group == "pair" }.map(\.position), [.notchRight, .notchRight])
+        }
         editing.finishDrop()
         editing.finishDrop()
         XCTAssertEqual(editing.opacity(for: "a"), 1)
         XCTAssertEqual(editing.arranged(entries, on: 2, position: .notchRight).map(\.id), ["a", "b"])
         XCTAssertEqual(store.configuration?.widgets.filter { $0.group == "pair" }.map(\.position), [.left, .left])
-        try await Task.sleep(for: .milliseconds(50))
+        await editing.editTask?.value
+        store.onConfigurationChange = nil
+        XCTAssertEqual(applications, 1)
         XCTAssertNil(editing.insertion)
         XCTAssertFalse(editing.isMoving("a"))
         XCTAssertEqual(store.configuration?.widgets.filter { $0.group == "pair" }.map(\.position), [.notchRight, .notchRight])
@@ -337,6 +347,31 @@ final class BarEditingTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: fixture.url), before)
         XCTAssertEqual(store.sessionEdits.count, 1)
         XCTAssertEqual(store.configuration?.bar.height, 50)
+
+        let first = editing.dragSession.begin("b")
+        XCTAssertTrue(editing.drop(first, at: target))
+        editing.finishDrop()
+        let cancelled = editing.dragSession.begin("c")
+        editing.insertion = nil
+        XCTAssertEqual(editing.arranged(entries, on: 2, position: .notchRight).map(\.id), ["a", "b"])
+        editing.dragSession.end(cancelled)
+        XCTAssertEqual(editing.arranged(entries, on: 2, position: .notchRight).map(\.id), ["a", "b"])
+        let second = editing.dragSession.begin("c")
+        let nextTarget = BarEditInsertion(displayID: 2, position: .center, before: nil, index: 0, x: 0)
+        editing.insertion = nextTarget
+        XCTAssertEqual(editing.arranged(entries, on: 2, position: .notchRight).map(\.id), ["a", "b"])
+        XCTAssertTrue(editing.arranged(entries, on: 2, position: .left).isEmpty)
+        XCTAssertTrue(editing.drop(second, at: nextTarget))
+        editing.finishDrop()
+        XCTAssertEqual(editing.arranged(entries, on: 2, position: .notchRight).map(\.id), ["a", "b"])
+        await editing.editTask?.value
+        XCTAssertNil(editing.error)
+        XCTAssertNil(editing.insertion)
+        XCTAssertEqual(store.configuration?.widgets.map(\.position), [.notchRight, .notchRight, .center])
+        XCTAssertEqual(store.customizationHistory.undoSteps.count, 2)
+        try store.customizationHistory.undo()
+        try store.customizationHistory.undo()
+        XCTAssertEqual(try Data(contentsOf: fixture.url), before)
     }
 
     @MainActor func testAddAndRemoveUseSharedSetupAndSavedUndoHistoryWithoutSavingCommandLineChanges() async throws {
@@ -398,7 +433,7 @@ final class BarEditingTests: XCTestCase {
         XCTAssertEqual(store.barEditing.widgets(on: laptop).map(\.id), ["note"])
     }
 
-    @MainActor func testMoveLeftAndRightStepOverTurnedOffWidgetsThatTheEditBarLeavesOut() throws {
+    @MainActor func testMoveLeftAndRightStepOverTurnedOffWidgetsThatTheEditBarLeavesOut() async throws {
         let fixture = try ThemeGalleryFixture(#"""
         {"widgets":[{"id":"a","type":"clock","position":"right"},{"id":"off","type":"clock","position":"right","enabled":false},
                     {"id":"b","type":"clock","position":"right"}]}
@@ -410,10 +445,12 @@ final class BarEditingTests: XCTestCase {
         editing.begin()
         XCTAssertEqual(editing.entries(on: laptop).map(\.id), ["a", "b"])
         editing.move("b", by: -1)
+        await editing.editTask?.value
         XCTAssertNil(editing.error)
         XCTAssertEqual(editing.entries(on: laptop).map(\.id), ["b", "a"])
         try store.customizationHistory.undo()
         editing.move("a", by: 1)
+        await editing.editTask?.value
         XCTAssertNil(editing.error)
         XCTAssertEqual(editing.entries(on: laptop).map(\.id), ["b", "a"])
         try store.customizationHistory.undo()
@@ -798,7 +835,7 @@ final class BarEditingTests: XCTestCase {
         XCTAssertTrue(store.barEditing.entries(on: external).allSatisfy { !$0.usesPlaceholder })
     }
 
-    @MainActor func testMovesWithinASectionAndKeyboardMovesShareTheSameUndoableGroupLogic() throws {
+    @MainActor func testMovesWithinASectionAndKeyboardMovesShareTheSameUndoableGroupLogic() async throws {
         let fixture = try ThemeGalleryFixture(#"{"groups":{"pair":{}},"widgets":[{"id":"a","type":"clock","position":"left","group":"pair"},{"id":"b","type":"clock","position":"left","group":"pair"},{"id":"c","type":"clock","position":"left"}]}"#)
         defer { fixture.close() }
         let store = try fixture.store()
@@ -806,15 +843,27 @@ final class BarEditingTests: XCTestCase {
         let before = try Data(contentsOf: fixture.url)
         store.barEditing.begin()
         store.barEditing.move("b", to: .left)
+        await store.barEditing.editTask?.value
         XCTAssertNil(store.barEditing.error)
         XCTAssertEqual(store.configuration?.widgets.map(\.id), ["c", "a", "b"])
         XCTAssertEqual(store.customizationHistory.undoSteps.count, 1)
         store.barEditing.move("b", by: -1)
+        await store.barEditing.editTask?.value
         XCTAssertNil(store.barEditing.error)
         XCTAssertEqual(store.configuration?.widgets.map(\.id), ["a", "b", "c"])
         XCTAssertEqual(store.customizationHistory.undoSteps.count, 2)
         try store.customizationHistory.undo()
         try store.customizationHistory.undo()
+        XCTAssertEqual(try Data(contentsOf: fixture.url), before)
+        store.barEditing.move("b", by: 1)
+        store.barEditing.move("b", by: -1)
+        store.barEditing.undo()
+        await store.barEditing.editTask?.value
+        XCTAssertNil(store.barEditing.error)
+        XCTAssertEqual(store.configuration?.widgets.map(\.id), ["c", "a", "b"])
+        XCTAssertEqual(store.customizationHistory.undoSteps.count, 1)
+        XCTAssertEqual(store.customizationHistory.redoSteps.count, 1)
+        store.barEditing.undo()
         XCTAssertEqual(try Data(contentsOf: fixture.url), before)
     }
 
@@ -828,6 +877,7 @@ final class BarEditingTests: XCTestCase {
         let before = try Data(contentsOf: fixture.url)
         store.barEditing.begin()
         store.barEditing.move("temporary", to: .left, on: 2)
+        await store.barEditing.editTask?.value
         XCTAssertNotNil(store.barEditing.error)
         XCTAssertEqual(store.barEditing.errorDisplayID, 2)
         XCTAssertTrue(store.barEditing.isActive)

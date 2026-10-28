@@ -3,6 +3,29 @@ import XCTest
 @testable import StableBar
 
 final class ConfigurationHistoryTests: XCTestCase {
+    @MainActor func testPreparedMoveRejectsInterveningFileSessionAndSettingsChanges() async throws {
+        for source in ["file", "session", "settings"] {
+            let fixture = try Fixture()
+            defer { fixture.close() }
+            let store = fixture.store
+            let edits = try WidgetSetup(store: store).editsMoving("a", to: .right)
+            let result = try await store.prepareWidgetMove("a", edits: edits)
+            let prepared = try XCTUnwrap(result)
+            let change = ConfigurationEdit(action: .set, id: "a", properties: ["text": .string("Changed")])
+            switch source {
+            case "file": try Data(#"{"widgets":[{"id":"a","type":"text","position":"left","text":"External"}]}"#.utf8).write(to: fixture.url)
+            case "session": try store.applyEdits([change], persist: false)
+            default: try store.customizationHistory.change(change)
+            }
+            let current = try Data(contentsOf: fixture.url)
+            XCTAssertThrowsError(try store.writeWidgetMove(prepared))
+            XCTAssertEqual(try Data(contentsOf: fixture.url), current)
+            XCTAssertEqual(store.configuration?.widgets.first?.position, .left)
+            XCTAssertTrue(store.customizationHistory.undoSteps.isEmpty)
+            if source != "file" { XCTAssertEqual(store.configuration?.widgets.first?.content, .text("Changed")) }
+        }
+    }
+
     @MainActor func testCompletedMoveAppliesOnceAndKeepsPendingEditsAsTheirOwnUndoStep() throws {
         let fixture = try Fixture(configuration: #"{"widgets":[{"id":"a","type":"text","position":"left","text":"A"},{"id":"b","type":"text","position":"right","text":"B"}]}"#)
         defer { fixture.close() }
