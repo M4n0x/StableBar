@@ -23,6 +23,7 @@ final class AppMenu: NSObject {
     private(set) var appleMenu: AppMenuItem?
     private(set) var items: [AppMenuItem] = []
     private(set) var isTrusted: Bool
+    var hidesAccessWarning = false
     @ObservationIgnored private let checkAccess: () -> Bool
     @ObservationIgnored private let readAttribute: @Sendable (String, AXUIElement) -> CFTypeRef?
     @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
@@ -49,7 +50,10 @@ final class AppMenu: NSObject {
     }
 
     func read(_ app: NSRunningApplication?) {
-        if let app, app.processIdentifier == ProcessInfo.processInfo.processIdentifier || app.bundleIdentifier == "org.stablebar.app" { return }
+        if let app, app.processIdentifier == ProcessInfo.processInfo.processIdentifier || app.bundleIdentifier == "org.stablebar.app" {
+            if !isTrusted { refresh() }
+            return
+        }
         readTask?.cancel()
         self.app = app
         let sleep = sleep

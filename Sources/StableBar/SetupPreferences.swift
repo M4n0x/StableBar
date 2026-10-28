@@ -18,7 +18,7 @@ struct SetupPreferences: Equatable {
     }
 
     enum WidgetSet: Hashable {
-        case system, meetings, workspaces(WorkspaceSource)
+        case system, meetings, workspaces(WorkspaceSource), battery, sound, menuBarItems
 
         enum State {
             case available, added, disabled, conflict
@@ -43,7 +43,14 @@ struct SetupPreferences: Equatable {
             case .system: "System"
             case .meetings: "Meetings"
             case .workspaces: "Workspaces"
+            case .battery: "Battery"
+            case .sound: "Sound"
+            case .menuBarItems: "Menu bar items"
             }
+        }
+
+        var symbol: String {
+            WidgetAddCatalog.builtIns.first { $0.properties?["type"] == widgets[0]["type"] }!.symbol
         }
 
         var widgets: [[String: ConfigurationValue]] {
@@ -134,6 +141,9 @@ struct SetupPreferences: Equatable {
                 ]
                 """#
             case .workspaces: #"[{ "id": "workspaces", "type": "workspaces", "position": "left" }]"#
+            case .battery: #"[{ "id": "battery", "type": "battery", "position": "right", "details": true }]"#
+            case .sound: #"[{ "id": "sound", "type": "audio", "position": "right" }]"#
+            case .menuBarItems: #"[{ "id": "menu-bar-items", "type": "menuBarItems", "position": "right" }]"#
             }
             return try! JSONDecoder().decode([[String: ConfigurationValue]].self, from: Data(json.utf8))
         }
@@ -154,11 +164,11 @@ struct SetupPreferences: Equatable {
 
         var detail: String {
             switch self {
-            case .minimal: "App menus and the time on the Built-in theme."
-            case .developer: "Workspaces, CPU and memory on dark Blueprint."
-            case .workday: "Your next meeting and today's agenda on Léman."
-            case .notch: "A black bar on the top edge that hides the notch."
-            case .everything: "Every widget set on Rosé Pine."
+            case .minimal: "Built-in theme"
+            case .developer: "Blueprint theme, dark"
+            case .workday: "Léman theme"
+            case .notch: "Notch theme, top edge"
+            case .everything: "Rosé Pine theme"
             }
         }
 
@@ -172,14 +182,16 @@ struct SetupPreferences: Equatable {
             }
         }
 
-        func preferences(sets: [WidgetSet], placement: Placement) -> SetupPreferences {
+        func preferences(workspaces: WorkspaceSource, placement: Placement) -> SetupPreferences {
             switch self {
-            case .minimal: SetupPreferences(placement: placement, theme: .builtIn)
+            case .minimal: SetupPreferences(placement: placement, theme: .builtIn, widgetSets: [.sound, .menuBarItems])
             case .developer: SetupPreferences(appearance: .dark, placement: placement, theme: .package(id: "blueprint", version: nil),
-                                              widgetSets: sets.filter { $0 != .meetings })
-            case .workday: SetupPreferences(placement: placement, theme: .package(id: "leman", version: nil), widgetSets: [.meetings])
-            case .notch: SetupPreferences(placement: .top, theme: .package(id: "notch", version: nil))
-            case .everything: SetupPreferences(placement: placement, theme: .package(id: "rose-pine", version: nil), widgetSets: sets)
+                                              widgetSets: [.workspaces(workspaces), .system, .sound, .battery, .menuBarItems])
+            case .workday: SetupPreferences(placement: placement, theme: .package(id: "leman", version: nil),
+                                            widgetSets: [.meetings, .sound, .battery, .menuBarItems])
+            case .notch: SetupPreferences(placement: .top, theme: .package(id: "notch", version: nil), widgetSets: [.sound, .battery, .menuBarItems])
+            case .everything: SetupPreferences(placement: placement, theme: .package(id: "rose-pine", version: nil),
+                                               widgetSets: [.workspaces(workspaces), .meetings, .system, .sound, .battery, .menuBarItems])
             }
         }
     }
@@ -271,10 +283,15 @@ struct SetupPreferences: Equatable {
                 if !enabled { widget["enabled"] = .bool(false) }
                 edits.append(ConfigurationEdit(action: .add, properties: widget))
                 appended.append(id)
+                let ends = ["audio", "battery", "clock", "menuBarItems"]
+                let end = try ends.firstIndex(of: widget["type"]!.decoded(String.self)) ?? -1
                 let anchor = configuration.widgets.first { existing in
                     switch existing.content {
                     case .activeApp, .appMenu: widget["position"] == .string("left")
-                    case .clock: widget["position"] == .string("right")
+                    case .clock: widget["position"] == .string("right") && ends.firstIndex(of: "clock")! > end
+                    case .menuBarItems: widget["position"] == .string("right") && ends.firstIndex(of: "menuBarItems")! > end
+                    case let .provider(name):
+                        widget["position"] == .string("right") && ends.firstIndex(of: configuration.providers[name]!.type) ?? -1 > end
                     default: false
                     }
                 }

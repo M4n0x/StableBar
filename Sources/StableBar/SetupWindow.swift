@@ -23,6 +23,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         self.customizeWidgets = customizeWidgets
         self.showProfile = showProfile
         session = SetupSession(store: store)
+        store.appMenu.hidesAccessWarning = true
         showTour(intro: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     }
 
@@ -100,6 +101,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
 
     private func end() {
         if session?.finished == false { session?.cancel() }
+        session?.store.appMenu.hidesAccessWarning = false
         session = nil
     }
 }
@@ -116,10 +118,11 @@ private final class SetupTourPanel: NSPanel {
 final class SetupSession {
     let store: BarStore
     let themes: [ThemeChoice]
-    let sets: [SetupPreferences.WidgetSet]
+    let workspaceSource: WorkspaceSource
     let currentThemeKey: String
     var step = 0
     private(set) var finished = false
+    var preset: SetupPreferences.Preset?
     var preferences = SetupPreferences() { didSet { preview() } }
     var openAtLogin: Bool?
     var loginStatus = SMAppService.mainApp.status
@@ -135,11 +138,10 @@ final class SetupSession {
     init(store: BarStore) {
         self.store = store
         currentThemeKey = store.selectedThemeKey
-        themes = themeChoices(packages: store.configurationURL.deletingLastPathComponent().appending(path: "packages"),
-                              selectedKey: currentThemeKey)
-        let source = WorkspaceSource.detected(path: shellEnvironment.withLock { $0["PATH", default: ""] },
-                                              preferring: store.configuration?.workspaceSource ?? .aerospace)
-        sets = [.system, .meetings] + (source.map { [.workspaces($0)] } ?? [])
+        themes = ThemeCatalog(packages: store.configurationURL.deletingLastPathComponent().appending(path: "packages"),
+                              themesDirectory: store.themesDirectory, selectedKey: currentThemeKey).choices
+        workspaceSource = WorkspaceSource.detected(path: shellEnvironment.withLock { $0["PATH", default: ""] },
+                                                   preferring: store.configuration?.workspaceSource ?? .aerospace) ?? .spaces
         sessionEdits = store.sessionEdits
         preview()
     }
@@ -153,7 +155,7 @@ final class SetupSession {
     }
 
     var currentTheme: String {
-        themes.first { $0.key == currentThemeKey }?.title ?? (currentThemeKey == "built-in" ? "Built-in" : currentThemeKey)
+        themes.first { $0.key == currentThemeKey }?.title ?? currentThemeKey
     }
 
     var placement: SetupPreferences.Placement {

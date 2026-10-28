@@ -633,7 +633,7 @@ private func calls(_ log: URL) -> [Substring] {
 func setupPresetsLoadWithTheBundledThemes(preset: SetupPreferences.Preset) throws {
     let repository = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let url = repository.appending(path: "Resources/config.json")
-    let data = try preset.preferences(sets: [.system, .meetings, .workspaces(.aerospace)], placement: .current)
+    let data = try preset.preferences(workspaces: .spaces, placement: .current)
         .applying(to: Data(contentsOf: url), menuBarHeight: 24)
     var loader = ConfigurationLoader()
     loader.themesDirectory = repository.appending(path: "Resources/themes")
@@ -658,6 +658,24 @@ func setupPresetsLoadWithTheBundledThemes(preset: SetupPreferences.Preset) throw
     let document = try JSONDecoder().decode([String: ConfigurationValue].self, from: appended)
     #expect(try document["widgets"]!.decoded([[String: ConfigurationValue]].self).map { $0["id"] } == [.string("time"), .string("workspaces")])
     #expect(document["workspaceSource"] == nil)
+}
+
+@Test(arguments: [false, true])
+func setupEndsTheBarWithSoundBatteryTheClockAndMenuBarItems(starter: Bool) throws {
+    let repository = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let data = starter ? try Data(contentsOf: repository.appending(path: "Resources/config.json")) : Data(#"""
+    { "widgets": [
+      {"id":"system","type":"text","position":"left","text":""},
+      {"id":"app-menu","type":"appMenu","position":"left"},
+      {"id":"clock","type":"clock","position":"right"}
+    ] }
+    """#.utf8)
+    let updated = try SetupPreferences.Preset.everything.preferences(workspaces: .spaces, placement: .current)
+        .applying(to: data, menuBarHeight: 24)
+    let configuration = try JSONDecoder().decode(Configuration.self, from: updated)
+    #expect(configuration.widgets.map(\.id) == ["system", "workspaces", "app-menu", "meeting", "system-monitor", "sound", "battery",
+                                                "clock", "menu-bar-items"])
+    #expect(configuration.workspaceSource == .spaces)
 }
 
 @Test func setupReenablesMatchingWidgetsAndKeepsConflictingIDs() throws {

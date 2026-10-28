@@ -21,11 +21,21 @@
       "position": "left"
     },
     {
+      "id": "sound",
+      "type": "audio",
+      "position": "right"
+    },
+    {
       "id": "clock",
       "type": "clock",
       "position": "right",
       "format": "EEE d MMM  HH:mm",
       "onClick": "open -a Calendar"
+    },
+    {
+      "id": "menu-bar-items",
+      "type": "menuBarItems",
+      "position": "right"
     }
   ]
 }

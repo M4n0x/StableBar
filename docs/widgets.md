@@ -71,7 +71,7 @@ Both menu widgets use the configured hover background and keep their normal text
 }
 ```
 
-StableBar reads the titles through Accessibility when you switch apps, wake or unlock your Mac, and when the pointer enters either widget. If a read fails while an app is becoming ready, the widgets keep their last complete menus and retry for a few seconds. Each menu is read from the app when it opens, so it works while the macOS menu bar is hidden; choosing an item chooses it in the app. These menus show items, separators, checkmarks and submenus, but not keyboard shortcuts. Allow StableBar in **System Settings → Privacy & Security → Accessibility**; until then the widgets show a warning. Its first click shows the macOS prompt, and later clicks open that pane. While a StableBar window such as Settings is in front, the widgets keep the previous app's menus.
+StableBar reads the titles through Accessibility when you switch apps, wake or unlock your Mac, and when the pointer enters either widget. If a read fails while an app is becoming ready, the widgets keep their last complete menus and retry for a few seconds. Each menu is read from the app when it opens, so it works while the macOS menu bar is hidden; choosing an item chooses it in the app. These menus show items, separators, checkmarks and submenus, but not keyboard shortcuts. Allow StableBar in **System Settings → Privacy & Security → Accessibility**; until then the widgets show a warning, except while setup is open. Its first click shows the macOS prompt, and later clicks open that pane. While a StableBar window such as Settings is in front, the widgets keep the previous app's menus.
 
 ## yabai workspaces
 
@@ -123,7 +123,7 @@ Without a tiling window manager, workspace widgets can show your Mission Control
 }
 ```
 
-Choose **Spaces** under **Settings → General → Workspaces** to set the same source. Desktops are numbered across displays like Mission Control, and each display shows its own. Fullscreen apps have no desktop number and don't appear. StableBar refreshes when the active Space changes and when apps launch, quit or come to the front, so a window moved to another Space shows there after the next such change.
+Choose **Spaces** under **Settings → General → Workspaces** to set the same source. Its **Workspace manager** can choose AeroSpace, yabai or OmniWM only when it's installed, and warns when the configured one isn't. Desktops are numbered across displays like Mission Control, and each display shows its own. Fullscreen apps have no desktop number and don't appear. StableBar refreshes when the active Space changes and when apps launch, quit or come to the front, so a window moved to another Space shows there after the next such change.
 
 Clicking a desktop posts its **Switch to Desktop N** shortcut. Turn those shortcuts on in **System Settings → Keyboard → Keyboard Shortcuts → Mission Control**, and allow StableBar in **System Settings → Privacy & Security → Accessibility**. macOS offers the shortcuts for desktops 1 to 16. Clicking a window title brings its app to the front. Window titles need Screen Recording access; without it they are empty.
 

@@ -885,7 +885,7 @@ struct AppMenuView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            if !appMenu.isTrusted {
+            if !appMenu.isTrusted && !appMenu.hidesAccessWarning {
                 Button(action: requestAccess) {
                     Image(systemName: "exclamationmark.triangle").padding(padding).contentShape(Rectangle())
                 }

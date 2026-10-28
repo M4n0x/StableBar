@@ -49,10 +49,20 @@ struct GeneralSettingsView: View {
                     .id(SettingsSearchResult.hover.id)
                     SettingsGroup("Workspaces") {
                         let source = store.configuration?.workspaceSource ?? .aerospace
-                        SettingRow(title: "Workspace manager") {
+                        let path = shellEnvironment.withLock { $0["PATH", default: ""] }
+                        let missing = [WorkspaceSource.aerospace, .yabai, .omniwm].filter { $0.executable(path: path) == nil }
+                        SettingRow(title: "Workspace manager", hint: missing.isEmpty ? nil : "Not installed: \(missing.map(\.title).joined(separator: ", ")).") {
                             SettingsSegments(selection: Binding(get: { source }, set: {
                                 if $0 != source { editor.change(ConfigurationEdit(action: .workspaceSource, name: $0.rawValue)) }
-                            }), options: [(WorkspaceSource.aerospace, "AeroSpace"), (.yabai, "yabai"), (.omniwm, "OmniWM"), (.spaces, "Spaces")], stretches: false)
+                            }), options: [(WorkspaceSource.aerospace, "AeroSpace"), (.yabai, "yabai"), (.omniwm, "OmniWM"), (.spaces, "Spaces")],
+                               disabled: missing, stretches: false)
+                        }
+                        if missing.contains(source) {
+                            Label("\(source.title) isn't installed, so workspace widgets can't show its workspaces. Install it, or choose Spaces.",
+                                  systemImage: "exclamationmark.triangle.fill")
+                                .font(.callout)
+                                .foregroundStyle(SettingsPalette.warning)
+                                .groupRow()
                         }
                         connection
                     }

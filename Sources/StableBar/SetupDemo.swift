@@ -1,7 +1,10 @@
 import SwiftUI
 
-/// The bar that setup's intro builds from widgets, clicks through, dresses in themes and flies to the real bar.
+/// The bar that setup's intro builds from widgets, clicks through and dresses in themes. Its last theme
+/// reveals the person's own bar, which flies up into place.
 struct SetupDemo: View {
+    let store: BarStore
+    let display: BarDisplay
     let looks: [(name: String, look: Configuration)]
     /// Seconds since Get Started.
     let elapsed: Double
@@ -22,13 +25,14 @@ struct SetupDemo: View {
     private static let events = [("09:30", "Standup"), ("13:00", "Design review"), ("16:30", "Ship it")]
     private static let clockClick = 4.45
     private static let cpuClick = 6.25
-    private static let wipes = 7.9
+    static let wipes = 7.9
     private static let finder = NSWorkspace.shared.icon(forFile: "/System/Library/CoreServices/Finder.app")
     private static let safari = NSWorkspace.shared.icon(forFile: "/Applications/Safari.app")
 
     var body: some View {
         let flight = UnitCurve.easeInOut.value(at: progress(elapsed, Self.flight, Self.landing - Self.flight))
         let theme = theme(at: elapsed)
+        let own = elapsed >= Self.wipes + 0.9 * Double(looks.count - 1)
         let filled = progress(elapsed, 0.95, 0.35)
         ZStack {
             ZStack {
@@ -42,7 +46,10 @@ struct SetupDemo: View {
                 if theme.wipe < 1 {
                     bar(theme.from).mask { wipe(1 - theme.wipe, from: .trailing) }
                 }
-                bar(theme.to).mask { wipe(theme.wipe, from: .leading) }
+                Group {
+                    if own { ownBar } else { bar(theme.to) }
+                }
+                .mask { wipe(theme.wipe, from: .leading) }
             }
             .overlay {
                 GeometryReader { proxy in
@@ -198,6 +205,17 @@ struct SetupDemo: View {
         }
         .overlay { BarBorder(style: sample.barStyle).opacity(filled) }
         .padding(look.bar.margin)
+    }
+
+    private var ownBar: some View {
+        GeometryReader { proxy in
+            let notch = display.notch.map { $0.upperBound - $0.lowerBound }
+            BarView(store: store, display: BarDisplay(id: display.id, isBuiltIn: display.isBuiltIn, isMain: display.isMain,
+                                                      notch: notch.map { (proxy.size.width - $0) / 2...(proxy.size.width + $0) / 2 },
+                                                      isPortrait: display.isPortrait), preview: true)
+        }
+        .frame(height: target.height)
+        .environment(\.colorScheme, store.context.appearance == "dark" ? .dark : .light)
     }
 
     /// A part of the bar that drops into its slot, sparks, and is labelled while the bar is built.

@@ -13,13 +13,13 @@ struct SetupTourView: View {
     @State private var phase: Phase
     @State private var menuBarQuestion: Bool
     @State private var looks: [(name: String, look: Configuration)] = []
+    @State private var previews: [String: ThemePreview] = [:]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Phase { case intro, wallpaper, tour }
 
     private static let pages = [
-        ("Start from a preset.", "Your bar changes as you choose. Presets add widgets and never remove yours."),
-        ("Give it your style.", "Flip through themes with ← and →. Keep current leaves your theme as it is."),
+        ("Make it yours.", "Choose your widgets, then a theme. Your bar changes as you go."),
         ("Choose where it sits.", "On the top edge, StableBar replaces the macOS menu bar. Below it, macOS menus stay visible."),
         ("Finishing touches.", "Choose what StableBar may do. Permission buttons ask macOS right away."),
         ("Try your bar.", "It's live: click a widget to open it, or right-click the bar for more. Nothing is saved until you finish.")
@@ -90,6 +90,12 @@ struct SetupTourView: View {
                 }
             }.value
             looks = [(session.currentTheme, configuration)] + previews
+            let choices = session.themes
+            self.previews = await Task.detached {
+                Dictionary(uniqueKeysWithValues: choices.compactMap { choice in
+                    (try? ThemePreview(choice: choice, themesDirectory: directory)).map { (choice.key, $0) }
+                })
+            }.value
         }
         .task(id: departure) {
             guard let departure, phase == .intro, !menuBarQuestion else { return }
@@ -109,23 +115,101 @@ struct SetupTourView: View {
         let home = size.height * 0.42
         let stageWidth = min(size.width - 200, 1080)
         let stage = CGRect(x: (size.width - stageWidth) / 2, y: home - bar.height / 2, width: stageWidth, height: bar.height)
-        let beam = size.width * 0.55 * UnitCurve.easeOut.value(at: progress(t, 0.45, 0.8))
-        let condense = UnitCurve.easeInOut.value(at: progress(t, 1.25, 0.6))
-        let shown = progress(t, 1.75, 0.4)
         let morph = UnitCurve.easeInOut.value(at: progress(d, 0.1, 0.65))
-        let width = beam + (264 - beam) * condense
-        let height = 2 + 66 * condense
         let leaving = 1 - progress(d, 0, 0.25)
-        let ready = UnitCurve.easeOut.value(at: progress(t, 3.1, 0.45))
+        let ready = UnitCurve.easeOut.value(at: progress(t, 2.8, 0.45))
         let spread = UnitCurve.easeOut.value(at: progress(d, SetupDemo.landing - 0.1, 0.6))
-        let shine = t > 4 ? progress(t.truncatingRemainder(dividingBy: 4.5), 0, 0.9) : 0
-        let settled = t > 2
-        let name = Array("StableBar")
-        let ember = AngularGradient(colors: [.orange, Color(red: 1, green: 0.8, blue: 0.45), .white, .orange,
-                                             .orange.opacity(0.25), .orange], center: .center, angle: .degrees(t * 80))
-        let glow = LinearGradient(colors: [.clear, .orange, Color(red: 1, green: 0.8, blue: 0.45), .orange, .clear],
-                                  startPoint: .leading, endPoint: .trailing)
+        let warm = Color(red: 1, green: 0.8, blue: 0.45)
+        let glow = LinearGradient(colors: [.clear, .orange, warm, .orange, .clear], startPoint: .leading, endPoint: .trailing)
+        let openWidth = stage.width * 0.62
+        let lineWidth = openWidth * 1.2
+        let draw = UnitCurve.easeOut.value(at: progress(t, 0.2, 0.95))
+        let swell = t < 1 ? 0 : Spring(duration: 0.8, bounce: 0.25).value(target: 1.0, time: t - 1)
+        let glassWidth = lineWidth + (openWidth - lineWidth) * swell + (stage.width - openWidth) * morph
+        let glassHeight = max(2, 2 + (stage.height - 2) * swell)
+        let corner = min(16, glassHeight / 2)
+        let sweep = t > 1.7 ? progress((t - 1.7).truncatingRemainder(dividingBy: 4.5), 0, 1.6) : 0
+        let gleam = t > 3 ? progress((t - 3).truncatingRemainder(dividingBy: 5), 0, 1.5) : 0
+        let letters = Array("StableBar")
+        let word = HStack(spacing: 0) {
+            ForEach(letters.indices, id: \.self) { index in
+                let shown = UnitCurve.easeOut.value(at: progress(t, 1.3 + Double(index) * 0.06, 0.9))
+                Text(String(letters[index]))
+                    .padding(.horizontal, 9.5 * (1 - shown))
+                    .scaleEffect(0.96 + 0.04 * shown)
+                    .offset(y: 40 * (1 - shown))
+                    .blur(radius: 12 * (1 - shown))
+                    .opacity(shown)
+            }
+        }
+        .font(.system(size: 76, weight: .semibold))
         return ZStack {
+            ForEach(Self.embers.indices, id: \.self) { index in
+                let ember = Self.embers[index]
+                let rise = t > ember.delay ? (t - ember.delay).truncatingRemainder(dividingBy: ember.duration) / ember.duration : 0
+                Circle()
+                    .fill(warm)
+                    .frame(width: 3, height: 3)
+                    .shadow(color: .orange, radius: 3)
+                    .opacity(0.9 * (rise < 0.15 ? rise / 0.15 : 1 - (rise - 0.15) / 0.85) * progress(t, 0.5, 1) * (1 - progress(d, 0, 1)))
+                    .position(x: size.width * ember.x + 30 * rise, y: size.height + 10 - size.height * 0.87 * rise)
+            }
+            Rectangle()
+                .fill(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white.opacity(0.95), location: 0.2),
+                                             .init(color: .white, location: 0.5), .init(color: .white.opacity(0.95), location: 0.8),
+                                             .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing))
+                .frame(width: lineWidth * draw, height: 2)
+                .shadow(color: warm, radius: 8)
+                .opacity(1 - progress(t, 1.25, 0.5))
+                .position(x: size.width / 2, y: home)
+            ForEach([-1.0, 1.0], id: \.self) { side in
+                Circle()
+                    .fill(.white)
+                    .frame(width: 9, height: 9)
+                    .shadow(color: .orange, radius: 10)
+                    .opacity(progress(t, 0.2, 0.05) * (1 - progress(t, 1.05, 0.15)))
+                    .position(x: size.width / 2 + side * lineWidth / 2 * 0.87 * draw, y: home)
+            }
+            ZStack {
+                RoundedRectangle(cornerRadius: corner)
+                    .fill(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.04)], startPoint: .top, endPoint: .bottom))
+                    .shadow(color: .black.opacity(0.45), radius: 30, y: 12)
+                LinearGradient(colors: [.clear, .white.opacity(0.35), .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 120)
+                    .rotationEffect(.degrees(12))
+                    .offset(x: (glassWidth + 240) * sweep - glassWidth / 2 - 120)
+                    .opacity(sweep > 0 && sweep < 1 ? 1 - morph : 0)
+                HStack(spacing: 8) {
+                    ghost { Image(systemName: "apple.logo") }
+                    ghost { Text("Finder").fontWeight(.semibold) + Text("  File  Edit  View") }
+                    Spacer(minLength: 0)
+                    ghost { Image(systemName: "speaker.wave.2.fill") }
+                    ghost { Text(now, format: .dateTime.weekday().day().month()) + Text("  ") + Text(now, format: .dateTime.hour().minute()) }
+                    ghost { Image(systemName: "square.grid.2x2") }
+                }
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 10)
+                .opacity(progress(t, 1.6, 0.8) * (1 - progress(d, 0, 0.3)))
+                RoundedRectangle(cornerRadius: corner)
+                    .strokeBorder(LinearGradient(colors: [.white.opacity(0.35), .white.opacity(0.12)], startPoint: .top, endPoint: .bottom),
+                                  lineWidth: 1)
+            }
+            .frame(width: glassWidth, height: glassHeight)
+            .clipShape(RoundedRectangle(cornerRadius: corner))
+            .opacity(progress(t, 1, 0.05) * (1 - progress(d, SetupDemo.wipes, 0.6)))
+            .position(x: size.width / 2, y: home)
+            word
+                .overlay {
+                    LinearGradient(stops: [.init(color: .clear, location: 0.4), .init(color: warm, location: 0.5), .init(color: .clear, location: 0.6)],
+                                   startPoint: UnitPoint(x: 2 * gleam - 1, y: 0), endPoint: UnitPoint(x: 2 * gleam, y: 0))
+                        .mask(word)
+                }
+                .foregroundStyle(.white)
+                .opacity(leaving)
+                .blur(radius: 6 * (1 - leaving))
+                .offset(y: -10 * (1 - leaving))
+                .position(x: size.width / 2, y: home - 118)
             Rectangle()
                 .fill(glow)
                 .frame(width: size.width * spread, height: 2)
@@ -133,78 +217,19 @@ struct SetupTourView: View {
                 .opacity(spread * (1 - 0.4 * progress(d, SetupDemo.landing + 0.55, 0.8)))
                 .position(x: size.width / 2, y: bar.maxY)
             if d >= 0 && d < SetupDemo.landing + 0.3 && !looks.isEmpty {
-                SetupDemo(looks: looks, elapsed: d, size: size, stage: stage, target: bar)
+                SetupDemo(store: session.store, display: BarDisplay(screen: screen), looks: looks, elapsed: d, size: size, stage: stage, target: bar)
             }
-            ZStack {
-                Capsule()
-                    .strokeBorder(LinearGradient(colors: [.white.opacity(condense), .white, .white.opacity(condense)],
-                                                 startPoint: .leading, endPoint: .trailing), lineWidth: 1.5)
-                    .background(Capsule().fill(.orange).blur(radius: 10).opacity(0.5 * (1 - condense)))
-                    .opacity(progress(t, 0.45, 0.2) * (1 - shown))
-                Group {
-                    Group {
-                        Capsule().fill(LinearGradient(colors: [Color(white: 0.17), Color(white: 0.08)], startPoint: .top, endPoint: .bottom))
-                        Capsule().fill(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white.opacity(0.14), location: 0.5),
-                                                              .init(color: .clear, location: 1)],
-                                                      startPoint: UnitPoint(x: shine * 1.6 - 0.6, y: 0),
-                                                      endPoint: UnitPoint(x: shine * 1.6 - 0.2, y: 1)))
-                    }
-                    .opacity(1 - progress(d, 0.4, 0.4))
-                    Capsule().strokeBorder(ember, lineWidth: 1.5)
-                    Capsule().strokeBorder(ember, lineWidth: 4).blur(radius: 8).opacity(0.5)
-                }
-                .opacity(shown)
-            }
-            .frame(width: width + (stage.width - width) * morph, height: height + (stage.height - height) * morph)
-            .overlay {
-                HStack(spacing: 12) {
-                    Image(nsImage: NSApp.applicationIconImage)
-                        .resizable()
-                        .frame(width: 34, height: 34)
-                        .scaleEffect(settled ? 1 : 0.5)
-                        .opacity(settled ? 1 : 0)
-                        .animation(.spring(duration: 0.5, bounce: 0.4), value: settled)
-                    HStack(spacing: 0) {
-                        ForEach(name.indices, id: \.self) { index in
-                            let delay = 0.1 + Double(index) * 0.055
-                            Text(String(name[index]))
-                                .blur(radius: settled ? 0 : 6)
-                                .animation(.easeOut(duration: 0.3).delay(delay), value: settled)
-                                .offset(y: settled ? 0 : -18)
-                                .rotationEffect(.degrees(settled ? 0 : -12))
-                                .opacity(settled ? 1 : 0)
-                                .animation(.spring(duration: 0.55, bounce: 0.45).delay(delay), value: settled)
-                        }
-                    }
-                    .font(.system(size: 28, weight: .semibold, design: .monospaced))
-                    .background(alignment: .bottomLeading) {
-                        GeometryReader { proxy in
-                            let glide = progress(t, 2.1, 0.55)
-                            Capsule()
-                                .fill(.orange)
-                                .frame(width: 22, height: 4)
-                                .shadow(color: .orange, radius: 6)
-                                .offset(x: (proxy.size.width - 22) * UnitCurve.easeInOut.value(at: glide), y: proxy.size.height + 2)
-                                .opacity(progress(t, 2.1, 0.1) * (1 - progress(t, 2.7, 0.4)))
-                        }
-                    }
-                }
-                .foregroundStyle(.white)
-                .opacity(1 - progress(d, 0, 0.15))
-            }
-            .opacity(1 - progress(d, 1.3, 0.5))
-            .position(x: size.width / 2, y: home)
             Text("A native, configurable bar for your Mac.")
                 .font(.system(size: 17, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.85))
-                .offset(y: 8 * (1 - UnitCurve.easeOut.value(at: progress(t, 2.6, 0.45))))
-                .opacity(progress(t, 2.6, 0.45) * leaving)
-                .position(x: size.width / 2, y: home + 76)
+                .offset(y: 8 * (1 - UnitCurve.easeOut.value(at: progress(t, 2.4, 0.5))))
+                .opacity(progress(t, 2.4, 0.5) * leaving)
+                .position(x: size.width / 2, y: home + 72)
             if phase == .intro {
                 Button { departure = .now } label: { Text("Get Started").frame(width: 164, height: 48) }
                     .buttonStyle(SetupButtonStyle())
                     .keyboardShortcut(.defaultAction)
-                    .disabled(departure != nil || t < 3.1)
+                    .disabled(departure != nil || t < 2.8)
                     .opacity(ready * leaving)
                     .offset(y: 12 * (1 - ready))
                     .position(x: size.width / 2, y: size.height - 89)
@@ -261,6 +286,19 @@ struct SetupTourView: View {
         }
     }
 
+    private static let embers: [(x: Double, duration: Double, delay: Double)] = [
+        (0.31, 7.5, 5.9), (0.57, 6.8, 1.0), (0.49, 8.7, 2.7), (0.88, 6.3, 4.4), (0.45, 7.4, 1.8), (0.18, 7.3, 7.6),
+        (0.09, 10.1, 6.5), (0.92, 7.4, 1.7), (0.37, 9.1, 6.0), (0.46, 6.4, 5.0), (0.78, 7.9, 2.4), (0.33, 8.4, 1.2),
+        (0.93, 10.3, 4.6), (0.38, 6.0, 2.7), (0.81, 10.4, 6.9), (0.6, 7.0, 3.7), (0.37, 8.2, 1.7), (0.39, 7.3, 6.5)
+    ]
+
+    private func ghost<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .padding(.horizontal, 9)
+            .frame(height: 24)
+            .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 8))
+    }
+
     private func land() {
         menuBarQuestion = false
         departure = .now.addingTimeInterval(-SetupDemo.flight)
@@ -303,10 +341,25 @@ struct SetupTourView: View {
             }
             staged(0.16) {
                 switch session.step {
-                case 0: presets
-                case 1: themes
-                case 2: placement
-                case 3: access
+                case 0:
+                    VStack(spacing: 28) {
+                        section("Widgets") {
+                            Text("Presets add widgets and never remove yours.").font(.system(size: 12)).foregroundStyle(.white.opacity(0.45))
+                        } content: {
+                            presets
+                        }
+                        section("Theme") {
+                            HStack(spacing: 10) {
+                                Text("Appearance").font(.system(size: 12)).foregroundStyle(.white.opacity(0.45))
+                                SettingsSegments(selection: $session.preferences.appearance,
+                                                 options: SetupPreferences.Appearance.allCases.map { ($0, $0.rawValue) }, stretches: false)
+                            }
+                        } content: {
+                            themes
+                        }
+                    }
+                case 1: placement
+                case 2: access
                 default: hints
                 }
             }
@@ -336,66 +389,135 @@ struct SetupTourView: View {
         }
     }
 
+    private func section<Trailing: View, Content: View>(_ title: String, @ViewBuilder trailing: () -> Trailing,
+                                                        @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title).font(.system(size: 15, weight: .semibold))
+                Spacer()
+                trailing()
+            }
+            content()
+        }
+        .frame(width: 948)
+    }
+
     private var presets: some View {
         HStack(spacing: 12) {
             ForEach(SetupPreferences.Preset.allCases, id: \.self) { preset in
-                let chosen = preset.preferences(sets: session.sets, placement: session.preferences.placement)
-                let selected = session.preferences == chosen
+                let selected = session.preset == preset
+                let sets = preset.preferences(workspaces: session.workspaceSource, placement: session.preferences.placement).widgetSets
                 SetupTile(selected: selected) {
-                    session.preferences = selected ? SetupPreferences(placement: session.preferences.placement) : chosen
+                    session.preset = selected ? nil : preset
+                    session.preferences = selected ? SetupPreferences(placement: session.preferences.placement)
+                        : preset.preferences(workspaces: session.workspaceSource, placement: session.preferences.placement)
                     if session.preferences.placement == .top { Task { await session.place(.top) } }
                 } label: {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Image(systemName: preset.symbol).font(.system(size: 20)).frame(height: 26)
-                        Text(preset.title).font(.system(size: 15, weight: .semibold))
-                        Text(preset.detail)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.white.opacity(0.55))
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack {
+                            Image(systemName: preset.symbol).font(.system(size: 15))
+                            Spacer()
+                            if selected { Image(systemName: "checkmark.circle.fill").font(.system(size: 15)) }
+                        }
+                        .frame(height: 20)
+                        Text(preset.title).font(.system(size: 15, weight: .semibold)).padding(.top, 10)
+                        Text(preset.detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.55)).padding(.top, 2)
+                        Spacer(minLength: 12)
+                        HStack(spacing: 4) {
+                            Image(systemName: "apple.logo").opacity(0.45)
+                            ForEach(sets.filter { if case .workspaces = $0 { true } else { false } }, id: \.self) { Image(systemName: $0.symbol) }
+                            Image(systemName: "menubar.rectangle").opacity(0.45)
+                            Spacer(minLength: 2)
+                            ForEach(sets.filter { if case .workspaces = $0 { false } else { $0 != .menuBarItems } }, id: \.self) { Image(systemName: $0.symbol) }
+                            Image(systemName: "clock").opacity(0.45)
+                            if sets.contains(.menuBarItems) { Image(systemName: SetupPreferences.WidgetSet.menuBarItems.symbol) }
+                        }
+                        .font(.system(size: 8.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .padding(.horizontal, 7)
+                        .frame(height: 22)
+                        .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 6))
                     }
-                    .padding(16)
-                    .frame(width: 168, height: 156, alignment: .topLeading)
+                    .padding(14)
+                    .frame(width: 180, height: 140, alignment: .topLeading)
                 }
+                .help("Adds \(ListFormatter.localizedString(byJoining: sets.map(\.title))).")
             }
         }
     }
 
     private var themes: some View {
-        let options: [(SetupPreferences.Theme, String)] = [(.current, "Keep current"), (.builtIn, "Built-in")]
-            + session.themes.map { (.package(id: $0.manifest.id, version: $0.isBundled ? nil : $0.manifest.version), $0.title) }
-        let index = options.firstIndex { $0.0 == session.preferences.theme } ?? 0
-        return VStack(spacing: 32) {
-            HStack(spacing: 24) {
-                roundButton("chevron.left", label: "Previous theme") {
-                    session.preferences.theme = options[(index + options.count - 1) % options.count].0
-                }
-                .keyboardShortcut(.leftArrow, modifiers: [])
-                VStack(spacing: 6) {
-                    ZStack {
-                        Text(options[index].1)
-                            .font(.system(size: 28, weight: .semibold))
-                            .id(index)
-                            .transition(.blurFade)
+        let choices = session.themes
+        let selected = session.store.selectedThemeKey
+        let index = choices.firstIndex { $0.key == selected } ?? 0
+        let appearance = session.store.configuration?.bar.appearance ?? (session.store.context.appearance == "dark" ? .dark : .light)
+        return HStack(spacing: 16) {
+            roundButton("chevron.left", label: "Previous theme") {
+                choose(choices[(index + choices.count - 1) % choices.count])
+            }
+            .keyboardShortcut(.leftArrow, modifiers: [])
+            ScrollViewReader { scroll in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(choices, id: \.key) { choice in
+                            themeTile(choice, appearance: appearance, selected: choice.key == selected)
+                        }
                     }
-                    Text(index == 0 ? "Now: \(session.currentTheme)" : "\(index) of \(options.count - 1)")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .monospacedDigit()
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
                 }
-                .frame(width: 320)
-                .animation(.smooth(duration: 0.3), value: index)
-                roundButton("chevron.right", label: "Next theme") {
-                    session.preferences.theme = options[(index + 1) % options.count].0
-                }
-                .keyboardShortcut(.rightArrow, modifiers: [])
+                .onAppear { scroll.scrollTo(selected, anchor: .center) }
+                .onChange(of: selected) { withAnimation(.smooth(duration: 0.3)) { scroll.scrollTo(selected, anchor: .center) } }
             }
-            HStack(spacing: 12) {
-                Text("Appearance").font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
-                SettingsSegments(selection: $session.preferences.appearance,
-                                 options: SetupPreferences.Appearance.allCases.map { ($0, $0.rawValue) }, stretches: false)
+            .frame(width: 836)
+            .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.05),
+                                         .init(color: .black, location: 0.95), .init(color: .clear, location: 1)],
+                                 startPoint: .leading, endPoint: .trailing))
+            roundButton("chevron.right", label: "Next theme") {
+                choose(choices[(index + 1) % choices.count])
             }
+            .keyboardShortcut(.rightArrow, modifiers: [])
         }
+    }
+
+    private func themeTile(_ choice: ThemeChoice, appearance: BarAppearance, selected: Bool) -> some View {
+        SetupTile(selected: selected) {
+            choose(choice)
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                Group {
+                    if let look = previews[choice.key]?.configuration(for: appearance) {
+                        GeometryReader { proxy in
+                            ThemeSampleBar(look: look)
+                                .frame(width: proxy.size.width * 2)
+                                .scaleEffect(0.5)
+                                .frame(width: proxy.size.width, height: proxy.size.height)
+                        }
+                    }
+                }
+                .frame(height: 46)
+                .background(SampleWallpaper())
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .environment(\.colorScheme, appearance.colorScheme)
+                HStack(spacing: 6) {
+                    Text(choice.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                    Spacer(minLength: 0)
+                    if choice.key == session.currentThemeKey {
+                        Text("Current").font(.system(size: 11)).foregroundStyle(.white.opacity(0.5))
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            .padding(8)
+            .frame(width: 168)
+        }
+        .id(choice.key)
+        .accessibilityLabel("\(choice.title) theme")
+    }
+
+    private func choose(_ choice: ThemeChoice) {
+        session.preferences.theme = choice.key == session.currentThemeKey ? .current
+            : choice.isBuiltIn ? .builtIn : .package(id: choice.manifest.id, version: choice.isBundled ? nil : choice.manifest.version)
     }
 
     private var placement: some View {
@@ -565,10 +687,13 @@ struct SetupTourView: View {
                     .buttonStyle(SetupButtonStyle(prominent: false))
                 }
             }
-            if let source = session.sets.compactMap({ set -> WorkspaceSource? in
-                if case let .workspaces(source) = set { return source }
-                return nil
-            }).first {
+            let source = session.workspaceSource
+            if source == .spaces {
+                if session.preferences.widgetSets.contains(.workspaces(.spaces)) {
+                    Text("Workspaces shows your macOS desktops. To switch desktops from the bar, turn on the Switch to Desktop shortcuts in System Settings → Keyboard → Keyboard Shortcuts → Mission Control.")
+                        .font(.system(size: 12)).foregroundStyle(.white.opacity(0.55))
+                }
+            } else {
                 Text("\(source.title) detected. Leave window clearance off if it already manages your gaps. \(source == .yabai ? "Use yabai’s external_bar setting to leave room for the bar." : "Set gaps.outer.top in \(source.title) to leave room for the bar.")")
                     .font(.system(size: 12)).foregroundStyle(.white.opacity(0.55))
             }

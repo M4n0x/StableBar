@@ -168,6 +168,21 @@ private final class MenuReadFixture: @unchecked Sendable {
     #expect(source.reads == [100, 100])
 }
 
+@Test @MainActor func comingBackToStableBarAfterAllowingAccessReadsThePreviousAppsMenus() async {
+    let source = MenuReadFixture()
+    source.trusted = false
+    let menu = AppMenu(checkAccess: { source.trusted }, readAttribute: source.read)
+    menu.read(MenuApplication(pid: 100))
+    await menu.readTask?.value
+    #expect(!menu.isTrusted)
+    source.trusted = true
+    menu.read(NSRunningApplication.current)
+    await menu.readTask?.value
+    #expect(menu.isTrusted)
+    #expect(menu.items.map(\.title) == ["First", "File"])
+    #expect(source.reads == [100])
+}
+
 @Test @MainActor func aSuccessfulEmptyMenuReadClearsPreviousMenusWithoutRetrying() async {
     let source = MenuReadFixture()
     let menu = AppMenu(checkAccess: { source.trusted }, readAttribute: source.read)
