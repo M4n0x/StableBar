@@ -20,7 +20,7 @@ Add an entry to `widgets`:
 }
 ```
 
-Commands run through `/bin/zsh -c` with your login shell's environment, which StableBar reads once at launch. Restart StableBar after changing `PATH` or other exported variables in your shell profile. Use absolute paths or `~` for your own scripts, and make them executable. Widgets can be written in shell, Python, Swift, Rust or anything that prints to stdout.
+Commands run through `/bin/zsh -c` with your login shell's environment, which StableBar reads once at launch. When your profile is slow, as it can be right after login, the bar starts after 10 seconds without it, then runs its widgets again and reconnects workspaces once the read finishes. Restart StableBar after changing `PATH` or other exported variables in your shell profile. Use absolute paths or `~` for your own scripts, and make them executable. Widgets can be written in shell, Python, Swift, Rust or anything that prints to stdout.
 
 Return plain text, or one JSON object:
 

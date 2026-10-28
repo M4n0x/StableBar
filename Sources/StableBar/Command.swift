@@ -4,11 +4,40 @@ import os
 
 let shellEnvironment = OSAllocatedUnfairLock(initialState: ProcessInfo.processInfo.environment)
 
-func loadLoginShellEnvironment() async throws {
-    let output = try await runCommand("/bin/zsh", arguments: ["-lc", "/usr/bin/env -0"])
-    let variables = output.split(separator: 0).map { $0.split(separator: UInt8(ascii: "="), maxSplits: 1, omittingEmptySubsequences: false) }
-    shellEnvironment.withLock {
-        $0 = Dictionary(uniqueKeysWithValues: variables.map { (String(decoding: $0[0], as: UTF8.self), String(decoding: $0[1], as: UTF8.self)) })
+/// Reads the environment a login shell exports. Right after login, a profile that runs `brew shellenv`,
+/// keychain lookups or nvm can take far longer than usual, so a failed read is retried with backoff
+/// until one succeeds: until then, commands get the app's own launchd `PATH`.
+func readLoginShellEnvironment(shell: String = "/bin/zsh", timeout: Double = 60,
+                               retryDelay: Double = 10) async throws -> [String: String] {
+    var failures = 0
+    while true {
+        do {
+            let output = try await runCommand(shell, arguments: ["-lc", "/usr/bin/env -0"], timeout: timeout)
+            let variables = output.split(separator: 0).map { $0.split(separator: UInt8(ascii: "="), maxSplits: 1, omittingEmptySubsequences: false) }
+            return Dictionary(uniqueKeysWithValues: variables.map { (String(decoding: $0[0], as: UTF8.self), String(decoding: $0[1], as: UTF8.self)) })
+        } catch {
+            try Task.checkCancellation()
+            failures += 1
+            FileHandle.standardError.write(Data("Couldn't read the login shell's environment: \(errorMessage(error))\n".utf8))
+            try await Task.sleep(for: .seconds(providerRetryDelay(interval: retryDelay, failures: failures)))
+        }
+    }
+}
+
+extension Task {
+    /// Whether the task finishes within `duration`. It keeps running either way.
+    func finishes(within duration: Duration) async -> Bool {
+        let (results, continuation) = AsyncStream.makeStream(of: Bool.self)
+        Task<Void, Never> {
+            _ = await result
+            continuation.yield(true)
+        }
+        Task<Void, Never> {
+            try? await Task<Never, Never>.sleep(for: duration)
+            continuation.yield(false)
+        }
+        for await finished in results { return finished }
+        return false
     }
 }
 
