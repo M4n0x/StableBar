@@ -156,6 +156,10 @@ class BarPanel: NSPanel {
     override var canBecomeMain: Bool { false }
     @objc var hasKeyAppearance: Bool { true }
 
+    override var level: NSWindow.Level {
+        didSet { decorationPanel?.level = level }
+    }
+
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         frameRect
     }
@@ -220,6 +224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let themeTrial = ThemeTrialPanel()
     private let editingControls = BarEditControls()
     private let editingKeyboard = BarEditingKeyboard()
+    private let menuBarStrip = MenuBarStrip()
     private var control: RuntimeControl?
     private var systemContext: SystemContext?
     private var panels: [CGDirectDisplayID: BarPanel] = [:]
@@ -323,6 +328,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.setSleeping(true)
         store.windowClearance.stop()
         store.menuBarDelay.stop()
+        menuBarStrip.stop()
     }
 
     @objc private func woke() {
@@ -397,6 +403,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 clearanceDisplays.append(clearance)
             }
         }
+        menuBarStrip.update(panels: panels)
         editingControls.update(store: store, bars: panels, visibleFrames: visibleFrames)
         store.windowClearance.update(windows: store.clearanceConfiguration?.bar.keepWindowsClear == true,
                                      notifications: store.clearanceConfiguration?.bar.keepNotificationsClear == true,
