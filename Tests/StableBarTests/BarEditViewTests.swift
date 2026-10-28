@@ -164,6 +164,58 @@ final class BarEditViewTests: XCTestCase {
         XCTAssertEqual(store.barEditing.widgets(on: BarDisplay(id: 2, isBuiltIn: false, isMain: false, notch: nil)).map(\.id), ["a", "d", "e", "f"])
     }
 
+    @MainActor func testTilesStayWhereTheDropLeftThemWhileATrayCatchesUpWithTheSavedOrder() async throws {
+        _ = NSApplication.shared
+        let fixture = try ThemeGalleryFixture(#"""
+        {"widgets":[{"id":"a","type":"text","text":"A","position":"right","style":{"width":40,"height":20}},
+        {"id":"b","type":"text","text":"B","position":"right","style":{"width":60,"height":20}},
+        {"id":"c","type":"text","text":"C","position":"right","style":{"width":80,"height":20}}]}
+        """#)
+        defer { fixture.close() }
+        let store = try fixture.store()
+        defer { store.stop() }
+        let editing = store.barEditing
+        editing.begin()
+        let display = BarDisplay(id: 2, isBuiltIn: false, isMain: true, notch: nil)
+        func row() throws -> BarEditSectionRow {
+            BarEditSectionRow(store: store, display: display, position: .right, entries: editing.entries(on: display),
+                              config: try XCTUnwrap(store.configuration), adding: false)
+        }
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 40), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let host = NSHostingView(rootView: try row())
+        window.contentView = host
+        func positions() -> [String: CGFloat] {
+            host.layoutSubtreeIfNeeded()
+            return Dictionary(uniqueKeysWithValues: descendants(host, of: BarEditDragSourceView.self).map {
+                ($0.widgetID, $0.convert($0.bounds, to: host).minX)
+            })
+        }
+        let payload = editing.dragSession.begin("a")
+        let target = BarEditInsertion(displayID: 2, position: .right, before: nil, index: 2, x: 0)
+        editing.insertion = target
+        var landed: [String: CGFloat] = [:]
+        for _ in 0..<100 {
+            let current = positions()
+            if current == landed { break }
+            landed = current
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertGreaterThan(try XCTUnwrap(landed["a"]), try XCTUnwrap(landed["c"]))
+        XCTAssertTrue(editing.drop(payload, at: target))
+        editing.finishDrop()
+        for _ in 0..<100 {
+            if editing.insertion == nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(store.configuration?.widgets.map(\.id), ["b", "c", "a"])
+        _ = positions()
+        host.rootView = try row()
+        XCTAssertEqual(positions(), landed)
+    }
+
     @MainActor func testTraysOnASeeThroughBarBringABackingThatTheirTextReadsOn() async throws {
         _ = NSApplication.shared
         let display = BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil)

@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import SwiftUI
 
 /// Presence in the normal bar, kept separate from the temporary edit-mode reveal.
 struct BarWidgetVisibility {
@@ -36,6 +37,7 @@ final class BarEditing {
     let addPopover: BarEditAddPopover
     var insertion: BarEditInsertion?
     private(set) var dropped: (id: String, target: BarEditInsertion)?
+    private var slidingIn = false
     var error: String?
     private(set) var errorDisplayID: Int?
     private var measuredHeights: [Int: CGFloat] = [:]
@@ -167,7 +169,7 @@ final class BarEditing {
         return widget.id == moving.id || (moving.group != nil && moving.group == widget.group)
     }
 
-    func opacity(for id: String) -> Double { dragSession.active != nil && isMoving(id) ? 0 : 1 }
+    func opacity(for id: String) -> Double { (dragSession.active != nil || slidingIn) && isMoving(id) ? 0 : 1 }
 
     func arranged(_ entries: [BarEditWidget], on displayID: Int, position: WidgetPosition) -> [BarEditWidget] {
         let tray = entries.filter { $0.widget.position == position }
@@ -207,14 +209,26 @@ final class BarEditing {
         return dragSession.drop(payload) { id in
             insertion = target
             dropped = (id, target)
+            slidingIn = true
         }
     }
 
     func finishDrop() {
-        guard let dropped else { return }
-        self.dropped = nil
-        move(dropped.id, to: dropped.target.position, before: dropped.target.before, on: dropped.target.displayID)
-        insertion = nil
+        guard let dropped, slidingIn else { return }
+        slidingIn = false
+        let timer = Timer(timeInterval: 0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.move(dropped.id, to: dropped.target.position, before: dropped.target.before, on: dropped.target.displayID)
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    self.dropped = nil
+                    self.insertion = nil
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     func move(_ id: String, to position: WidgetPosition, before anchor: String? = nil, on displayID: Int? = nil) {

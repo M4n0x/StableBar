@@ -32,6 +32,7 @@ final class BarEditDragSourceView: WidgetDragSourceView {
     weak var editing: BarEditing?
     var widgetID = ""
     var select: () -> Void = {}
+    private(set) var liftedImage: NSImage?
     override var isFlipped: Bool { true }
     override var dragSession: WidgetDragSession? { editing?.isActive == true ? editing?.dragSession : nil }
     override var dragWidgetID: String? { widgetID }
@@ -63,7 +64,7 @@ final class BarEditDragSourceView: WidgetDragSourceView {
         let snapshot = bitmapImageRepForCachingDisplay(in: bounds)!
         cacheDisplay(in: bounds, to: snapshot)
         let tile = NSImage(cgImage: snapshot.cgImage!, size: bounds.size)
-        return NSImage(size: NSSize(width: bounds.width * Self.lift + 16, height: bounds.height * Self.lift + 16), flipped: false) { rect in
+        let image = NSImage(size: NSSize(width: bounds.width * Self.lift + 16, height: bounds.height * Self.lift + 16), flipped: false) { rect in
             let shadow = NSShadow()
             shadow.shadowBlurRadius = 6
             shadow.shadowOffset = NSSize(width: 0, height: -2)
@@ -72,6 +73,8 @@ final class BarEditDragSourceView: WidgetDragSourceView {
             tile.draw(in: rect.insetBy(dx: 8, dy: 8))
             return true
         }
+        liftedImage = image
+        return image
     }
 
     override func beginWidgetDrag(with item: NSDraggingItem, event: NSEvent) {
@@ -145,10 +148,12 @@ final class BarEditDropTargetView: WidgetHostingView {
         guard let payload = acceptedPayload(sender), let target = target(sender, payload: payload) else { return false }
         let gap = frames.filter { editing?.isMoving($0.key) == true }.values.reduce(CGRect.null) { $0.union($1) }
         if !gap.isNull {
+            let image = (sender.draggingSource as! BarEditDragSourceView).liftedImage
             sender.enumerateDraggingItems(for: self, classes: [NSPasteboardItem.self]) { item, _, _ in
                 let size = NSSize(width: item.draggingFrame.width / BarEditDragSourceView.lift,
                                   height: item.draggingFrame.height / BarEditDragSourceView.lift)
-                item.draggingFrame = NSRect(x: gap.midX - size.width / 2, y: gap.midY - size.height / 2, width: size.width, height: size.height)
+                item.setDraggingFrame(NSRect(x: gap.midX - size.width / 2, y: gap.midY - size.height / 2, width: size.width, height: size.height),
+                                      contents: image)
             }
         }
         return editing?.drop(payload, at: target) ?? false
