@@ -31,6 +31,9 @@ final class AppMenu: NSObject {
     @ObservationIgnored private var submenus: [PopupPanel] = []
     @ObservationIgnored private(set) var readTask: Task<Void, Never>?
     @ObservationIgnored private var menuBarPresses = 0
+    @ObservationIgnored private var revealedPresses = 0
+    @ObservationIgnored private var pressedItem: AXUIElement?
+    private(set) var menuBarItems: [MenuBarItem] = []
     @ObservationIgnored var hidesMenuBar = false {
         didSet { if hidesMenuBar != oldValue { setMenuBarHidden(hidesMenuBar) } }
     }
@@ -193,12 +196,12 @@ final class AppMenu: NSObject {
         popup(entries(of: element))
     }
 
-    /// The row of menu bar items, or nil without Accessibility access, which it asks for if `requestingAccess`.
-    func menuBarItemsPopup(requestingAccess: Bool = true) async -> PopupConfiguration? {
+    func readMenuBarItems(requestingAccess: Bool) async -> Bool {
         guard checkAccess() else {
             if requestingAccess { requestAccessibility() }
-            return nil
+            return false
         }
+        guard revealedPresses == 0 else { return true }
         let apps = Dictionary(uniqueKeysWithValues: NSWorkspace.shared.runningApplications
             .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
             .map { ($0.processIdentifier, $0) })
@@ -224,16 +227,24 @@ final class AppMenu: NSObject {
             for await found in group { items += found }
             return items
         }
-        let entries = items.sorted { $0.frame.midX < $1.frame.midX }.compactMap { item in
+        menuBarItems = items.sorted { $0.frame.midX < $1.frame.midX }.compactMap { item in
             menuBarDisplay(of: item.frame).map { display in
                 let app = apps[item.pid]!
-                return AppMenuEntry(title: item.description ?? app.localizedName ?? "", element: item.element, isEnabled: true, isChecked: false,
-                                    hasSubmenu: item.hasMenu, icon: menuBarIcon(identifier: item.identifier, app: app),
-                                    menuBarDisplay: display)
+                return MenuBarItem(entry: AppMenuEntry(title: item.description ?? app.localizedName ?? "", element: item.element, isEnabled: true,
+                                                       isChecked: false, hasSubmenu: item.hasMenu, icon: menuBarIcon(identifier: item.identifier, app: app),
+                                                       menuBarDisplay: display),
+                                   bundleID: app.bundleIdentifier, appName: app.localizedName ?? "", identifier: item.identifier)
             }
         }
-        return PopupConfiguration(style: WidgetStyle(paddingHorizontal: 5, paddingVertical: 5, spacing: 0, width: Double(entries.count * 28 + 10)),
-                                  layout: PopupBlock(content: .menuBarItems(entries)))
+        return true
+    }
+
+    /// The row of menu bar items, or nil without Accessibility access, which it asks for if `requestingAccess`.
+    func menuBarItemsPopup(leavingOut references: [MenuBarItemReference], requestingAccess: Bool = true) async -> PopupConfiguration? {
+        guard await readMenuBarItems(requestingAccess: requestingAccess) else { return nil }
+        let items = menuBarItems.filter { item in !references.contains { $0.matches(item) } }
+        return PopupConfiguration(style: WidgetStyle(paddingHorizontal: 5, paddingVertical: 5, spacing: 0, width: Double(items.count * 28 + 10)),
+                                  layout: PopupBlock(content: .menuBarItems(items)))
     }
 
     func press(_ entry: AppMenuEntry) {
@@ -245,6 +256,14 @@ final class AppMenu: NSObject {
         }
     }
 
+    func pressUnlessOpen(_ entry: AppMenuEntry) {
+        var pid: pid_t = 0
+        AXUIElementGetPid(entry.element, &pid)
+        if let pressedItem, CFEqual(pressedItem, entry.element), showsPanel(pid) { return }
+        pressedItem = entry.element
+        press(entry)
+    }
+
     private func pressInMenuBar(_ item: AXUIElement, on display: CGDirectDisplayID) {
         let top = CGDisplayBounds(display).minY
         let readAttribute = readAttribute, sleep = sleep
@@ -254,6 +273,7 @@ final class AppMenu: NSObject {
                 return
             }
             menuBarPresses += 1
+            revealedPresses += 1
             let press = menuBarPresses
             setMenuBarHidden(true)
             setMenuBarShown(true, on: display)
@@ -272,6 +292,7 @@ final class AppMenu: NSObject {
                     try? await sleep(.milliseconds(100))
                 }
             }.value
+            revealedPresses -= 1
             if press == menuBarPresses, !hidesMenuBar { setMenuBarHidden(false) }
         }
     }
@@ -284,6 +305,133 @@ final class AppMenu: NSObject {
     private func children(of element: AXUIElement) -> [AXUIElement] {
         attribute(kAXChildrenAttribute, of: element) as? [AXUIElement] ?? []
     }
+}
+
+struct MenuBarItem {
+    let entry: AppMenuEntry
+    let bundleID: String?
+    let appName: String
+    let identifier: String?
+}
+
+struct MenuBarItemReference: Decodable, Equatable, Sendable {
+    let app: String
+    var item: String?
+    var icon: String?
+
+    enum CodingKeys: String, CodingKey, CaseIterable { case app, item, icon }
+
+    init(app: String, item: String?) {
+        self.app = app
+        self.item = item
+    }
+
+    init(from decoder: Decoder) throws {
+        try decoder.rejectUnknownKeys(CodingKeys.self)
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        app = try values.decode(String.self, forKey: .app)
+        item = try values.decodeIfPresent(String.self, forKey: .item)
+        icon = try values.decodeIfPresent(String.self, forKey: .icon)
+    }
+
+    func matches(_ item: MenuBarItem) -> Bool {
+        (app == item.bundleID || app == item.appName) && (self.item == nil || self.item == item.identifier || self.item == item.entry.title)
+    }
+
+    var configurationValue: ConfigurationValue {
+        var value: [String: ConfigurationValue] = ["app": .string(app)]
+        if let item { value["item"] = .string(item) }
+        if let icon { value["icon"] = .string(icon) }
+        return .object(value)
+    }
+}
+
+enum MenuBarItemsEntry: Decodable, Equatable, Sendable {
+    case item(MenuBarItemReference)
+    case symbol
+
+    init(from decoder: Decoder) throws {
+        guard let name = try? decoder.singleValueContainer().decode(String.self) else {
+            self = .item(try MenuBarItemReference(from: decoder))
+            return
+        }
+        guard name == "symbol" else {
+            throw DecodingError.dataCorrupted(DecodingError.Context(codingPath: decoder.codingPath,
+                                                                    debugDescription: "Use \"symbol\" or an object that names an app."))
+        }
+        self = .symbol
+    }
+
+    var configurationValue: ConfigurationValue {
+        switch self {
+        case let .item(reference): reference.configurationValue
+        case .symbol: .string("symbol")
+        }
+    }
+}
+
+extension [MenuBarItemsEntry] {
+    var references: [MenuBarItemReference] {
+        compactMap { entry in
+            if case let .item(reference) = entry { return reference }
+            return nil
+        }
+    }
+}
+
+enum MenuBarItemPlacement: CaseIterable {
+    case bar, row, hidden
+
+    var title: String {
+        switch self {
+        case .bar: "Bar"
+        case .row: "Row"
+        case .hidden: "Hidden"
+        }
+    }
+}
+
+enum MenuBarItemSource {
+    case item(MenuBarItem)
+    case shown(Int)
+    case hidden(Int)
+
+    var placement: MenuBarItemPlacement {
+        switch self {
+        case .item: .row
+        case .shown: .bar
+        case .hidden: .hidden
+        }
+    }
+}
+
+func menuBarItemsProperties(shown: [MenuBarItemsEntry], hidden: [MenuBarItemsEntry], moving source: MenuBarItemSource,
+                            to placement: MenuBarItemPlacement, before index: Int?, among items: [MenuBarItem]) -> [String: ConfigurationValue] {
+    guard placement != source.placement || index != nil else { return [:] }
+    var nextShown = shown
+    var nextHidden = hidden
+    var index = index
+    let entry: MenuBarItemsEntry
+    switch source {
+    case let .item(item):
+        let several = items.filter { $0.bundleID == item.bundleID && $0.appName == item.appName }.count > 1
+        entry = .item(MenuBarItemReference(app: item.bundleID ?? item.appName, item: several ? item.identifier ?? item.entry.title : nil))
+    case let .shown(position):
+        entry = nextShown.remove(at: position)
+        if placement == .bar, let before = index, before > position { index = before - 1 }
+    case let .hidden(position):
+        entry = nextHidden.remove(at: position)
+        if placement == .hidden, let before = index, before > position { index = before - 1 }
+    }
+    switch placement {
+    case .bar: nextShown.insert(entry, at: index ?? nextShown.count)
+    case .hidden: nextHidden.insert(entry, at: index ?? nextHidden.count)
+    case .row: break
+    }
+    var properties: [String: ConfigurationValue] = [:]
+    if nextShown != shown { properties["shown"] = .array(nextShown.map(\.configurationValue)) }
+    if nextHidden != hidden { properties["hidden"] = .array(nextHidden.map(\.configurationValue)) }
+    return properties
 }
 
 private struct FoundMenuBarItem {
@@ -382,7 +530,8 @@ private func frame(of element: AXUIElement, _ readAttribute: (String, AXUIElemen
 private func showsPanel(_ pid: pid_t) -> Bool {
     let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as! [[String: Any]]
     return windows.contains {
-        $0[kCGWindowOwnerPID as String] as? pid_t == pid && CGRect(dictionaryRepresentation: $0[kCGWindowBounds as String] as! CFDictionary)!.height > 100
+        $0[kCGWindowOwnerPID as String] as? pid_t == pid && $0[kCGWindowLayer as String] as! Int > 0
+            && CGRect(dictionaryRepresentation: $0[kCGWindowBounds as String] as! CFDictionary)!.height > 100
     }
 }
 

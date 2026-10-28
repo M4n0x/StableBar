@@ -299,6 +299,51 @@ private func makeApp(_ path: String, in directory: URL, info: [String: String] =
     #expect(icon.cgImage(forProposedRect: nil, context: nil, hints: nil)?.width == 36)
 }
 
+@Test func menuBarItemsGoWhereTheirReferencesPutThem() {
+    func item(_ title: String, app: String, bundleID: String?, identifier: String? = nil) -> MenuBarItem {
+        MenuBarItem(entry: AppMenuEntry(title: title, element: AXUIElementCreateApplication(1), isEnabled: true, isChecked: false, hasSubmenu: false),
+                    bundleID: bundleID, appName: app, identifier: identifier)
+    }
+    let wifi = item("Wi‑Fi", app: "Control Center", bundleID: "com.apple.controlcenter", identifier: "com.apple.menuextra.wifi")
+    let battery = item("Battery", app: "Control Center", bundleID: "com.apple.controlcenter", identifier: "com.apple.menuextra.battery")
+    let granola = item("Granola", app: "Granola", bundleID: "com.granola.app")
+    let docker = item("Docker Desktop", app: "Docker Desktop", bundleID: nil)
+    let items = [docker, granola, wifi, battery]
+    let batteryReference = MenuBarItemReference(app: "com.apple.controlcenter", item: "Battery")
+    let granolaReference = MenuBarItemReference(app: "Granola", item: nil)
+    #expect(items.filter(batteryReference.matches).map(\.entry.title) == ["Battery"])
+    #expect(items.filter(granolaReference.matches).map(\.entry.title) == ["Granola"])
+    #expect(items.filter(MenuBarItemReference(app: "Control Center", item: nil).matches).map(\.entry.title) == ["Wi‑Fi", "Battery"])
+
+    let shown: [MenuBarItemsEntry] = [.item(batteryReference), .item(granolaReference), .symbol]
+    func value(_ entries: [MenuBarItemsEntry]) -> ConfigurationValue { .array(entries.map(\.configurationValue)) }
+    let wifiReference = MenuBarItemReference(app: "com.apple.controlcenter", item: "com.apple.menuextra.wifi")
+    #expect(menuBarItemsProperties(shown: shown, hidden: [], moving: .item(wifi), to: .bar, before: 1, among: items) == [
+        "shown": value([shown[0], .item(wifiReference), shown[1], .symbol])
+    ])
+    #expect(menuBarItemsProperties(shown: shown, hidden: [], moving: .item(granola), to: .hidden, before: nil, among: items) == [
+        "hidden": value([.item(MenuBarItemReference(app: "com.granola.app", item: nil))])
+    ])
+    #expect(menuBarItemsProperties(shown: shown, hidden: [], moving: .shown(0), to: .bar, before: 2, among: items) == [
+        "shown": value([shown[1], shown[0], .symbol])
+    ])
+    #expect(menuBarItemsProperties(shown: shown, hidden: [], moving: .shown(2), to: .bar, before: 0, among: items) == [
+        "shown": value([.symbol, shown[0], shown[1]])
+    ])
+    #expect(menuBarItemsProperties(shown: shown, hidden: [], moving: .shown(2), to: .hidden, before: nil, among: items) == [
+        "shown": value([shown[0], shown[1]]), "hidden": value([.symbol])
+    ])
+    var symbol = granolaReference
+    symbol.icon = "waveform"
+    #expect(menuBarItemsProperties(shown: [shown[0], .item(symbol)], hidden: [], moving: .shown(1), to: .hidden, before: nil, among: items) == [
+        "shown": value([shown[0]]), "hidden": value([.item(symbol)])
+    ])
+    #expect(menuBarItemsProperties(shown: [], hidden: [.item(MenuBarItemReference(app: "Docker Desktop", item: nil))], moving: .hidden(0),
+                                   to: .row, before: nil, among: items) == ["hidden": .array([])])
+    #expect(menuBarItemsProperties(shown: shown, hidden: [], moving: .shown(0), to: .bar, before: nil, among: items).isEmpty)
+    #expect(menuBarItemsProperties(shown: shown, hidden: [], moving: .item(docker), to: .row, before: nil, among: items).isEmpty)
+}
+
 @Test func menuBarSymbolsAreSystemSymbols() {
     #expect(menuBarSymbols.values.filter { NSImage(systemSymbolName: $0, accessibilityDescription: nil) == nil }.isEmpty)
 }

@@ -362,7 +362,7 @@ enum WidgetContent: Equatable, Sendable {
     case appMenu(expandOnHover: Bool)
     case appleMenu
     case controlCenter
-    case menuBarItems(openOnHover: Bool)
+    case menuBarItems(openOnHover: Bool, shown: [MenuBarItemsEntry], hidden: [MenuBarItemsEntry])
     case clock(format: String)
     case text(String)
     case script(command: String, interval: Double?)
@@ -403,7 +403,7 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
     enum CodingKeys: String, CodingKey, CaseIterable {
         case id, role, position, type, icon, tooltip, onClick, open, menu, popup, popupName, style, format, text, command, interval
         case display, layout, hoverLayout, overlay, animation, workspace, events, environment, timeout, actions, enabled, provider, group, priority, overflow, rules, transition
-        case expandOnHover, openOnHover, details, timeZone
+        case expandOnHover, openOnHover, shown, hidden, details, timeZone
     }
 
     init(from decoder: Decoder) throws {
@@ -458,7 +458,10 @@ struct WidgetConfiguration: Decodable, Identifiable, Sendable {
         case "appMenu": content = .appMenu(expandOnHover: try values.decodeIfPresent(Bool.self, forKey: .expandOnHover) ?? false)
         case "appleMenu": content = .appleMenu
         case "controlCenter": content = .controlCenter
-        case "menuBarItems": content = .menuBarItems(openOnHover: try values.decodeIfPresent(Bool.self, forKey: .openOnHover) ?? true)
+        case "menuBarItems":
+            content = .menuBarItems(openOnHover: try values.decodeIfPresent(Bool.self, forKey: .openOnHover) ?? true,
+                                    shown: try values.decodeIfPresent([MenuBarItemsEntry].self, forKey: .shown) ?? [],
+                                    hidden: try values.decodeIfPresent([MenuBarItemsEntry].self, forKey: .hidden) ?? [])
         case "clock": content = .clock(format: try values.decodeIfPresent(String.self, forKey: .format) ?? "EEE d MMM  HH:mm")
         case "text": content = .text(try values.decode(String.self, forKey: .text))
         case "script":
@@ -488,6 +491,16 @@ extension WidgetConfiguration {
     var providerName: String? {
         if case let .provider(name) = content { return name }
         return nil
+    }
+
+    var shownMenuBarItems: [MenuBarItemsEntry] {
+        guard case let .menuBarItems(_, shown, hidden) = content else { return [] }
+        return shown.contains(.symbol) || hidden.contains(.symbol) ? shown : shown + [.symbol]
+    }
+
+    var drawsMenuBarItems: Bool {
+        guard case .menuBarItems = content, layout == nil else { return false }
+        return shownMenuBarItems != [.symbol]
     }
 }
 

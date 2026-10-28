@@ -185,6 +185,26 @@ To list the items only on click, set `"openOnHover": false` or turn off **Open o
 
 Clicking an icon whose app has an ordinary menu opens that menu below it, in your theme's popup style. While a menu is open, move the pointer to another icon to switch to its menu. Items that draw their own panel, such as Control Center, Battery or Clock, open their panel as macOS does. To open them, StableBar briefly brings out the hidden menu bar and keeps it invisible until the item closes. Both widgets need Accessibility access; resting the pointer on Menu bar items doesn't ask for it, a click does. StableBar's own menu bar icon isn't listed.
 
+### Items on the bar
+
+Items you use all day can sit on the bar beside the grid symbol, as they do in the macOS menu bar, and items you never use can leave the row. Select Menu bar items in **Settings → Bar** and open **Content**. **Menu bar items** shows the items in three strips: **On the bar**, in their order, with the grid symbol among them; **In the row**, in menu bar order; and **Hidden**. Drag an icon to another strip, or within **On the bar** to change its place; a line shows where it will go. Right-click an icon to move it left or right, onto the bar, back to the row or into **Hidden**. Select an icon to see its name and app, choose **Bar**, **Row** or **Hidden** for it, and, for an item on the bar, enter an SF Symbol to draw in place of its icon. An item whose app isn't running stays in its strip, dimmed, so you can still move it.
+
+The grid symbol moves the same way: drag it to either end of **On the bar** or between items, or into **Hidden** to leave it out. Select it to choose another SF Symbol for it. Without the grid symbol, the bar has no way to open the row; the items in it stay listed in Settings.
+
+On the bar itself, right-click an icon in the row for **Show on Bar** or **Hide**, and right-click an item on the bar for the same commands as in Settings.
+
+Items on the bar open as they do in the row: a click opens the item's menu or panel, and while one of their menus is open, moving the pointer to another item switches to its menu. Rest the pointer on an item to see its name. An item disappears from the bar while its app isn't running, and comes back when the app launches. The grid symbol lists the items that are neither on the bar nor hidden.
+
+In JSON, `shown` lists the items on the bar, in order, and `hidden` the items left out of the row. Each entry names an `app` by its bundle ID or name, which covers every item of that app; add `item`, an Accessibility identifier or title, to name one item of an app that has several, such as Control Center. A shown item can set `icon` to an SF Symbol that replaces its icon. The entry `"symbol"` places the grid symbol in `shown`, or leaves it out in `hidden`; without it, the grid symbol comes after the items. The widget's own `icon` replaces the grid symbol.
+
+```json
+{
+  "id": "menu-bar-items", "type": "menuBarItems", "position": "right",
+  "shown": ["symbol", { "app": "Granola" }, { "app": "com.apple.controlcenter", "item": "com.apple.menuextra.wifi", "icon": "wifi" }],
+  "hidden": [{ "app": "com.docker.docker" }]
+}
+```
+
 ## Tooltips
 
 Set a widget's `tooltip` to show text when the pointer rests on it. It works without a popup and keeps the widget's click action. For example, add `"tooltip": "Will not sleep for 1 hour"` to an Amphetamine widget. You can also edit **Tooltip** in the widget’s **Settings → Bar → Behavior** inspector.

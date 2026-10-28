@@ -447,7 +447,7 @@ private func schemaProperties(_ definition: ConfigurationValue?) throws -> Set<S
         "packageSelection": WidgetPackageSelection.CodingKeys.allCases, "rule": StyleRule.CodingKeys.allCases,
         "ruleCondition": RuleCondition.CodingKeys.allCases, "workspaceDefaults": WorkspaceDefaults.CodingKeys.allCases,
         "glass": GlassSettings.CodingKeys.allCases, "screen": ScreenConfiguration.CodingKeys.allCases,
-        "packageSource": PackageSource.CodingKeys.allCases
+        "packageSource": PackageSource.CodingKeys.allCases, "menuBarItem": MenuBarItemReference.CodingKeys.allCases
     ]
     for (name, keys) in decoders {
         #expect(try schemaProperties(definitions[name]) == Set(keys.map(\.stringValue) + (name == "widget" ? ["template"] : [])), "\(name)")
@@ -470,7 +470,25 @@ private func schemaProperties(_ definition: ConfigurationValue?) throws -> Set<S
     {"widgets":[{"id":"items","type":"menuBarItems","position":"right"},
                 {"id":"clicked","type":"menuBarItems","position":"right","openOnHover":false}]}
     """#.utf8))
-    #expect(configuration.widgets.map(\.content) == [.menuBarItems(openOnHover: true), .menuBarItems(openOnHover: false)])
+    #expect(configuration.widgets.map(\.content) == [.menuBarItems(openOnHover: true, shown: [], hidden: []),
+                                                     .menuBarItems(openOnHover: false, shown: [], hidden: [])])
+}
+
+@Test func menuBarItemsPutTheirSymbolLastUnlessPlacedOrHidden() throws {
+    let configuration = try JSONDecoder().decode(Configuration.self, from: Data(#"""
+    {"widgets":[{"id":"last","type":"menuBarItems","position":"right","shown":[{"app":"Granola"}]},
+                {"id":"first","type":"menuBarItems","position":"right","shown":["symbol",{"app":"Granola"}]},
+                {"id":"hidden","type":"menuBarItems","position":"right","shown":[{"app":"Granola"}],"hidden":["symbol"]},
+                {"id":"plain","type":"menuBarItems","position":"right"}]}
+    """#.utf8))
+    let granola = MenuBarItemsEntry.item(MenuBarItemReference(app: "Granola", item: nil))
+    #expect(configuration.widgets.map(\.shownMenuBarItems) == [[granola, .symbol], [.symbol, granola], [granola], [.symbol]])
+    #expect(configuration.widgets.map(\.drawsMenuBarItems) == [true, true, true, false])
+    #expect(throws: (any Error).self) {
+        try JSONDecoder().decode(Configuration.self, from: Data(#"""
+        {"widgets":[{"id":"items","type":"menuBarItems","position":"right","shown":["grid"]}]}
+        """#.utf8))
+    }
 }
 
 @Test func examplesAndTheStarterConfigurationStayValid() throws {

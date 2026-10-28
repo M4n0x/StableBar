@@ -149,6 +149,10 @@ final class BarStore: NSObject {
         for name in [NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
             NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(refreshAppMenu), name: name, object: nil)
         }
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(readLaunchedAppMenuBarItems), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(readMenuBarItems), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(refreshAppMenu), name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
     }
@@ -175,6 +179,32 @@ final class BarStore: NSObject {
     @objc private func refreshAppMenu() {
         activeApp = NSWorkspace.shared.frontmostApplication
         readAppMenu()
+    }
+
+    @objc private func readMenuBarItems() {
+        guard configuration?.widgets.contains(where: { $0.enabled && $0.drawsMenuBarItems }) == true else { return }
+        Task { _ = await appMenu.readMenuBarItems(requestingAccess: false) }
+    }
+
+    @objc private func readLaunchedAppMenuBarItems() {
+        Task {
+            for delay in [1, 5] {
+                try? await Task.sleep(for: .seconds(delay))
+                readMenuBarItems()
+            }
+        }
+    }
+
+    func move(_ source: MenuBarItemSource, to placement: MenuBarItemPlacement, before index: Int?, in widget: WidgetConfiguration) {
+        guard case let .menuBarItems(_, _, hidden) = widget.content else { return }
+        let properties = menuBarItemsProperties(shown: widget.shownMenuBarItems, hidden: hidden, moving: source, to: placement, before: index,
+                                                among: appMenu.menuBarItems)
+        do {
+            try customizationHistory.change(ConfigurationEdit(action: .set, id: widget.id, properties: properties))
+            if actionErrors[widget.id] != nil { actionErrors[widget.id] = nil }
+        } catch {
+            actionErrors[widget.id] = errorMessage(error)
+        }
     }
 
     func refreshContext(_ next: ConfigurationContext = SystemContext.current()) {
@@ -665,6 +695,7 @@ final class BarStore: NSObject {
         configuration = next
         managesConnections = true
         readAppMenu()
+        readMenuBarItems()
         preparePresentations()
         effectiveDocument = loader.document
         let sources = packageSources.filter { !$0.isStore }
