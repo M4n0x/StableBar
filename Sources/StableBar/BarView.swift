@@ -144,16 +144,7 @@ struct BarView: View {
         .onDisappear { if !preview { store.setVisibleWidgets(ids: [], displayID: display.id) } }
         .contextMenu {
             if !preview {
-                Text("StableBar")
-                if store.barEditing.isAvailable { Button(store.barEditing.menuTitle, action: store.barEditing.toggle) }
-                Button("Try Themes…") { store.onTryThemes?(display.id) }
-                let error = store.configurationError ?? store.workspaceStore.error ?? store.configurationWarning
-                if error != nil || store.crashReports.note != nil { Divider() }
-                if let error { Text(error) }
-                if let note = store.crashReports.note { Button(note) { store.onShowCrashes?() } }
-                Divider()
-                Button("Settings…") { store.onCustomize?() }
-                Button("Quit StableBar") { NSApp.terminate(nil) }
+                BarContextMenu(store: store, display: display.id)
             }
         }
     }
@@ -168,6 +159,24 @@ struct BarView: View {
         } else {
             BarUnitView(unit: unit, config: config, store: store, display: display.id)
         }
+    }
+}
+
+private struct BarContextMenu: View {
+    let store: BarStore
+    let display: Int
+
+    var body: some View {
+        Text("StableBar")
+        if store.barEditing.isAvailable { Button(store.barEditing.menuTitle, action: store.barEditing.toggle) }
+        Button("Try Themes…") { store.onTryThemes?(display) }
+        let error = store.configurationError ?? store.workspaceStore.error ?? store.configurationWarning
+        if error != nil || store.crashReports.note != nil { Divider() }
+        if let error { Text(error) }
+        if let note = store.crashReports.note { Button(note) { store.onShowCrashes?() } }
+        Divider()
+        Button("Settings…") { store.onCustomize?() }
+        Button("Quit StableBar") { NSApp.terminate(nil) }
     }
 }
 
@@ -516,6 +525,14 @@ struct WidgetView: View {
         .animation(reduceMotion ? nil : animation.value, value: widget.content == .activeApp ? store.activeApp : nil)
         .accessibilityHint(tooltip ?? "")
         .accessibilityIdentifier(widget.id)
+        .contextMenu {
+            if store.barEditing.allowsWidgetActions, widget.actions?.rightClick == nil,
+               store.configuration?.widgets.contains(where: { $0.id == widget.id }) == true {
+                Button("Edit Widget…") { store.onCustomizeWidget?(widget.id) }
+                Divider()
+                BarContextMenu(store: store, display: monitor)
+            }
+        }
     }
 
     private func showMenuRow(appearance: WidgetAppearance, padding: EdgeInsets) {

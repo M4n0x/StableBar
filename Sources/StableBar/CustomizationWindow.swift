@@ -32,6 +32,8 @@ final class CustomizationWindow: NSObject, NSWindowDelegate {
             window.setFrameAutosaveName("StableBarSettings")
             self.window = window
         }
+        editor?.finishEditing()
+        editor?.widgetTab = .content
         if let widgetID { editor?.showWidget(widgetID) }
         if let section { editor?.section = section }
         NSApplication.shared.setActivationPolicy(.regular)
