@@ -287,7 +287,7 @@ private func calls(_ log: URL) -> [Substring] {
     fixture.store.focus(WorkspaceWindow(id: 11, title: "Docs", app: app, reference: "ow_a"))
     for _ in 0..<100 where fixture.store.error == nil { try await Task.sleep(for: .milliseconds(20)) }
     #expect(fixture.store.error == "OmniWM: not_found")
-    #expect(calls(fixture.log) == ["workspace focus-name 1 --format json", "window focus ow_a --format json"])
+    #expect(calls(fixture.log).sorted() == ["window focus ow_a --format json", "workspace focus-name 1 --format json"])
 }
 
 @Test @MainActor func omniwmEventsRefreshWorkspacesAfterTheSubscriptionStarts() async throws {

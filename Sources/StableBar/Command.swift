@@ -213,7 +213,7 @@ private final class CommandProcess: @unchecked Sendable {
     }
 
     func cancel() {
-        queue.sync { terminate(CancellationError()) }
+        queue.async { self.terminate(CancellationError()) }
     }
 
     private func terminate(_ error: Error) {

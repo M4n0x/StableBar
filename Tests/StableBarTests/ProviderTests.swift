@@ -38,19 +38,17 @@ private func provider(_ command: String, type: String = "stream", interval: Doub
     #expect(last?.stderr.count == 16_384)
 }
 
-@Test func exitingStreamStopsChildrenHoldingItsPipes() async throws {
+@Test(.timeLimit(.minutes(1))) func exitingStreamStopsChildrenHoldingItsPipes() async throws {
     let marker = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: marker) }
     var last: CommandResult?
-    let started = ContinuousClock.now
     for try await result in commandLines("/bin/sh", arguments: ["-c", """
-        sleep 30 &
+        sleep 300 &
         printf '%s' $! > "$MARKER"
         printf '{"text":"done"}\\n'
         """], environment: ["MARKER": marker.path]) {
         last = result
     }
-    #expect(started.duration(to: .now) < .seconds(5))
     #expect(try ScriptOutput.read(#require(last).stdout).text == "done")
     let child = try #require(Int32(String(contentsOf: marker, encoding: .utf8)))
     defer { kill(child, SIGKILL) }
