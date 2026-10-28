@@ -25,7 +25,7 @@ struct SetupDemo: View {
     private static let events = [("09:30", "Standup"), ("13:00", "Design review"), ("16:30", "Ship it")]
     private static let clockClick = 4.45
     private static let cpuClick = 6.25
-    private static let wipes = 7.9
+    static let wipes = 7.9
     private static let finder = NSWorkspace.shared.icon(forFile: "/System/Library/CoreServices/Finder.app")
     private static let safari = NSWorkspace.shared.icon(forFile: "/Applications/Safari.app")
 

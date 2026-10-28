@@ -115,23 +115,101 @@ struct SetupTourView: View {
         let home = size.height * 0.42
         let stageWidth = min(size.width - 200, 1080)
         let stage = CGRect(x: (size.width - stageWidth) / 2, y: home - bar.height / 2, width: stageWidth, height: bar.height)
-        let beam = size.width * 0.55 * UnitCurve.easeOut.value(at: progress(t, 0.45, 0.8))
-        let condense = UnitCurve.easeInOut.value(at: progress(t, 1.25, 0.6))
-        let shown = progress(t, 1.75, 0.4)
         let morph = UnitCurve.easeInOut.value(at: progress(d, 0.1, 0.65))
-        let width = beam + (264 - beam) * condense
-        let height = 2 + 66 * condense
         let leaving = 1 - progress(d, 0, 0.25)
-        let ready = UnitCurve.easeOut.value(at: progress(t, 3.1, 0.45))
+        let ready = UnitCurve.easeOut.value(at: progress(t, 2.8, 0.45))
         let spread = UnitCurve.easeOut.value(at: progress(d, SetupDemo.landing - 0.1, 0.6))
-        let shine = t > 4 ? progress(t.truncatingRemainder(dividingBy: 4.5), 0, 0.9) : 0
-        let settled = t > 2
-        let name = Array("StableBar")
-        let ember = AngularGradient(colors: [.orange, Color(red: 1, green: 0.8, blue: 0.45), .white, .orange,
-                                             .orange.opacity(0.25), .orange], center: .center, angle: .degrees(t * 80))
-        let glow = LinearGradient(colors: [.clear, .orange, Color(red: 1, green: 0.8, blue: 0.45), .orange, .clear],
-                                  startPoint: .leading, endPoint: .trailing)
+        let warm = Color(red: 1, green: 0.8, blue: 0.45)
+        let glow = LinearGradient(colors: [.clear, .orange, warm, .orange, .clear], startPoint: .leading, endPoint: .trailing)
+        let openWidth = stage.width * 0.62
+        let lineWidth = openWidth * 1.2
+        let draw = UnitCurve.easeOut.value(at: progress(t, 0.2, 0.95))
+        let swell = t < 1 ? 0 : Spring(duration: 0.8, bounce: 0.25).value(target: 1.0, time: t - 1)
+        let glassWidth = lineWidth + (openWidth - lineWidth) * swell + (stage.width - openWidth) * morph
+        let glassHeight = max(2, 2 + (stage.height - 2) * swell)
+        let corner = min(16, glassHeight / 2)
+        let sweep = t > 1.7 ? progress((t - 1.7).truncatingRemainder(dividingBy: 4.5), 0, 1.6) : 0
+        let gleam = t > 3 ? progress((t - 3).truncatingRemainder(dividingBy: 5), 0, 1.5) : 0
+        let letters = Array("StableBar")
+        let word = HStack(spacing: 0) {
+            ForEach(letters.indices, id: \.self) { index in
+                let shown = UnitCurve.easeOut.value(at: progress(t, 1.3 + Double(index) * 0.06, 0.9))
+                Text(String(letters[index]))
+                    .padding(.horizontal, 9.5 * (1 - shown))
+                    .scaleEffect(0.96 + 0.04 * shown)
+                    .offset(y: 40 * (1 - shown))
+                    .blur(radius: 12 * (1 - shown))
+                    .opacity(shown)
+            }
+        }
+        .font(.system(size: 76, weight: .semibold))
         return ZStack {
+            ForEach(Self.embers.indices, id: \.self) { index in
+                let ember = Self.embers[index]
+                let rise = t > ember.delay ? (t - ember.delay).truncatingRemainder(dividingBy: ember.duration) / ember.duration : 0
+                Circle()
+                    .fill(warm)
+                    .frame(width: 3, height: 3)
+                    .shadow(color: .orange, radius: 3)
+                    .opacity(0.9 * (rise < 0.15 ? rise / 0.15 : 1 - (rise - 0.15) / 0.85) * progress(t, 0.5, 1) * (1 - progress(d, 0, 1)))
+                    .position(x: size.width * ember.x + 30 * rise, y: size.height + 10 - size.height * 0.87 * rise)
+            }
+            Rectangle()
+                .fill(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white.opacity(0.95), location: 0.2),
+                                             .init(color: .white, location: 0.5), .init(color: .white.opacity(0.95), location: 0.8),
+                                             .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing))
+                .frame(width: lineWidth * draw, height: 2)
+                .shadow(color: warm, radius: 8)
+                .opacity(1 - progress(t, 1.25, 0.5))
+                .position(x: size.width / 2, y: home)
+            ForEach([-1.0, 1.0], id: \.self) { side in
+                Circle()
+                    .fill(.white)
+                    .frame(width: 9, height: 9)
+                    .shadow(color: .orange, radius: 10)
+                    .opacity(progress(t, 0.2, 0.05) * (1 - progress(t, 1.05, 0.15)))
+                    .position(x: size.width / 2 + side * lineWidth / 2 * 0.87 * draw, y: home)
+            }
+            ZStack {
+                RoundedRectangle(cornerRadius: corner)
+                    .fill(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.04)], startPoint: .top, endPoint: .bottom))
+                    .shadow(color: .black.opacity(0.45), radius: 30, y: 12)
+                LinearGradient(colors: [.clear, .white.opacity(0.35), .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 120)
+                    .rotationEffect(.degrees(12))
+                    .offset(x: (glassWidth + 240) * sweep - glassWidth / 2 - 120)
+                    .opacity(sweep > 0 && sweep < 1 ? 1 - morph : 0)
+                HStack(spacing: 8) {
+                    ghost { Image(systemName: "apple.logo") }
+                    ghost { Text("Finder").fontWeight(.semibold) + Text("  File  Edit  View") }
+                    Spacer(minLength: 0)
+                    ghost { Image(systemName: "speaker.wave.2.fill") }
+                    ghost { Text(now, format: .dateTime.weekday().day().month()) + Text("  ") + Text(now, format: .dateTime.hour().minute()) }
+                    ghost { Image(systemName: "square.grid.2x2") }
+                }
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 10)
+                .opacity(progress(t, 1.6, 0.8) * (1 - progress(d, 0, 0.3)))
+                RoundedRectangle(cornerRadius: corner)
+                    .strokeBorder(LinearGradient(colors: [.white.opacity(0.35), .white.opacity(0.12)], startPoint: .top, endPoint: .bottom),
+                                  lineWidth: 1)
+            }
+            .frame(width: glassWidth, height: glassHeight)
+            .clipShape(RoundedRectangle(cornerRadius: corner))
+            .opacity(progress(t, 1, 0.05) * (1 - progress(d, SetupDemo.wipes, 0.6)))
+            .position(x: size.width / 2, y: home)
+            word
+                .overlay {
+                    LinearGradient(stops: [.init(color: .clear, location: 0.4), .init(color: warm, location: 0.5), .init(color: .clear, location: 0.6)],
+                                   startPoint: UnitPoint(x: 2 * gleam - 1, y: 0), endPoint: UnitPoint(x: 2 * gleam, y: 0))
+                        .mask(word)
+                }
+                .foregroundStyle(.white)
+                .opacity(leaving)
+                .blur(radius: 6 * (1 - leaving))
+                .offset(y: -10 * (1 - leaving))
+                .position(x: size.width / 2, y: home - 118)
             Rectangle()
                 .fill(glow)
                 .frame(width: size.width * spread, height: 2)
@@ -141,76 +219,17 @@ struct SetupTourView: View {
             if d >= 0 && d < SetupDemo.landing + 0.3 && !looks.isEmpty {
                 SetupDemo(store: session.store, display: BarDisplay(screen: screen), looks: looks, elapsed: d, size: size, stage: stage, target: bar)
             }
-            ZStack {
-                Capsule()
-                    .strokeBorder(LinearGradient(colors: [.white.opacity(condense), .white, .white.opacity(condense)],
-                                                 startPoint: .leading, endPoint: .trailing), lineWidth: 1.5)
-                    .background(Capsule().fill(.orange).blur(radius: 10).opacity(0.5 * (1 - condense)))
-                    .opacity(progress(t, 0.45, 0.2) * (1 - shown))
-                Group {
-                    Group {
-                        Capsule().fill(LinearGradient(colors: [Color(white: 0.17), Color(white: 0.08)], startPoint: .top, endPoint: .bottom))
-                        Capsule().fill(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white.opacity(0.14), location: 0.5),
-                                                              .init(color: .clear, location: 1)],
-                                                      startPoint: UnitPoint(x: shine * 1.6 - 0.6, y: 0),
-                                                      endPoint: UnitPoint(x: shine * 1.6 - 0.2, y: 1)))
-                    }
-                    .opacity(1 - progress(d, 0.4, 0.4))
-                    Capsule().strokeBorder(ember, lineWidth: 1.5)
-                    Capsule().strokeBorder(ember, lineWidth: 4).blur(radius: 8).opacity(0.5)
-                }
-                .opacity(shown)
-            }
-            .frame(width: width + (stage.width - width) * morph, height: height + (stage.height - height) * morph)
-            .overlay {
-                HStack(spacing: 12) {
-                    Image(nsImage: NSApp.applicationIconImage)
-                        .resizable()
-                        .frame(width: 34, height: 34)
-                        .scaleEffect(settled ? 1 : 0.5)
-                        .opacity(settled ? 1 : 0)
-                        .animation(.spring(duration: 0.5, bounce: 0.4), value: settled)
-                    HStack(spacing: 0) {
-                        ForEach(name.indices, id: \.self) { index in
-                            let delay = 0.1 + Double(index) * 0.055
-                            Text(String(name[index]))
-                                .blur(radius: settled ? 0 : 6)
-                                .animation(.easeOut(duration: 0.3).delay(delay), value: settled)
-                                .offset(y: settled ? 0 : -18)
-                                .rotationEffect(.degrees(settled ? 0 : -12))
-                                .opacity(settled ? 1 : 0)
-                                .animation(.spring(duration: 0.55, bounce: 0.45).delay(delay), value: settled)
-                        }
-                    }
-                    .font(.system(size: 28, weight: .semibold, design: .monospaced))
-                    .background(alignment: .bottomLeading) {
-                        GeometryReader { proxy in
-                            let glide = progress(t, 2.1, 0.55)
-                            Capsule()
-                                .fill(.orange)
-                                .frame(width: 22, height: 4)
-                                .shadow(color: .orange, radius: 6)
-                                .offset(x: (proxy.size.width - 22) * UnitCurve.easeInOut.value(at: glide), y: proxy.size.height + 2)
-                                .opacity(progress(t, 2.1, 0.1) * (1 - progress(t, 2.7, 0.4)))
-                        }
-                    }
-                }
-                .foregroundStyle(.white)
-                .opacity(1 - progress(d, 0, 0.15))
-            }
-            .opacity(1 - progress(d, 1.3, 0.5))
-            .position(x: size.width / 2, y: home)
             Text("A native, configurable bar for your Mac.")
                 .font(.system(size: 17, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.85))
-                .offset(y: 8 * (1 - UnitCurve.easeOut.value(at: progress(t, 2.6, 0.45))))
-                .opacity(progress(t, 2.6, 0.45) * leaving)
-                .position(x: size.width / 2, y: home + 76)
+                .offset(y: 8 * (1 - UnitCurve.easeOut.value(at: progress(t, 2.4, 0.5))))
+                .opacity(progress(t, 2.4, 0.5) * leaving)
+                .position(x: size.width / 2, y: home + 72)
             if phase == .intro {
                 Button { departure = .now } label: { Text("Get Started").frame(width: 164, height: 48) }
                     .buttonStyle(SetupButtonStyle())
                     .keyboardShortcut(.defaultAction)
-                    .disabled(departure != nil || t < 3.1)
+                    .disabled(departure != nil || t < 2.8)
                     .opacity(ready * leaving)
                     .offset(y: 12 * (1 - ready))
                     .position(x: size.width / 2, y: size.height - 89)
@@ -265,6 +284,19 @@ struct SetupTourView: View {
                 .position(x: size.width / 2, y: size.height - 89)
             }
         }
+    }
+
+    private static let embers: [(x: Double, duration: Double, delay: Double)] = [
+        (0.31, 7.5, 5.9), (0.57, 6.8, 1.0), (0.49, 8.7, 2.7), (0.88, 6.3, 4.4), (0.45, 7.4, 1.8), (0.18, 7.3, 7.6),
+        (0.09, 10.1, 6.5), (0.92, 7.4, 1.7), (0.37, 9.1, 6.0), (0.46, 6.4, 5.0), (0.78, 7.9, 2.4), (0.33, 8.4, 1.2),
+        (0.93, 10.3, 4.6), (0.38, 6.0, 2.7), (0.81, 10.4, 6.9), (0.6, 7.0, 3.7), (0.37, 8.2, 1.7), (0.39, 7.3, 6.5)
+    ]
+
+    private func ghost<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .padding(.horizontal, 9)
+            .frame(height: 24)
+            .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func land() {
