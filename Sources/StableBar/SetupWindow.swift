@@ -23,6 +23,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         self.customizeWidgets = customizeWidgets
         self.showProfile = showProfile
         session = SetupSession(store: store)
+        store.appMenu.hidesAccessWarning = true
         showTour(intro: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     }
 
@@ -100,6 +101,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
 
     private func end() {
         if session?.finished == false { session?.cancel() }
+        session?.store.appMenu.hidesAccessWarning = false
         session = nil
     }
 }
