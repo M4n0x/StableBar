@@ -94,12 +94,15 @@ enum DocsImages {
 
     /// The bar with the meeting's agenda open below it, centered under the widget as `WidgetPopup` places it.
     private static func hero(_ store: BarStore) -> some View {
-        bar(store)
+        let configuration = store.configuration!
+        let popupTop = configuration.barGeometry(for: display).drawingBottom
+            + configuration.look(on: .monitor).widgets.first { $0.id == "meeting" }!.popup!.offset
+        return bar(store)
             .overlayPreferenceValue(BarAnchorPreference.self) { anchors in
                 GeometryReader { proxy in
                     if let meeting = anchors.widgets["meeting"] {
                         let frame = proxy[meeting.bounds]
-                        popup(store, "meeting").frame(width: 0).offset(x: frame.midX, y: frame.maxY + 4)
+                        popup(store, "meeting").frame(width: 0).offset(x: frame.midX, y: popupTop)
                     }
                 }
             }
