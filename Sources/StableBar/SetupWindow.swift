@@ -118,7 +118,7 @@ private final class SetupTourPanel: NSPanel {
 final class SetupSession {
     let store: BarStore
     let themes: [ThemeChoice]
-    let sets: [SetupPreferences.WidgetSet]
+    let workspaceSource: WorkspaceSource
     let currentThemeKey: String
     var step = 0
     private(set) var finished = false
@@ -139,9 +139,8 @@ final class SetupSession {
         currentThemeKey = store.selectedThemeKey
         themes = themeChoices(packages: store.configurationURL.deletingLastPathComponent().appending(path: "packages"),
                               selectedKey: currentThemeKey)
-        let source = WorkspaceSource.detected(path: shellEnvironment.withLock { $0["PATH", default: ""] },
-                                              preferring: store.configuration?.workspaceSource ?? .aerospace)
-        sets = [.system, .meetings] + (source.map { [.workspaces($0)] } ?? [])
+        workspaceSource = WorkspaceSource.detected(path: shellEnvironment.withLock { $0["PATH", default: ""] },
+                                                   preferring: store.configuration?.workspaceSource ?? .aerospace) ?? .spaces
         sessionEdits = store.sessionEdits
         preview()
     }

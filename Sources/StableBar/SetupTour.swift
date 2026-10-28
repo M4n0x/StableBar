@@ -339,7 +339,7 @@ struct SetupTourView: View {
     private var presets: some View {
         HStack(spacing: 12) {
             ForEach(SetupPreferences.Preset.allCases, id: \.self) { preset in
-                let chosen = preset.preferences(sets: session.sets, placement: session.preferences.placement)
+                let chosen = preset.preferences(workspaces: session.workspaceSource, placement: session.preferences.placement)
                 let selected = session.preferences == chosen
                 SetupTile(selected: selected) {
                     session.preferences = selected ? SetupPreferences(placement: session.preferences.placement) : chosen
@@ -565,10 +565,13 @@ struct SetupTourView: View {
                     .buttonStyle(SetupButtonStyle(prominent: false))
                 }
             }
-            if let source = session.sets.compactMap({ set -> WorkspaceSource? in
-                if case let .workspaces(source) = set { return source }
-                return nil
-            }).first {
+            let source = session.workspaceSource
+            if source == .spaces {
+                if session.preferences.widgetSets.contains(.workspaces(.spaces)) {
+                    Text("Workspaces shows your macOS desktops. To switch desktops from the bar, turn on the Switch to Desktop shortcuts in System Settings → Keyboard → Keyboard Shortcuts → Mission Control.")
+                        .font(.system(size: 12)).foregroundStyle(.white.opacity(0.55))
+                }
+            } else {
                 Text("\(source.title) detected. Leave window clearance off if it already manages your gaps. \(source == .yabai ? "Use yabai’s external_bar setting to leave room for the bar." : "Set gaps.outer.top in \(source.title) to leave room for the bar.")")
                     .font(.system(size: 12)).foregroundStyle(.white.opacity(0.55))
             }

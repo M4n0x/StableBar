@@ -300,6 +300,7 @@ struct TextDraft<Content: View>: View {
 struct SettingsSegments<Value: Hashable>: View {
     @Binding var selection: Value
     let options: [(Value, String)]
+    var disabled: [Value] = []
     var stretches = true
     @Namespace private var namespace
 
@@ -323,6 +324,7 @@ struct SettingsSegments<Value: Hashable>: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(disabled.contains(option))
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }

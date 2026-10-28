@@ -21,6 +21,16 @@
       "position": "left"
     },
     {
+      "id": "sound",
+      "type": "audio",
+      "position": "right"
+    },
+    {
+      "id": "menu-bar-items",
+      "type": "menuBarItems",
+      "position": "right"
+    },
+    {
       "id": "clock",
       "type": "clock",
       "position": "right",
