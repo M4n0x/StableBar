@@ -65,6 +65,17 @@ final class ConfigurationHistory {
         try change(control: nil, everyBar: everyBar) { edits }
     }
 
+    func moveWidget(_ id: String, edits: [ConfigurationEdit]) async throws {
+        error = nil
+        try flush()
+        checkForExternalChanges()
+        let edits = try edits.map(inEditingProfile)
+        guard let prepared = try await store.prepareWidgetMove(id, edits: edits) else { return }
+        try store.writeWidgetMove(prepared)
+        record(Step(before: prepared.before, after: prepared.after, profile: editingProfile))
+        redoSteps.removeAll()
+    }
+
     private func inEditingProfile(_ edit: ConfigurationEdit) throws -> ConfigurationEdit {
         // Sources apply to every profile, so they stay in the main configuration.
         guard let editingProfile, ![.profile, .profiles, .packageSource].contains(edit.action) else { return edit }
@@ -157,10 +168,14 @@ final class ConfigurationHistory {
         let otherBars = everyBar ? try store.otherBars(applying: edits) : []
         try store.writeCustomization(after, replacing: before)
         for bar in otherBars { try writeConfiguration(bar.after, to: bar.url) }
-        if before != after || !otherBars.isEmpty {
-            undoSteps.append(Step(before: before, after: after, profile: editingProfile, otherBars: otherBars))
+        record(Step(before: before, after: after, profile: editingProfile, otherBars: otherBars))
+    }
+
+    private func record(_ step: Step) {
+        if step.before != step.after || !step.otherBars.isEmpty {
+            undoSteps.append(step)
         }
-        lastFile = after
+        lastFile = step.after
         pendingControl = nil
         pendingEdit = nil
         notice = nil

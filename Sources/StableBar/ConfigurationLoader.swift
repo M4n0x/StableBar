@@ -322,7 +322,7 @@ func configurationValues(_ value: ConfigurationValue, path: String = "") -> [Str
 
 let bundledThemesDirectory = Bundle.main.url(forResource: "themes", withExtension: nil)
 
-struct ConfigurationLoader {
+struct ConfigurationLoader: Sendable {
     var themesDirectory = bundledThemesDirectory
     /// The release that reads the configuration; without one, as in development builds, every file is read strictly.
     var appVersion = AppVersion.release

@@ -160,25 +160,33 @@ final class WidgetSetup {
     }
 
     func move(_ id: String, to position: WidgetPosition, before anchor: String? = nil, on kind: ScreenKind? = nil) throws {
+        try store.requireSavedWidget(id)
+        try store.customizationHistory.change(editsMoving(id, to: position, before: anchor, on: kind))
+    }
+
+    func editsMoving(_ id: String, to position: WidgetPosition, before anchor: String? = nil, on kind: ScreenKind? = nil) throws -> [ConfigurationEdit] {
         let widgets = store.configuration?.widgets ?? []
-        try requireSavedWidget(id, widgets: widgets)
         if let kind, let configuration = store.configuration, hasOwnLayout(kind, in: configuration) {
-            return try arrange(WidgetPlacement.arrangement(moving: id, to: position, before: anchor, widgets: configuration.onScreen(kind).widgets), on: kind)
+            return [layoutEdit(try WidgetPlacement.arrangement(moving: id, to: position, before: anchor, widgets: configuration.onScreen(kind).widgets), shownOn: kind, on: kind)]
         }
         var edits = try WidgetPlacement.move(id, to: position, before: anchor, widgets: widgets)
         if store.customizationHistory.editingProfile != nil, anchor == nil, edits.contains(where: { $0.action == .set }) {
             edits.removeAll { $0.action == .reorder }
         }
-        try store.customizationHistory.change(edits)
+        return edits
     }
 
     func move(_ id: String, by offset: Int, on kind: ScreenKind? = nil, listed: (WidgetConfiguration) -> Bool = { _ in true }) throws {
+        try store.requireSavedWidget(id)
+        try store.customizationHistory.change(editsMoving(id, by: offset, on: kind, listed: listed))
+    }
+
+    func editsMoving(_ id: String, by offset: Int, on kind: ScreenKind? = nil, listed: (WidgetConfiguration) -> Bool = { _ in true }) throws -> [ConfigurationEdit] {
         let widgets = store.configuration?.widgets ?? []
-        try requireSavedWidget(id, widgets: widgets)
         if let kind, let configuration = store.configuration, hasOwnLayout(kind, in: configuration) {
-            return try arrange(WidgetPlacement.arrangement(moving: id, by: offset, widgets: configuration.onScreen(kind).widgets, listed: listed), on: kind)
+            return [layoutEdit(try WidgetPlacement.arrangement(moving: id, by: offset, widgets: configuration.onScreen(kind).widgets, listed: listed), shownOn: kind, on: kind)]
         }
-        try store.customizationHistory.change(WidgetPlacement.move(id, by: offset, widgets: widgets, listed: listed))
+        return try WidgetPlacement.move(id, by: offset, widgets: widgets, listed: listed)
     }
 
     private func hasOwnLayout(_ kind: ScreenKind, in configuration: Configuration) -> Bool {
@@ -231,17 +239,5 @@ final class WidgetSetup {
             return try store.customizationHistory.change(ConfigurationEdit(action: .package, properties: selection))
         }
         try store.customizationHistory.change(ConfigurationEdit(action: .remove, id: id))
-    }
-
-    private func requireSavedWidget(_ id: String, widgets: [WidgetConfiguration]) throws {
-        guard let widget = widgets.first(where: { $0.id == id }) else { return }
-        var loader = ConfigurationLoader()
-        loader.themesDirectory = store.themesDirectory
-        let saved = try loader.load(store.configurationURL, context: store.context)
-        let savedIDs = Set(saved.widgets.map(\.id))
-        let moving = widgets.filter { $0.id == id || (widget.group != nil && $0.group == widget.group) }
-        guard moving.allSatisfy({ savedIDs.contains($0.id) }) else {
-            throw CommandFailure(message: "Save or discard command-line changes before editing this widget.")
-        }
     }
 }
