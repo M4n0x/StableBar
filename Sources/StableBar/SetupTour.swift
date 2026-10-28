@@ -13,13 +13,13 @@ struct SetupTourView: View {
     @State private var phase: Phase
     @State private var menuBarQuestion: Bool
     @State private var looks: [(name: String, look: Configuration)] = []
+    @State private var previews: [String: ThemePreview] = [:]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Phase { case intro, wallpaper, tour }
 
     private static let pages = [
-        ("Start from a preset.", "Your bar changes as you choose. Presets add widgets and never remove yours."),
-        ("Give it your style.", "Flip through themes with ← and →. Keep current leaves your theme as it is."),
+        ("Make it yours.", "Start from a preset, then flip through themes with ← and →. Your bar changes as you choose; presets never remove your widgets."),
         ("Choose where it sits.", "On the top edge, StableBar replaces the macOS menu bar. Below it, macOS menus stay visible."),
         ("Finishing touches.", "Choose what StableBar may do. Permission buttons ask macOS right away."),
         ("Try your bar.", "It's live: click a widget to open it, or right-click the bar for more. Nothing is saved until you finish.")
@@ -90,6 +90,12 @@ struct SetupTourView: View {
                 }
             }.value
             looks = [(session.currentTheme, configuration)] + previews
+            let choices = session.themes
+            self.previews = await Task.detached {
+                Dictionary(uniqueKeysWithValues: choices.compactMap { choice in
+                    (try? ThemePreview(choice: choice, themesDirectory: directory)).map { (choice.key, $0) }
+                })
+            }.value
         }
         .task(id: departure) {
             guard let departure, phase == .intro, !menuBarQuestion else { return }
@@ -303,10 +309,9 @@ struct SetupTourView: View {
             }
             staged(0.16) {
                 switch session.step {
-                case 0: presets
-                case 1: themes
-                case 2: placement
-                case 3: access
+                case 0: VStack(spacing: 28) { presets; themes }
+                case 1: placement
+                case 2: access
                 default: hints
                 }
             }
@@ -339,10 +344,11 @@ struct SetupTourView: View {
     private var presets: some View {
         HStack(spacing: 12) {
             ForEach(SetupPreferences.Preset.allCases, id: \.self) { preset in
-                let chosen = preset.preferences(workspaces: session.workspaceSource, placement: session.preferences.placement)
-                let selected = session.preferences == chosen
+                let selected = session.preset == preset
                 SetupTile(selected: selected) {
-                    session.preferences = selected ? SetupPreferences(placement: session.preferences.placement) : chosen
+                    session.preset = selected ? nil : preset
+                    session.preferences = selected ? SetupPreferences(placement: session.preferences.placement)
+                        : preset.preferences(workspaces: session.workspaceSource, placement: session.preferences.placement)
                     if session.preferences.placement == .top { Task { await session.place(.top) } }
                 } label: {
                     VStack(alignment: .leading, spacing: 8) {
@@ -355,38 +361,42 @@ struct SetupTourView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(16)
-                    .frame(width: 168, height: 156, alignment: .topLeading)
+                    .frame(width: 168, height: 140, alignment: .topLeading)
                 }
             }
         }
     }
 
     private var themes: some View {
-        let options: [(SetupPreferences.Theme, String)] = [(.current, "Keep current"), (.builtIn, "Built-in")]
-            + session.themes.map { (.package(id: $0.manifest.id, version: $0.isBundled ? nil : $0.manifest.version), $0.title) }
-        let index = options.firstIndex { $0.0 == session.preferences.theme } ?? 0
-        return VStack(spacing: 32) {
-            HStack(spacing: 24) {
+        let choices = session.themes
+        let selected = session.store.selectedThemeKey
+        let index = choices.firstIndex { $0.key == selected } ?? 0
+        let appearance = session.store.configuration?.bar.appearance ?? (session.store.context.appearance == "dark" ? .dark : .light)
+        return VStack(spacing: 20) {
+            HStack(spacing: 16) {
                 roundButton("chevron.left", label: "Previous theme") {
-                    session.preferences.theme = options[(index + options.count - 1) % options.count].0
+                    choose(choices[(index + choices.count - 1) % choices.count])
                 }
                 .keyboardShortcut(.leftArrow, modifiers: [])
-                VStack(spacing: 6) {
-                    ZStack {
-                        Text(options[index].1)
-                            .font(.system(size: 28, weight: .semibold))
-                            .id(index)
-                            .transition(.blurFade)
+                ScrollViewReader { scroll in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(choices, id: \.key) { choice in
+                                themeTile(choice, appearance: appearance, selected: choice.key == selected)
+                            }
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
                     }
-                    Text(index == 0 ? "Now: \(session.currentTheme)" : "\(index) of \(options.count - 1)")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .monospacedDigit()
+                    .onAppear { scroll.scrollTo(selected, anchor: .center) }
+                    .onChange(of: selected) { withAnimation(.smooth(duration: 0.3)) { scroll.scrollTo(selected, anchor: .center) } }
                 }
-                .frame(width: 320)
-                .animation(.smooth(duration: 0.3), value: index)
+                .frame(width: 776)
+                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.05),
+                                             .init(color: .black, location: 0.95), .init(color: .clear, location: 1)],
+                                     startPoint: .leading, endPoint: .trailing))
                 roundButton("chevron.right", label: "Next theme") {
-                    session.preferences.theme = options[(index + 1) % options.count].0
+                    choose(choices[(index + 1) % choices.count])
                 }
                 .keyboardShortcut(.rightArrow, modifiers: [])
             }
@@ -396,6 +406,46 @@ struct SetupTourView: View {
                                  options: SetupPreferences.Appearance.allCases.map { ($0, $0.rawValue) }, stretches: false)
             }
         }
+    }
+
+    private func themeTile(_ choice: ThemeChoice, appearance: BarAppearance, selected: Bool) -> some View {
+        SetupTile(selected: selected) {
+            choose(choice)
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                Group {
+                    if let look = previews[choice.key]?.configuration(for: appearance) {
+                        GeometryReader { proxy in
+                            ThemeSampleBar(look: look)
+                                .frame(width: proxy.size.width * 2)
+                                .scaleEffect(0.5)
+                                .frame(width: proxy.size.width, height: proxy.size.height)
+                        }
+                    }
+                }
+                .frame(height: 46)
+                .background(SampleWallpaper())
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .environment(\.colorScheme, appearance.colorScheme)
+                HStack(spacing: 6) {
+                    Text(choice.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                    Spacer(minLength: 0)
+                    if choice.key == session.currentThemeKey {
+                        Text("Current").font(.system(size: 11)).foregroundStyle(.white.opacity(0.5))
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            .padding(8)
+            .frame(width: 168)
+        }
+        .id(choice.key)
+        .accessibilityLabel("\(choice.title) theme")
+    }
+
+    private func choose(_ choice: ThemeChoice) {
+        session.preferences.theme = choice.key == session.currentThemeKey ? .current
+            : choice.isBuiltIn ? .builtIn : .package(id: choice.manifest.id, version: choice.isBundled ? nil : choice.manifest.version)
     }
 
     private var placement: some View {

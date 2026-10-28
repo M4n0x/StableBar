@@ -122,6 +122,7 @@ final class SetupSession {
     let currentThemeKey: String
     var step = 0
     private(set) var finished = false
+    var preset: SetupPreferences.Preset?
     var preferences = SetupPreferences() { didSet { preview() } }
     var openAtLogin: Bool?
     var loginStatus = SMAppService.mainApp.status
@@ -137,8 +138,8 @@ final class SetupSession {
     init(store: BarStore) {
         self.store = store
         currentThemeKey = store.selectedThemeKey
-        themes = themeChoices(packages: store.configurationURL.deletingLastPathComponent().appending(path: "packages"),
-                              selectedKey: currentThemeKey)
+        themes = ThemeCatalog(packages: store.configurationURL.deletingLastPathComponent().appending(path: "packages"),
+                              themesDirectory: store.themesDirectory, selectedKey: currentThemeKey).choices
         workspaceSource = WorkspaceSource.detected(path: shellEnvironment.withLock { $0["PATH", default: ""] },
                                                    preferring: store.configuration?.workspaceSource ?? .aerospace) ?? .spaces
         sessionEdits = store.sessionEdits
@@ -154,7 +155,7 @@ final class SetupSession {
     }
 
     var currentTheme: String {
-        themes.first { $0.key == currentThemeKey }?.title ?? (currentThemeKey == "built-in" ? "Built-in" : currentThemeKey)
+        themes.first { $0.key == currentThemeKey }?.title ?? currentThemeKey
     }
 
     var placement: SetupPreferences.Placement {
