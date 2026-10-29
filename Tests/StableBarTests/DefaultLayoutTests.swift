@@ -211,11 +211,12 @@ private enum FrontmostApp {
     }
 }
 
-@Test @MainActor func scrollingTextNativeLayerMatchesTheMeasuredText() async throws {
+@Test @MainActor func scrollingTextAndEqualizerNativeLayersMatchTheMeasuredBar() async throws {
     let configuration = try decode(Configuration.self, ##"""
     {"bar":{"height":36},"defaults":{"fontName":"Menlo","fontSize":15,"fontWeight":"bold","foreground":"#ff8800"},
      "widgets":[{"id":"title","type":"text","position":"left","text":"Mikasa — Moha MMZ, the extended mix that keeps going",
-       "layout":{"type":"field","field":"text","scrollSpeed":20,"style":{"width":160}}}]}
+       "layout":{"type":"field","field":"text","scrollSpeed":20,"style":{"width":160}}},
+      {"id":"music","type":"text","position":"left","text":"A","layout":{"type":"equalizer","source":"playing"}}]}
     """##)
     let display = BarDisplay(id: 1, isBuiltIn: false, isMain: true, notch: nil)
     let native = OffscreenBar(configuration: configuration, display: display, width: 400)
