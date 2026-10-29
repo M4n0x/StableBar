@@ -46,6 +46,15 @@ struct MenuBarStripState: Equatable {
     static func nearsTop(_ pointer: CGPoint, of display: CGRect) -> Bool {
         display.minX <= pointer.x && pointer.x < display.maxX && pointer.y <= display.minY + revealBand
     }
+
+    /// Checks often while the pointer is on a bar above a strip or a menu bar shows over one, and every
+    /// two seconds while a bar sits on a display with a strip or a notch. The strip goes while the lock
+    /// screen shows and comes back after it, when the bar lies below it and gets no mouse events.
+    static func checkInterval(strips: Set<CGDirectDisplayID>, notched: Set<CGDirectDisplayID>,
+                              shownMenuBars: Set<CGDirectDisplayID>, hovering: Bool) -> TimeInterval? {
+        if hovering || !shownMenuBars.isDisjoint(with: strips) { return 1.0 / 30 }
+        return strips.isEmpty && notched.isEmpty ? nil : 2
+    }
 }
 
 /// Keeps each bar above the reveal strip while the menu bar is hidden, and below the menu bar
@@ -53,6 +62,8 @@ struct MenuBarStripState: Equatable {
 @MainActor
 final class MenuBarStrip: NSResponder {
     private var panels: [CGDirectDisplayID: BarPanel] = [:]
+    /// Displays with a notch, where macOS 27 puts the strip.
+    private var notched: Set<CGDirectDisplayID> = []
     /// Displays with a strip, kept while their menu bar shows, since the strip may go meanwhile.
     private var strips: Set<CGDirectDisplayID> = []
     private var shownMenuBars: Set<CGDirectDisplayID> = []
@@ -65,6 +76,10 @@ final class MenuBarStrip: NSResponder {
                                                               owner: self))
         }
         self.panels = panels
+        notched = Set(NSScreen.screens.compactMap { screen in
+            let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as! NSNumber).uint32Value
+            return panels[id] != nil && screen.auxiliaryTopLeftArea != nil ? id : nil
+        })
         refresh()
     }
 
@@ -90,9 +105,7 @@ final class MenuBarStrip: NSResponder {
         schedule()
     }
 
-    /// Checks often while the pointer is on a bar above a strip or a menu bar shows over one,
-    /// and every two seconds otherwise, for a menu bar shown from the keyboard or auto-hide
-    /// turned off.
+    /// Checks every two seconds also for a menu bar shown from the keyboard or auto-hide turned off.
     private func schedule() {
         let pointer = CGEvent(source: nil)?.location ?? .zero
         let primaryTop = NSScreen.screens.first?.frame.maxY ?? 0
@@ -100,7 +113,7 @@ final class MenuBarStrip: NSResponder {
             panels[id].map { CGRect(x: $0.frame.minX, y: primaryTop - $0.frame.maxY, width: $0.frame.width, height: $0.frame.height)
                 .contains(pointer) } ?? false
         }
-        let interval: TimeInterval? = strips.isEmpty ? nil : hovering || !shownMenuBars.isDisjoint(with: strips) ? 1.0 / 30 : 2
+        let interval = MenuBarStripState.checkInterval(strips: strips, notched: notched, shownMenuBars: shownMenuBars, hovering: hovering)
         guard interval != self.interval else { return }
         stop()
         guard let interval else { return }
