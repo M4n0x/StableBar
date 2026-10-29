@@ -222,7 +222,7 @@ final class NativeMetrics {
         }
         guard cpuStatus == KERN_SUCCESS else { throw CommandFailure(message: "Could not read CPU statistics (\(cpuStatus)).") }
         let ticks = CPUTicks(user: load.cpu_ticks.0, system: load.cpu_ticks.1, idle: load.cpu_ticks.2, nice: load.cpu_ticks.3)
-        let split = cpu.map { ticks.usage(since: $0) } ?? (user: 0, system: 0)
+        let split = ticks.usage(since: cpu ?? CPUTicks(user: 0, system: 0, idle: 0, nice: 0))
         let usage = split.user + split.system
         cpu = ticks
         var memory = vm_statistics64()

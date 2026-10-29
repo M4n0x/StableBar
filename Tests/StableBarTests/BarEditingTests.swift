@@ -56,11 +56,20 @@ final class BarEditingTests: XCTestCase {
         {"widgets":[{"id":"widget-00000001","type":"text","text":"","position":"left"},
                     {"id":"widget-00000002","type":"text","text":"","position":"left"},
                     {"id":"spacer","type":"spacer","position":"center"},
+                    {"id":"empty","type":"script","command":"true","position":"right",
+                     "layout":{"type":"field","field":"count","hideWhenEmpty":"count"}},
                     {"id":"script","type":"script","command":"true","display":"external","position":"right"}]}
         """#)
         defer { fixture.close() }
         let store = try fixture.store()
         defer { store.stop() }
+        let empty = ScriptWidget()
+        store.scripts["empty"] = empty
+        store.updatePresentations()
+        XCTAssertFalse(store.barEditing.widgets(on: laptop).contains { $0.id == "empty" })
+        empty.error = "Failed"
+        store.updatePresentations()
+        XCTAssertTrue(store.barEditing.widgets(on: laptop).contains { $0.id == "empty" })
         store.barEditing.begin()
         XCTAssertTrue(store.barEditing.entries(on: laptop).allSatisfy(\.usesPlaceholder))
         XCTAssertEqual(store.barEditing.entries(on: laptop).prefix(2).map(\.name), ["Text 1", "Text 2"])

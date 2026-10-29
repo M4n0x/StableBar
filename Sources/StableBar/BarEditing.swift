@@ -135,22 +135,25 @@ final class BarEditing {
                                            providers: store.configuration?.providers ?? [:])
         return widgets.map { widget in
             let visibility = visibility(of: widget, on: display)
-            let label = store.label(for: widget).overlaid(by: store.presentations[widget.id]?.temporaryFields)
-            let output = store.scripts[widget.id]?.output
-            let layout = widget.layout ?? widget.defaultLayout(label, output: output,
-                                                               appIcon: widget.content == .activeApp && store.activeApp?.icon != nil,
-                                                               providerType: store.configuration?.providerType(of: widget))
-            let drawsCells = switch widget.content {
-            case .workspaces, .appMenu, .appleMenu: true
-            default: false
-            }
-            let hasContent = drawsCells && widget.layout == nil
-                || layout.map { BarEditContent.hasContent($0, fields: label.fields, output: output,
-                                                          menu: output?.menu ?? widget.menu ?? []) } == true
             let transparent = store.presentations[widget.id]?.style(on: ScreenKind(display)).base.opacity == 0
             return BarEditWidget(widget: widget, name: names[widget.id] ?? widget.id, visibility: visibility,
-                                 usesPlaceholder: visibility.isHidden || !hasContent || transparent)
+                                 usesPlaceholder: visibility.isHidden || !hasContent(widget) || transparent)
         }
+    }
+
+    func hasContent(_ widget: WidgetConfiguration) -> Bool {
+        let label = store.label(for: widget).overlaid(by: store.presentations[widget.id]?.temporaryFields)
+        let output = store.scripts[widget.id]?.output
+        let layout = widget.layout ?? widget.defaultLayout(label, output: output,
+                                                           appIcon: widget.content == .activeApp && store.activeApp?.icon != nil,
+                                                           providerType: store.configuration?.providerType(of: widget))
+        let drawsCells = switch widget.content {
+        case .workspaces, .appMenu, .appleMenu: true
+        default: false
+        }
+        return drawsCells && widget.layout == nil
+            || layout.map { BarEditContent.hasContent($0, fields: label.fields, output: output,
+                                                      menu: output?.menu ?? widget.menu ?? []) } == true
     }
 
     func geometry(for display: BarDisplay) -> BarGeometry? {

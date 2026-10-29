@@ -758,6 +758,11 @@ final class BarStore: NSObject {
                 || script?.output.styles?.values.contains(where: \.usesModeStates) == true
             let animation = script?.output.animation ?? widget.animation ?? configuration.bar.animation
             let state = widgetDataState(script?.output, widget: widget, providers: configuration.providers)
+            let hidesWhenEmpty = switch widget.content {
+            case .script: true
+            case let .provider(name): configuration.providers[name]?.whenVisible != true
+            default: false
+            }
             var screenStyles: [String: ResolvedWidgetStyle] = [:]
             for (kind, look) in configuration.screenLooks {
                 guard let own = look.widgets.first(where: { $0.id == widget.id }) else { continue }
@@ -768,7 +773,8 @@ final class BarStore: NSObject {
             }
             presentations[widget.id]?.update(style: ResolvedWidgetStyle(base: base, state: state, mode: usesMode ? mode : ModePresentation()),
                                              screenStyles: screenStyles,
-                                             hidden: script?.output.hidden == true && script?.error == nil,
+                                             hidden: (script?.output.hidden == true || hidesWhenEmpty && !barEditing.hasContent(widget))
+                                                 && script?.error == nil,
                                              display: script?.output.display,
                                              visibility: visibilityAnimation(widget.transition ?? configuration.bar.motion.transition, animation: animation,
                                                                              reduceMotion: reduceMotion))
