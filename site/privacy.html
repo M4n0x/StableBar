@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy · StableBar</title>
+<meta name="description" content="What StableBar and stablebar.app collect: no account, no analytics, and no personal data.">
+<link rel="canonical" href="https://stablebar.app/privacy.html">
+<meta name="theme-color" content="#15110d">
+<link rel="icon" href="images/icon-64.png">
+<link rel="stylesheet" href="style.css">
+<script>
+document.documentElement.dataset.mode = localStorage.getItem("mode") || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+</script>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <a class="brand" href="./"><img src="images/icon-64.png" alt="">StableBar</a>
+    <nav class="nav">
+      <a href="https://github.com/Seb-GRAF/StableBar/blob/main/docs/README.md">Guide</a>
+      <a href="./#store">Store</a>
+    </nav>
+  </header>
+  <main id="main" class="legal">
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated on 29 October 2026.</p>
+    <p>StableBar is a free, open-source app by Sebastien Graf and Steve Mendes Reis. It has no account and no analytics, and we don't collect personal data.</p>
+
+    <h2>On your Mac</h2>
+    <p>Your configuration, widgets and scripts stay in files on your Mac. What the bar shows, such as calendar events, CPU, memory, battery and network use, is read on your Mac and never sent anywhere by StableBar.</p>
+    <p>StableBar asks for two macOS permissions, and uses them only on your Mac:</p>
+    <ul>
+      <li><strong>Accessibility</strong>, to show the frontmost app's menus and to move windows clear of the bar.</li>
+      <li><strong>Calendars</strong>, only for the meetings and agenda widgets.</li>
+    </ul>
+
+    <h2>What the app sends</h2>
+    <p>On its own, StableBar connects only to GitHub:</p>
+    <ul>
+      <li><strong>Updates.</strong> It checks GitHub for a new version shortly after launch and then every few minutes, and downloads an update when you choose to install it. Turn the checks off in <strong>Settings → General → Updates</strong>.</li>
+      <li><strong>The store.</strong> <strong>Packages</strong> loads the store's listing and the packages you install from GitHub. Package sources you add yourself load from the addresses you give.</li>
+      <li><strong>Bug and crash reports.</strong> Reporting a bug or a crash opens a prefilled issue on GitHub in your browser. Nothing is sent until you submit it there, and you can edit or remove anything first.</li>
+    </ul>
+    <p>Like any website, GitHub receives your IP address with these requests. The <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub Privacy Statement</a> covers how GitHub handles them.</p>
+    <p>Widgets and packages run commands on your Mac, and the ones you add can contact other services, such as a weather service. Before you install a package, StableBar lists the commands, hosts and permissions it uses. If you run <code>StableBar triage</code>, it hands your terminal to Claude Code or Codex, which follow their providers' policies.</p>
+
+    <h2>The website</h2>
+    <p>stablebar.app is hosted on GitHub Pages. It sets no cookies and has no analytics or third-party scripts, and it serves its fonts itself. Your choice of light or dark mode is saved in your browser. GitHub receives your IP address when you visit.</p>
+
+    <h2>Changes and contact</h2>
+    <p>If this policy changes, we update this page and its date. Its history is on <a href="https://github.com/Seb-GRAF/StableBar/commits/main/site/privacy.html">GitHub</a>.</p>
+    <p>Questions about privacy: <a href="mailto:contact@stablebar.app">contact@stablebar.app</a>.</p>
+  </main>
+  <footer>
+    <a href="./">Home</a>
+    <a href="privacy.html">Privacy Policy</a>
+    <a href="terms.html">Terms of Service</a>
+    <a href="https://github.com/Seb-GRAF/StableBar">Source on GitHub</a>
+  </footer>
+</div>
+</body>
+</html>
