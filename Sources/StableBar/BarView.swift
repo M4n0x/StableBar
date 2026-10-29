@@ -696,7 +696,7 @@ struct Sparkline: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         for (index, value) in samples.enumerated() {
-            let point = CGPoint(x: rect.width * Double(index) / 59,
+            let point = CGPoint(x: rect.width * Double(60 - samples.count + index) / 59,
                                 y: rect.height * (1 - min(max(value, 0), 1)))
             if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
         }

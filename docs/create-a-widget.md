@@ -33,7 +33,7 @@ Return plain text, or one JSON object:
 - `hidden`: removes the widget when true (unless it has an error). Give the widget a `transition` to fade or roll it in and out.
 - `interval`: overrides the next polling delay in seconds; must be greater than zero. Omit it to use the configured interval.
 - `menu`: an array of `{ "title": "Issue", "detail": "In progress", "onClick": "open …" }`, displayed in a themed popup. Rows without `onClick` show information. A menu takes precedence over the widget's click command. Static widgets can also define `menu` in their configuration.
-- `value`: a graph sample, displayed on a 0–1 scale with the last 60 samples. Each update adds one, even when it repeats the previous output; such an update changes only the graph, unless it repeats a `temporary` that ran out.
+- `value`: a graph sample, displayed on a 0–1 scale with the last 60 samples, the newest at the right edge. Each update adds one, even when it repeats the previous output; such an update changes only the graph, unless it repeats a `temporary` that ran out.
 - `fields`: named display strings for popup field blocks.
 - `lists`: named arrays of objects containing display strings for popup list blocks.
 - `state`: the widget's data state, such as `warning`; see [Data states](styling.md#data-states).
