@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.9.0](https://github.com/Seb-GRAF/StableBar/compare/v0.8.0...v0.9.0) (2026-10-29)
+
+### Features
+
+* choose the preset and theme in one setup step ([96e07e2](https://github.com/Seb-GRAF/StableBar/commit/96e07e2628792c416093adda3d523ea41e090ef8))
+* copy a bug report with versions, displays, access and crashes ([0f61497](https://github.com/Seb-GRAF/StableBar/commit/0f61497133251632a4759c5ea7f59c07809fb830)), closes [#93](https://github.com/Seb-GRAF/StableBar/issues/93)
+* end setup's intro on the person's own bar ([30817a3](https://github.com/Seb-GRAF/StableBar/commit/30817a3d9e8e7b5f582286bd4fc5ab6d431865f5))
+* end setup's presets with sound, battery, the clock and menu bar items ([9369eff](https://github.com/Seb-GRAF/StableBar/commit/9369eff4ce606e14eae5c7526f0f5a480e125692))
+* fill setup's presets with sound, battery and menu bar items ([b641296](https://github.com/Seb-GRAF/StableBar/commit/b6412967f8e8c854caec37934540756c004f9b0d))
+* install and update StableBar with Homebrew ([490010e](https://github.com/Seb-GRAF/StableBar/commit/490010e6aa66d0a8cf696255ca2256ebe669d687))
+* keep seven iconic themes in the theme gallery ([7087aa1](https://github.com/Seb-GRAF/StableBar/commit/7087aa1dbf6a00548f10bac75d67ef17a0ed68c0)), closes [#370](https://github.com/Seb-GRAF/StableBar/issues/370)
+* load configurations written for a newer StableBar ([5ed7094](https://github.com/Seb-GRAF/StableBar/commit/5ed7094ed0f18494f65ba4fcd47533ab53955cf0))
+* open setup with a line of light that becomes the demo's glass bar ([d58adb7](https://github.com/Seb-GRAF/StableBar/commit/d58adb7a11f663c45dcc6c9aff6586220439c771))
+* open widget settings from the bar on Content ([c441cd0](https://github.com/Seb-GRAF/StableBar/commit/c441cd084e290bce6eda5c272f9c06f62afd9cb7))
+* show chosen menu bar items on the bar and hide others from the row ([#356](https://github.com/Seb-GRAF/StableBar/issues/356)) ([607810c](https://github.com/Seb-GRAF/StableBar/commit/607810cb0ef7a7861ca8c3461b9e0c2e2850ab3a))
+* show each setup preset's widgets and theme ([12a7284](https://github.com/Seb-GRAF/StableBar/commit/12a7284cc117eab3a6fc9d6f44fc8c0bdafead1a))
+* show StableBar's crashes in Settings and copy them into a bug report ([d1c127d](https://github.com/Seb-GRAF/StableBar/commit/d1c127d1198f032b1ff61b385d3ef5c68a818ede)), closes [#333](https://github.com/Seb-GRAF/StableBar/issues/333)
+* turn the macOS menu bar's auto-hide on or off from Settings ([2e79f5c](https://github.com/Seb-GRAF/StableBar/commit/2e79f5c212c18b7e5d0b48372bc4232536538c7e)), closes [#210](https://github.com/Seb-GRAF/StableBar/issues/210)
+* uninstall StableBar and turn off the menu bar auto-hide it turned on ([9f3706b](https://github.com/Seb-GRAF/StableBar/commit/9f3706b2ba5240f13f0655a86dd0bba452d2162c)), closes [#332](https://github.com/Seb-GRAF/StableBar/issues/332)
+
+### Bug Fixes
+
+* drag and click widgets on every display while editing the bar in place ([4c93398](https://github.com/Seb-GRAF/StableBar/commit/4c933986f6fc7b100133758bb8af9d85f6bfed2d))
+* find tools on the login shell's PATH when the shell is slow at login ([18723df](https://github.com/Seb-GRAF/StableBar/commit/18723df652194443f18fbeed97dd103cd12edb24)), closes [#362](https://github.com/Seb-GRAF/StableBar/issues/362)
+* hide the app menus warning while setup is open ([0b521c1](https://github.com/Seb-GRAF/StableBar/commit/0b521c18bd8a22d339a331c1e991764bc38be6d2))
+* inset Léman's focused workspace and draw Catppuccin's as a pill ([7206852](https://github.com/Seb-GRAF/StableBar/commit/7206852665826e0e533069ab52500605f5beb43d)), closes [#370](https://github.com/Seb-GRAF/StableBar/issues/370)
+* keep clicks on the bar from showing the menu bar on macOS 27 ([4ff45b9](https://github.com/Seb-GRAF/StableBar/commit/4ff45b98eb18a6e2a0048d33e4eb3baac38920f7)), closes [#366](https://github.com/Seb-GRAF/StableBar/issues/366)
+* keep hover popups open while moving toward them ([0fe1fed](https://github.com/Seb-GRAF/StableBar/commit/0fe1fed26a73384e3f1e9d18650fcc0fd70b7659))
+* keep the menu bar reveal delay working on macOS 27 ([86f6f30](https://github.com/Seb-GRAF/StableBar/commit/86f6f305a3c4a3180deebbf6e44f0246b0e506d8)), closes [#367](https://github.com/Seb-GRAF/StableBar/issues/367)
+* land a dropped widget in its slot without the bar jumping ([d23917c](https://github.com/Seb-GRAF/StableBar/commit/d23917c356ada3fe7f3dfffb5db93d5932d156a5))
+* prevent command cancellation deadlocks and flaky test failures ([48e128b](https://github.com/Seb-GRAF/StableBar/commit/48e128b4dc5827aa5e40e1330f667c81895c3904))
+* put the bar back above the menu bar strip after the screen locks ([a934459](https://github.com/Seb-GRAF/StableBar/commit/a9344594363e094f1c04c4444e4126ef0927ab0a)), closes [#374](https://github.com/Seb-GRAF/StableBar/issues/374)
+* show the menu bar's items in Menu bar items on macOS 27 ([4a00c35](https://github.com/Seb-GRAF/StableBar/commit/4a00c3565e20b5c00cbb0f851d32ac021aa0cef2)), closes [#372](https://github.com/Seb-GRAF/StableBar/issues/372)
+
+### Performance Improvements
+
+* bounce the equalizer without updating the bar every frame ([756795a](https://github.com/Seb-GRAF/StableBar/commit/756795ade97ba01518636d7ed6149594e072940c))
+* keep the bar moving while a widget move saves ([033e5aa](https://github.com/Seb-GRAF/StableBar/commit/033e5aa0bd87262025e9cf237b52caa116f71f52))
+
 ## [0.8.0](https://github.com/Seb-GRAF/StableBar/compare/v0.7.0...v0.8.0) (2026-10-26)
 
 ### Features
