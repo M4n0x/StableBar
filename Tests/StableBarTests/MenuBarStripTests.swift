@@ -44,6 +44,16 @@ private var bar: [String: Any] { window("StableBar", layer: 3, CGRect(x: -1800, 
     #expect(!state.raisesBar(on: 1))
 }
 
+@Test func menuBarStripKeepsCheckingABarOnANotchedDisplayBeforeTheStripShows() {
+    // Right after a wake, an unlock or a display change, a check can run before MenuBarAgent puts its strip back.
+    #expect(MenuBarStripState.checkInterval(strips: [], notched: [1], shownMenuBars: [], hovering: false) == 2)
+    #expect(MenuBarStripState.checkInterval(strips: [], notched: [], shownMenuBars: [], hovering: false) == nil)
+    #expect(MenuBarStripState.checkInterval(strips: [1], notched: [1], shownMenuBars: [], hovering: false) == 2)
+    #expect(MenuBarStripState.checkInterval(strips: [1], notched: [1], shownMenuBars: [], hovering: true) == 1.0 / 30)
+    #expect(MenuBarStripState.checkInterval(strips: [1], notched: [1], shownMenuBars: [1], hovering: false) == 1.0 / 30)
+    #expect(MenuBarStripState.checkInterval(strips: [], notched: [1], shownMenuBars: [1], hovering: false) == 2)
+}
+
 @Test func menuBarStripWatchesThePointerOnlyWhereMacOSRevealsTheMenuBar() {
     #expect(MenuBarStripState.nearsTop(CGPoint(x: -900, y: 0), of: laptop))
     #expect(MenuBarStripState.nearsTop(CGPoint(x: -900, y: 5), of: laptop))
