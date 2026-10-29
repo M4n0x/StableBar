@@ -609,7 +609,12 @@ struct WidgetView: View {
         case .spacer where widget.layout == nil:
             Spacer(minLength: resolution.base.minWidth ?? 0)
         default:
-            timed { date in blocks(resolution, open: open, date: date) }
+            if store.scripts[widget.id]?.error != nil && !store.barEditing.hasContent(widget) {
+                Image(systemName: store.label(for: widget).icon ?? "exclamationmark.triangle")
+                    .font(.system(size: WidgetAppearance(resolution.style(hovered: false, open: open), defaults: WidgetStyle()).iconSize))
+            } else {
+                timed { date in blocks(resolution, open: open, date: date) }
+            }
         }
     }
 
