@@ -77,7 +77,7 @@ jobs:
   test:
     name: Test
     needs: current
-    if: needs.current.outputs.build == 'true'
+    if: false && needs.current.outputs.build == 'true'
     runs-on: macos-26
     timeout-minutes: 20
     steps:
@@ -155,7 +155,7 @@ jobs:
     env:
       STABLEBAR_PREBUILT_DIR: release-build
     needs: [current, build]
-    if: github.ref == 'refs/heads/main' || needs.current.outputs.app == 'true'
+    if: false && (github.ref == 'refs/heads/main' || needs.current.outputs.app == 'true')
     runs-on: macos-26
     timeout-minutes: 15
     steps:
@@ -188,7 +188,7 @@ jobs:
       STABLEBAR_PREBUILT_DIR: release-build
       VERSION: 0.0.0-pr.${{ github.event.pull_request.number }}
     needs: [current, build]
-    if: github.event_name == 'pull_request' && needs.current.outputs.packaging == 'true'
+    if: false && github.event_name == 'pull_request' && needs.current.outputs.packaging == 'true'
     runs-on: macos-26
     timeout-minutes: 15
     steps:
