@@ -84,6 +84,8 @@ There is no web view, custom drawing loop or private window-server API. Styling 
 
 Reviews are requested automatically from the people listed in [CODEOWNERS](.github/CODEOWNERS), but they are not required. Ask for one when a change is risky or outside your usual area.
 
+[CodeRabbit](https://coderabbit.ai) also reviews every pull request once it is out of draft, and comments only on what matters most. Fix each comment or reply why not, then resolve its thread: unresolved conversations block merging. Its rules come from [AGENTS.md](AGENTS.md) and [.coderabbit.yaml](.coderabbit.yaml).
+
 ## Commits and releases
 
 Pull requests run `swift test` on macOS and check that every commit message, and the pull request title, follows [Conventional Commits](https://www.conventionalcommits.org). Squash merges use the title as the commit message. The tests load every configuration, module and package in `examples`, and the **Test** job parses each script in `scripts` and `examples` with the shell its first line names. The **Test pull request checks** job runs `node --test` on the logic of `Linked issue` and `Description`, in `.github/scripts`.
