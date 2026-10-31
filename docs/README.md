@@ -1,4 +1,4 @@
-# StableBar user guide
+# StableBar user guide 
 
 StableBar reads one JSON configuration, by default `~/.config/stablebar/config.json`, and is controlled from its menu-bar icon, the Settings window and the `StableBar` command line. This guide documents every feature and configuration option.
 
