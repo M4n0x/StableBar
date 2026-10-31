@@ -236,10 +236,10 @@ const MEADOW_MAX = 14, MEADOW_PHONE = 8, SPROUT_MIN = 3, SPROUT_MAX = 6;
 /* The dive past the end of the page: you go straight on toward the middle of the horizon, past islands that stand
    one after another, DIVE_GAP times the nearest one's distance apart, off to one side and then the other. They come
    round in this order (the first one is the page's far island); each is a ridge and a shore, as fractions of the width
-   and, up from the horizon, of the sky or, down from it, of the sea. `lx` is the lighthouse, `cx` the cottage. Each
-   wears one of the other themes: its lighthouse's pyjamas, and its ground by day (lit and shady), darker with the hour
-   like the page's green. */
-// (an island seen at its own size stands this far down the sea, as a part of it: it's as far off as the sea there)
+   and, up from the horizon, of the sky or, down from it, of the sea it stands on (see layout). `lx` is the lighthouse,
+   `cx` the cottage. Each wears one of the other themes: its lighthouse's pyjamas, and its ground by day (lit and
+   shady), darker with the hour like the page's green. */
+// (an island seen at its own size stands this far down its sea, as a part of it: it's as far off as the sea there)
 const DIVE_GAP = 7, SHORE = 0.27;
 const ISLANDS = [
   // on the right, a snowy peak: the lighthouse on its shoulder, the cottage on a ledge above it
@@ -483,12 +483,13 @@ class Scene {
     return w;
   }
   // the islands in sight, the farthest first, each with where it is on the screen (screen = s * point + (x, y)): seen
-  // from its distance, around the middle of the horizon, from the one going past to the ones far off
+  // from its distance, around the middle of the horizon (the page's hill, which stands there on a phone, around a point
+  // left of it, out at sea), from the one going past to the ones far off
   shown() {
-    const m = Math.floor(this.dive), x = this.back.W / 2, y = this.back.horizon, out = [];
+    const m = Math.floor(this.dive), b = this.back, y = b.horizon, out = [];
     for (let n = m + 6; n >= m; n--) {
-      const s = 1 / (1 + (n - this.dive) * DIVE_GAP);
-      if (s > FAR && s < PAST) out.push(Object.assign(this.world(n), { view: { s, x: x * (1 - s), y: y * (1 - s) } }));
+      const s = 1 / (1 + (n - this.dive) * DIVE_GAP), x = n ? b.W / 2 : b.passX;
+      if (s > FAR && s < PAST) out.push(Object.assign(this.world(n), { view: { s, x: x * (1 - s), y: y * (1 - s), cx: x } }));
     }
     return out;
   }
@@ -509,12 +510,12 @@ class Scene {
     const v = w.view, p = this.cursor;
     this.ptr = { ...p, x: (p.x - v.x) / v.s, y: (p.y - v.y) / v.s, on: p.on && v.s > 0.45 };
   }
-  // an island of the dive, on the page's sky and sea (see ISLANDS)
+  // an island of the dive, on the sky and sea it stands on (see ISLANDS)
   island(I) {
-    const b = this.back, { W, u, top, horizon: hz } = b, sky = hz - top, sea = b.H - hz, was = this.g;
+    const b = this.back, { W, u, horizon: hz } = b, { sky, sea } = b.stand, was = this.g;
     const at = ([fx, fy]) => [fx * W, hz + fy * (fy < 0 ? sky : sea)];
     const g = this.g = { ...b, isle: true, theme: I.theme, ground: I.ground.map(hex), ridge: curve(I.ridge.map(at), 6), shore: curve(I.shore.map(at), 6), note: { x0: 0, x1: 0, y0: 0, y1: 0 }, key: null };
-    const lx = I.lx * W, h = sky * 0.5, er = clamp(h * 0.062, 11.5, 22), cx = I.cx * W, cw = Math.min(h * 0.3, W * 0.13);
+    const lx = I.lx * W, h = sky * 0.5, er = clamp(h * 0.062, b.portrait ? 0 : 11.5, 22), cx = I.cx * W, cw = Math.min(h * 0.3, W * 0.13);
     // the lighthouse and the cottage stand on level ground, cut into the slope
     for (const [x, w] of [[lx, er * 2.6], [cx, cw]]) {
       const y = this.ridgeY(x);
@@ -1074,7 +1075,10 @@ class Scene {
     // where the page's notes sit (a guess, for placing labels and surprises)
     g.note = portrait ? { x0: 0, x1: W, y0: top + Hs * 0.24, y1: H } : { x0: 0, x1: W * 0.05 + Math.min(W * 0.46, 620) + 12, y0: top, y1: H * 0.84 };
     g.key = portrait ? null : { x0: 0, x1: W * 0.05 + Math.min(W * 0.46, 562) + 12, y0: H - 160, y1: H };
-    // the islands of the dive stand on this sky and sea; they're made again for the new size
+    // the islands of the dive stand on this sky and sea; they're made again for the new size. A phone's would make them
+    // tall and narrow: there they stand on a desktop's as wide as the phone.
+    g.stand = portrait ? { sky: W * 0.375, sea: W * 0.25 } : { sky, sea: H - g.horizon };
+    g.passX = portrait ? 0.1 * W : W / 2;
     this.back = g;
     this.worlds = new Map([[0, this.w0]]);
     this.layoutV++;
@@ -2173,10 +2177,10 @@ function view(s, c, v) {
    the page (see waveScallops), and as much further as the island is, so it comes on faster. Draws from here on where
    it is, unless it has gone past. */
 function afloat(s, c, y) {
-  const g = s.g, at = (g.H - g.horizon) / (y - g.horizon), d = at + (1 / s.cur.view.s - 1) / SHORE;
+  const g = s.g, sea = g.H - g.horizon, at = sea / (y - g.horizon), d = at + (1 / s.cur.view.s - 1) * sea / (SHORE * g.stand.sea);
   if (d < 0.2) return false;
   const m = at / d;
-  view(s, c, { s: m, x: g.W / 2 * (1 - m), y: g.horizon * (1 - m) });
+  view(s, c, { s: m, x: s.cur.view.cx * (1 - m), y: g.horizon * (1 - m) });
   return true;
 }
 
@@ -2381,7 +2385,8 @@ function drawLeap(s, c, o) {
 
 /* the sea: scallops on the water as it goes off to the horizon, in rows, closer together and sparser the farther off;
    ripples where things land. Diving, you go over it toward the horizon, as fast as past the islands (an island's shore
-   is about a quarter of the way down the sea), and rows and scallops come in between the others as they come close and spread. */
+   is about a quarter of the way down the sea; on a phone, where they stand higher up, it keeps that pace, as faster it
+   would flicker), and rows and scallops come in between the others as they come close and spread. */
 const rank = n => n ? 31 - Math.clz32(n & -n) : 32;
 function waveScallops(s, c, lit) {
   const g = s.g, { W, H, u } = g, hz = g.horizon, sea = H - hz, mid = W / 2;
