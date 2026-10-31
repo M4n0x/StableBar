@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit reviews every pull request. It reads AGENTS.md on its own, as one of its default code
+# guidelines; the path instructions point it at what reviews of StableBar keep catching.
+language: en-US
+reviews:
+  # Only the most important findings go inline. Each one is a thread to resolve before merging.
+  profile: quiet
+  # The Description check reads the description's last line, so CodeRabbit leaves it alone.
+  high_level_summary: false
+  poem: false
+  in_progress_fortune: false
+  review_status: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  suggested_labels: false
+  # CODEOWNERS already requests reviews.
+  suggested_reviewers: false
+  auto_review:
+    enabled: true
+    drafts: false
+    # Every base branch, so pull requests stacked on another branch are reviewed too.
+    base_branches: [".*"]
+    # Keep reviewing every push: by default reviews pause after five reviewed commits, silently
+    # since review_status is off.
+    auto_pause_after_reviewed_commits: 0
+  # Quote "off": in YAML a bare off is the boolean false.
+  pre_merge_checks:
+    # The Commit messages job already checks titles.
+    title:
+      mode: "off"
+    description:
+      mode: warning
+    issue_assessment:
+      mode: warning
+    docstrings:
+      mode: "off"
+  path_instructions:
+    - path: "Sources/**"
+      instructions: >-
+        A configuration change has to reach every surface in the "Hit every surface" list of
+        AGENTS.md: decoding (a coding key and stablebar.schema.json), layers (includes, templates,
+        profiles, package overrides), editing (the Settings sections and ConfigurationEdits.swift),
+        and the docs page and examples. Point out any surface this change leaves out.
+    - path: "Tests/**"
+      instructions: >-
+        Most tests run on the main actor, in parallel. A test that bounds main-actor scheduling
+        with wall-clock time (short sleeps, deadline loops, short timeouts) fails at random on CI:
+        suggest waiting by counting polls instead. A fixture that runs git needs a timeout of 60
+        seconds or more. A purely visual fix is proven with before/after images, so don't ask for a
+        UI test.
+    - path: "docs/**"
+      instructions: >-
+        docs/ is the user manual. Point out instructions that this pull request's code contradicts,
+        and examples that would no longer load. Keep the README short.
+    - path: "examples/**"
+      instructions: >-
+        docs/ is the user manual. Point out instructions that this pull request's code contradicts,
+        and examples that would no longer load. Keep the README short.
+    - path: ".github/workflows/**"
+      instructions: >-
+        Jobs triggered by pull_request_target or workflow_run must never check out or run the pull
+        request's code, and no workflow may put a pull request's title, description or branch name
+        into a shell command. Point out any step that does.
