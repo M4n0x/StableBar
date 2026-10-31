@@ -1,0 +1,71 @@
+name: Pull request
+
+# Checks the pull request itself: the issue it closes and its description. pull_request_target runs
+# the default branch's copy of this workflow and of .github/scripts with a read-only token, so a pull
+# request never runs its own code here. The checks' logic and its tests are in .github/scripts.
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: pull-request-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  linked-issue:
+    name: Linked issue
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const { checkLinkedIssue } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/pull-request-checks.mjs`);
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request.number;
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const { repository } = await github.graphql(
+              `query($owner: String!, $repo: String!, $number: Int!) {
+                 repository(owner: $owner, name: $repo) { pullRequest(number: $number) {
+                   closingIssuesReferences(first: 50) { nodes { number repository { nameWithOwner } } } } } }`,
+              { owner, repo, number });
+            const result = checkLinkedIssue({
+              title: pr.title, body: pr.body, repository: `${owner}/${repo}`,
+              baseRef: pr.base.ref, defaultBranch: context.payload.repository.default_branch,
+              closingIssues: repository.pullRequest.closingIssuesReferences.nodes
+                .map((issue) => ({ number: issue.number, repository: issue.repository.nameWithOwner })),
+            });
+            await core.summary.addRaw(result.message).write();
+            if (!result.ok) core.setFailed(result.message);
+
+  description:
+    name: Description
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const { checkDescription } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/pull-request-checks.mjs`);
+            const { owner, repo } = context.repo;
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: context.payload.pull_request.number });
+            const result = checkDescription(pr.body);
+            await core.summary.addRaw(result.message).write();
+            if (!result.ok) core.setFailed(result.message);
