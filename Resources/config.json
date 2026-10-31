@@ -29,7 +29,7 @@
       "id": "clock",
       "type": "clock",
       "position": "right",
-      "format": "HH:mm",
+      "format": "HH:mm:ss",
       "onClick": "open -a Calendar"
     },
     {
