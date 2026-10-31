@@ -234,6 +234,22 @@ jobs:
           TITLE: ${{ github.event.pull_request.title }}
         run: printf '%s\n' "$TITLE" | npx commitlint --verbose
 
+  # Tests the logic of the Linked issue and Description checks. Those checks run from the default
+  # branch (pull-request-checks.yml), so a change to them is tested here before it merges.
+  pull-request-checks:
+    name: Test pull request checks
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node --test .github/scripts/*.test.mjs
+
   # Every push to main with releasable commits publishes the next version as a beta prerelease,
   # unless it would ship the same app as the beta before it. It commits nothing. Both jobs build
   # with github.run_number, which only goes up, so a stable build always numbers higher than the

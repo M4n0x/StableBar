@@ -22,6 +22,7 @@ The developer's own StableBar is usually running while you work.
 
 - `swift build` builds the package; `./scripts/build.sh` builds `dist/StableBar.app`.
 - Run the tests for what you changed with `swift test --filter <name>`. CI runs the whole suite on macOS for every pull request.
+- `node --test .github/scripts/*.test.mjs` tests the pull request checks in `.github/scripts`.
 - `StableBar --validate PATH` checks a configuration without starting its scripts.
 - Visible changes (the bar, popups, setup, Settings) need before/after screenshots in the pull request. Ask before launching the app or taking screenshots: a second bar appears on the developer's screen. `StableBar --render-docs-images DIR` draws the bar, popups and Settings in offscreen windows instead, so nothing appears on screen.
 
@@ -39,7 +40,7 @@ A configuration change rarely lives in one place. Before calling one done, say w
 - Never push to `main`. Open a pull request only when the developer asks for one.
 - A `fix`, `feat` or `perf` pull request needs an issue. Before opening it, search with the `triage` skill. If an open issue covers the problem, link it. If none does, file one with `triage` (the request for the pull request covers filing it) and link that. If triage finds the problem already fixed or declined, tell the developer before going on. Other types, such as `ci`, `test`, `docs` or `chore`, can skip the issue.
 - Titles follow Conventional Commits in plain words, such as `fix: keep the clock visible on a notched display`. Every commit message is checked too, and the types of the commits that reach `main` decide the next release (see [Commits and releases](CONTRIBUTING.md#commits-and-releases)).
-- Fill in the [pull request template](.github/pull_request_template.md), and end the description with the model and harness that did the work.
+- Fill in the [pull request template](.github/pull_request_template.md), and end the description with the model and harness that did the work. The `Description` check fails without that line, and `Linked issue` fails a `fix`, `feat` or `perf` pull request that closes no issue.
 - Upload screenshots and recordings to the pull request; never commit them. The images in `docs/images` are the exception: they illustrate the README and the guide, and CI draws them (see [Docs images](CONTRIBUTING.md#docs-images)).
 - Keep to one problem per pull request.
 

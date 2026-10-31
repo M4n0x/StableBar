@@ -22,4 +22,4 @@ recording when motion matters. Upload them here; don't commit them. -->
 <!-- A merge commit or rebase merge keeps every commit in the changelog; a squash keeps only the title.
 Say which this needs. -->
 
-<!-- If an agent did the work, end with the model and harness, such as "Claude Opus 5.5 via Claude Code". -->
+<!-- End with the model and harness that did the work, such as "Claude Opus 5.5 via Claude Code", or with "No agent". The Description check reads this last line. -->
